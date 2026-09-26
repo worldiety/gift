@@ -353,6 +353,9 @@ func formatOps(ops []render.Op) string {
 		if op.Image != 0 {
 			fmt.Fprintf(&b, " image=%d", op.Image)
 		}
+		if op.Kind == render.OpImage && op.Fit == render.ImageCover {
+			b.WriteString(" cover")
+		}
 		if op.Clip != 0 {
 			fmt.Fprintf(&b, " clip=%d", op.Clip)
 		}

@@ -124,7 +124,17 @@ func (l GalleryLayout) params(width float64) layout.GalleryParams {
 // oder Decode zu warten." Nothing in the frame path blocks on a picture, and a
 // jump of ten thousand entries paints its first frame with placeholders.
 type TileStyle struct {
-	// CornerRadius rounds the placeholder and its borders.
+	// CornerRadius rounds the tile: the placeholder, the picture and the
+	// selection and cursor borders, all with the same radius on the same
+	// rectangle.
+	//
+	// It is one shape and not three that happen to agree, and the difference
+	// is visible. The placeholder, the picture and a border of the same bounds
+	// and radius cover exactly the same pixels — see [render.OpImage] — so a
+	// tile does not change shape when its picture arrives, nothing of the
+	// picture shows outside a selection border's rounded corner, and the
+	// border's inner edge is the concentric arc of radius
+	// max(0, CornerRadius-Width) rather than a square.
 	CornerRadius float32
 
 	// Palette is the set of placeholder fills. The entry is chosen by a hash
@@ -1356,7 +1366,9 @@ func (t *tileNode) Paint(ctx *gift.PaintContext) {
 			// rectangle does not agree at all, and cropping is the right
 			// answer there too — the tile is full of picture until the
 			// correction reflows it.
-			paintImage(ctx, b, id, iw, ih, FitCover, OpaqueWhite)
+			//
+			// Rounded with the tile's radius, as the placeholder below is.
+			paintImage(ctx, b, id, iw, ih, FitCover, OpaqueWhite, st.CornerRadius)
 			t.paintTileState(ctx, s, st, b)
 			return
 		}

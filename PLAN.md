@@ -552,6 +552,10 @@ ui.VStack(
 - Border liegt innerhalb der Bounds und aendert das Layout nicht.
 - CornerRadius bestimmt die Hintergrund-/Borderform; Content-Clipping wird
   explizit eingeschaltet. Ein Glass-Backdrop wird an seiner Materialform geclippt.
+  Ein Bild traegt seine Rundung selbst: `render.OpImage` rundet seine Bounds
+  mit derselben Kantenglaettung wie ein gerundetes Rechteck, und ein
+  Cover-Zuschnitt ist `render.ImageCover` statt eines Clips. Ein formgenauer
+  Clip fuer beliebige Kinder bleibt offen; der Clip-Stapel kennt nur Rechtecke.
 - Shadow erweitert die Paint-Bounds, aber nicht Layout oder Hit-Area.
   Eltern-Clips gelten auch fuer den Schatten.
 - Farben und Alpha-Konventionen werden an der Backend-Grenze klar festgelegt;

@@ -354,60 +354,72 @@ const (
 	// FitContain scales the picture until it fits entirely, letterboxing the
 	// remainder. Nothing of the picture is lost. This is the default.
 	FitContain ImageFit = iota
-	// FitCover scales the picture until it covers the rectangle and clips the
-	// overhang. Nothing of the rectangle is empty.
+	// FitCover scales the picture until it covers the rectangle and crops the
+	// overhang symmetrically. Nothing of the rectangle is empty.
 	//
-	// The clip is a real clip and not a source rectangle, which is why it
-	// costs nothing: the backend trims the geometry against the clip before
-	// it emits a vertex, so the cropped part never reaches a fragment. See
-	// [render.OpImage].
+	// The crop is [render.ImageCover]: the operation's bounds are the
+	// rectangle itself and the backend picks the centred part of the texture,
+	// so the cropped part never reaches a fragment. It used to be a clip
+	// around an oversized picture, which could not carry rounded corners;
+	// see [render.ImageFit].
 	FitCover
 	// FitStretch fills the rectangle exactly, distorting the picture.
 	FitStretch
 )
 
-// fitRect returns the rectangle the picture is drawn into, given the box b and
-// the picture's pixel dimensions.
-func fitRect(b geom.Rect, iw, ih int, fit ImageFit) geom.Rect {
-	if fit == FitStretch || iw <= 0 || ih <= 0 {
+// containRect returns the letterboxed rectangle a picture of iw by ih pixels
+// occupies inside b under [FitContain]: the largest rectangle of the picture's
+// aspect ratio that fits, centred.
+//
+// It is the only fit this package computes itself. A stretch is b, and a cover
+// is b too — the crop is the backend's, with the arithmetic of
+// [render.ImageFit.Source] — so only a letterbox changes the rectangle the
+// operation is emitted with.
+func containRect(b geom.Rect, iw, ih int) geom.Rect {
+	if iw <= 0 || ih <= 0 {
 		return b
 	}
 	bw, bh := b.Width(), b.Height()
 	if bw <= 0 || bh <= 0 {
 		return b
 	}
-	sx, sy := bw/float32(iw), bh/float32(ih)
-	s := sx
-	if fit == FitCover {
-		if sy > s {
-			s = sy
-		}
-	} else if sy < s {
-		s = sy
-	}
+	s := min(bw/float32(iw), bh/float32(ih))
 	w, h := float32(iw)*s, float32(ih)*s
 	cx, cy := (b.Min.X+b.Max.X)*0.5, (b.Min.Y+b.Max.Y)*0.5
 	return geom.Rc(cx-w*0.5, cy-h*0.5, cx+w*0.5, cy+h*0.5)
 }
 
-// paintImage emits one image operation for the picture id inside b.
+// paintImage emits one image operation for the picture id inside b, with its
+// corners rounded by radius.
 //
-// For [FitCover] it pushes b as a clip, because a crop in gift is a clip: the
-// display list carries no source rectangle, on purpose, and the backend
-// already interpolates texture coordinates into a clipped polygon. See
-// [render.OpImage].
-func paintImage(ctx *gift.PaintContext, b geom.Rect, id render.ImageID, iw, ih int, fit ImageFit, tint Color) {
-	dst := fitRect(b, iw, ih, fit)
-	clipped := fit == FitCover && dst != b
-	if clipped {
-		// Device space, which is the space the clip stack lives in; see the
-		// project plan, section 7.
-		ctx.PushClip(ctx.DeviceBounds())
+// The radius rounds the rectangle the picture is actually seen in: b for
+// [FitCover] and [FitStretch], the letterboxed rectangle for [FitContain]. So
+// a contained picture gets rounded corners of its own rather than keeping
+// square ones that happen to lie inside a rounded frame. Zero draws the plain
+// textured quad; see [render.OpImage].
+//
+// No clip is pushed for any fit. A cover is [render.ImageCover], which is why
+// a gallery frame no longer adds one clip rectangle per visible tile to the
+// display list.
+func paintImage(ctx *gift.PaintContext, b geom.Rect, id render.ImageID, iw, ih int, fit ImageFit, tint Color, radius float32) {
+	op := render.Op{Kind: render.OpImage, Bounds: b, Color: tint, Image: id, CornerRadius: radius}
+	switch fit {
+	case FitCover:
+		op.Fit = render.ImageCover
+	case FitContain:
+		op.Bounds = containRect(b, iw, ih)
 	}
-	ctx.Add(render.Op{Kind: render.OpImage, Bounds: dst, Color: tint, Image: id})
-	if clipped {
-		ctx.PopClip()
-	}
+	ctx.Add(op)
+}
+
+// insetRadius is the corner radius of a rectangle inset by in from one with
+// radius r: the radius that keeps the two contours concentric, so a picture
+// inside a padded, rounded view follows the view's corner instead of cutting
+// across it. It is the rule of [focusRingRadius], for an inset per edge; the
+// largest one decides, because a radius that suits the thinnest edge would
+// poke out of the corner at the thickest.
+func insetRadius(r float32, in geom.Insets) float32 {
+	return max(0, r-max(in.Left, in.Top, in.Right, in.Bottom))
 }
 
 // OpaqueWhite is the tint that leaves a picture exactly as it was decoded.
@@ -552,17 +564,25 @@ func (v ImageView) Border(b Border) ImageView { v.setBorder(b); return v }
 // Shadow draws a blurred copy of the bounds behind the view.
 func (v ImageView) Shadow(s Shadow) ImageView { v.setShadow(s); return v }
 
-// CornerRadius rounds the background and the border.
+// CornerRadius rounds the background, the border and the placeholder, and
+// together with [ImageView.Clip] the picture as well.
 //
-// It does *not* round the picture. Clipping a texture to a rounded rectangle
-// needs a shape aware clip, which the display list does not have and which is
-// material work — step 5 of the project plan, section 12, not this one. A
-// rounded background behind a square picture is the honest intermediate state
-// and it is visible rather than claimed.
+// The picture needs the clip because content clipping is switched on
+// explicitly in gift, as the project plan, section 8, fixes: "CornerRadius
+// bestimmt die Hintergrund-/Borderform; Content-Clipping wird explizit
+// eingeschaltet." Without it the picture keeps square corners and a rounded
+// border drawn over it leaves them showing.
 func (v ImageView) CornerRadius(f float32) ImageView { v.setCornerRadius(f); return v }
 
-// Clip confines the picture to the bounds. [FitCover] clips regardless,
-// because a crop is a clip.
+// Clip confines the picture to the shape of the view: to the bounds, and with
+// a [ImageView.CornerRadius] to their rounded corners.
+//
+// The rounding is the picture's own, see [render.OpImage]: the corners of the
+// rectangle the picture occupies inside the padding, with the view's radius
+// reduced by the padding so that the two stay concentric. The placeholder
+// takes the same shape, so a view does not change its outline when its
+// picture arrives. [FitCover] crops to the bounds regardless, because a crop
+// is part of the fit and not a clip.
 func (v ImageView) Clip(b bool) ImageView { v.style.clip = b; return v }
 
 // Flex makes the image take a share of the remaining main axis space.
@@ -684,17 +704,27 @@ func (n *imageNode) Paint(ctx *gift.PaintContext) {
 	b := ctx.Bounds()
 	paintBackground(ctx, n.st, b)
 	inner := b.Inset(n.pad)
+	// The shape of the content. With a clip it is the view's corner, made
+	// concentric across the padding, and picture and placeholder share it so
+	// that nothing changes shape when the picture arrives. Without one the
+	// picture is square, as [ImageView.CornerRadius] documents, and the
+	// placeholder keeps the radius it always had.
+	radius, placeholderRadius := float32(0), n.st.radius
+	if n.st.clip {
+		radius = insetRadius(n.st.radius, n.pad)
+		placeholderRadius = radius
+	}
 	drawn := false
 	if n.req != nil && n.req.ok {
 		if id, iw, ih, ok := images.resolve(ctx, n.req.key); ok {
-			paintImage(ctx, inner, id, iw, ih, n.fit, n.tint)
+			paintImage(ctx, inner, id, iw, ih, n.fit, n.tint, radius)
 			drawn = true
 		}
 	}
 	if !drawn && !n.placeholder.IsTransparent() {
 		op := render.Op{Kind: render.OpFillRect, Bounds: inner, Color: n.placeholder}
-		if n.st.radius > 0 {
-			op.Kind, op.CornerRadius = render.OpFillRoundRect, n.st.radius
+		if placeholderRadius > 0 {
+			op.Kind, op.CornerRadius = render.OpFillRoundRect, placeholderRadius
 		}
 		ctx.Add(op)
 	}
