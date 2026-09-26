@@ -172,4 +172,10 @@
 // JPEG and PNG, from image/jpeg and image/png. EXIF orientation is read from
 // JPEG and applied; see [Orientation] for exactly what is and is not handled.
 // Further formats require an explicit [RegisterDecoder]. No RAW, no video.
+//
+// Camera JPEGs are decoded far faster by libjpeg-turbo, which the subpackage
+// turbojpeg loads at run time without cgo and which decodes straight to a
+// fraction of the stored size when only a thumbnail is wanted; see
+// [ScaledDecoder]. It replaces the JPEG decoder only when the application
+// registers it, for the reasons given in that package.
 package asset
