@@ -19,6 +19,12 @@ import (
 //
 // A Decoder is used from several goroutines at once and must be safe for
 // concurrent use.
+//
+// The reader the pipeline passes to Decode, and to [ScaledDecoder.DecodeScaled],
+// is a *bytes.Buffer over the whole encoded picture, which the pipeline has in
+// memory anyway. A decoder that needs the picture in one piece — one that
+// hands it to a C library, say — can take it with Bytes instead of copying
+// megabytes it has already been given; it must not modify them.
 type Decoder interface {
 	// DecodeConfig reads the dimensions and colour model from the head of
 	// the stream, without decoding pixels.
@@ -33,6 +39,42 @@ type Decoder interface {
 	// explicit that it is computed from the *picture's* dimensions and the
 	// codec's risk, not from the size of the thumbnail that comes out.
 	MemoryFactor() float64
+}
+
+// ScaledDecoder is an optional extension of [Decoder]: a decoder that can
+// produce a smaller picture than the stored one directly, for less work than
+// decoding all of it.
+//
+// JPEG is the case this exists for. Its inverse DCT can produce each 8x8
+// block at an eighth, a quarter or a half of its size, so a 24 megapixel
+// photograph wanted as a 512 pixel thumbnail need never exist at more than
+// 750 by 500 pixels. image/jpeg cannot do that; libjpeg-turbo can, and
+// github.com/worldiety/gift/asset/turbojpeg is the decoder that implements
+// this interface with it.
+//
+// When the registered decoder has it, the pipeline uses it for every decode,
+// and [Decoder.Decode] and [Decoder.MemoryFactor] are not called.
+type ScaledDecoder interface {
+	Decoder
+
+	// DecodeScaled decodes the picture at some size of at least minW by
+	// minH, in *stored* pixels, before any orientation is applied. Larger
+	// is allowed — the pipeline scales the rest of the way, and a decoder
+	// with fixed factors will rarely hit the size exactly — and so is the
+	// full picture; smaller is not, unless the picture itself is, because
+	// the resampler would then enlarge and the thumbnail lose sharpness it
+	// could have had.
+	DecodeScaled(r io.Reader, minW, minH int) (image.Image, error)
+
+	// ScaledMemory is the working memory in bytes that DecodeScaled needs
+	// for this picture: header is the encoded picture, w by h its stored
+	// dimensions, minW by minH what will be asked for. It replaces
+	// MemoryFactor times the stored pixels as the pipeline's decode
+	// reservation, and the project plan, section 9, still holds for it: it
+	// is computed from the picture and the codec's risk — a progressive
+	// JPEG keeps every coefficient of the full picture however small the
+	// output — and not merely from the size that comes out.
+	ScaledMemory(header []byte, w, h, minW, minH int) int64
 }
 
 // Sniffer is an optional extension of [Decoder]: a decoder that can recognise

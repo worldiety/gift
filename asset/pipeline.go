@@ -292,7 +292,9 @@ type Config struct {
 	// workers. The reservation is computed from the picture's stored
 	// dimensions and the codec's [Decoder.MemoryFactor], not from the size of
 	// the thumbnail that comes out; the project plan, section 9, is explicit
-	// about that. Zero selects [DefaultDecodeBudget].
+	// about that. A [ScaledDecoder] reports its own figure instead, which is
+	// smaller because less is decoded but still accounts for what the codec
+	// keeps at full size. Zero selects [DefaultDecodeBudget].
 	DecodeBudget int64
 
 	// PixelBudget bounds every live thumbnail in the process: the ones in
@@ -1244,17 +1246,44 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 			info.StoredW*info.StoredH, p.cfg.MaxPixels)
 	}
 
-	need := int64(float64(info.StoredW) * float64(info.StoredH) * info.Dec.MemoryFactor())
+	// A [ScaledDecoder] is asked for no more than the thumbnail needs, in
+	// stored space, and reserves what it says that costs; every other
+	// decoder decodes everything and reserves by its factor. The reader is
+	// a Buffer so that a decoder can take the bytes without copying them;
+	// see [Decoder].
+	sw, sh, _, _ := storedTarget(info, j.rung)
+	sd, scaled := info.Dec.(ScaledDecoder)
+	var need int64
+	if scaled {
+		need = sd.ScaledMemory(raw, info.StoredW, info.StoredH, sw, sh)
+	}
+	if need <= 0 {
+		// Not scaled, or a decoder that answered nonsense: a
+		// reservation of nothing would take the decode out of the
+		// budget altogether, so it gets the unscaled figure instead.
+		need = int64(float64(info.StoredW) * float64(info.StoredH) * info.Dec.MemoryFactor())
+	}
 	if err := p.decode.acquire(ctx, need); err != nil {
 		return nil, Result{}, err
 	}
-	img, derr := info.Dec.Decode(bytes.NewReader(raw))
+	var (
+		img  image.Image
+		derr error
+	)
+	if scaled {
+		img, derr = sd.DecodeScaled(bytes.NewBuffer(raw), sw, sh)
+	} else {
+		img, derr = info.Dec.Decode(bytes.NewBuffer(raw))
+	}
 	if derr != nil {
 		p.decode.release(need)
 		return nil, Result{}, fmt.Errorf("%w: %v", ErrNotAPicture, derr)
 	}
 	p.counters.decodes.Add(1)
-	p.counters.decodedPixels.Add(uint64(info.StoredW * info.StoredH))
+	// The pixels that came out of the decoder, which for a scaled decode
+	// is the honest work volume and otherwise the stored size.
+	db := img.Bounds()
+	p.counters.decodedPixels.Add(uint64(db.Dx() * db.Dy()))
 
 	t, terr := p.thumbnail(ctx, img, info, j.rung)
 	p.decode.release(need)
@@ -1290,12 +1319,7 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 // undoing the axis swap, so the result after rotation has exactly the requested
 // longest edge.
 func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInfo, rung int) (*Thumbnail, error) {
-	ow, oh := fitWithin(info.W, info.H, rung)
-	// The scaled buffer in stored space.
-	sw, sh := ow, oh
-	if info.Orientation.SwapsAxes() {
-		sw, sh = oh, ow
-	}
+	sw, sh, ow, oh := storedTarget(info, rung)
 	scaledBytes := int64(sw) * int64(sh) * 4
 	if err := p.reservePixels(ctx, scaledBytes); err != nil {
 		return nil, err
@@ -1323,6 +1347,20 @@ func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInf
 	}
 	t.refs.Store(1)
 	return t, nil
+}
+
+// storedTarget is the size of a rung's thumbnail: ow by oh as shown, and sw by
+// sh in the stored grid, before orientation, which is the space both the
+// scaler and a [ScaledDecoder] work in. A portrait photograph stored as a
+// landscape grid with orientation 6 and wanted 256 pixels tall is asked of the
+// decoder 256 pixels *wide*.
+func storedTarget(info probeInfo, rung int) (sw, sh, ow, oh int) {
+	ow, oh = fitWithin(info.W, info.H, rung)
+	sw, sh = ow, oh
+	if info.Orientation.SwapsAxes() {
+		sw, sh = oh, ow
+	}
+	return sw, sh, ow, oh
 }
 
 // fitWithin scales w by h down so that the longest edge is at most n, never
