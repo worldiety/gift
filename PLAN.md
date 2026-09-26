@@ -1549,6 +1549,23 @@ die Spaltenanordnung exakt, weil der Viewport dann wirklich schrumpft. Beide
 Wege sind dokumentiert und getestet, und die Hoehe der Tastatur ist abfragbar,
 damit eine Anwendung sich stattdessen Platz lassen kann.
 
+Nachtrag, gefunden von einer Anwendung (Fotobox, 800x480, ohne
+Hardwaretastatur): Die Ueberdeckung war der falsche Standard. Die Tastatur
+nimmt dort mehr als die Haelfte des Fensters ein und verdeckte genau die
+Bedienelemente am unteren Rand, die man beim Tippen braucht; jede Scrollansicht
+brauchte einen Platzhalter in Tastaturhoehe. Ein `ZStack` (und damit
+`ui.Window`), der ein `ui.OnScreenKeyboard()` als direktes Kind hat, legt
+seine uebrigen Kinder deshalb jetzt standardmaessig im Bereich neben der
+Tastatur aus, solange sie sichtbar ist ("adjustResize" von Android). Das ist
+kein Content-Inset: der Viewport schrumpft wirklich, wie in der
+Spaltenanordnung, und die zweite Freistellung ist dann exakt. Entschieden wird
+im Layout anhand der gemessenen Tastaturhoehe; eine verborgene Tastatur misst
+null und aendert kein Pixel. Die Fensterflaeche von `ui.Window` bleibt voll
+gross. `Overlay.AvoidKeyboard(false)` stellt die Ueberdeckung wieder her; fuer
+diesen Fall und fuer eine verpackte Tastatur bleibt die Verdeckungsmarkierung
+mit ihrer oben beschriebenen Grenze bestehen. Ein `ui.Modal` gehoert in das
+Fenster neben die Tastatur, dann liegt auch das Sheet oberhalb der Tastatur.
+
 **Die Einblendung haengt an einem ausdruecklichen Kioskschalter, nicht an
 `PointerKind`.** Begruendung, und sie ist belegt: Ebitengines Dokumentation
 zu `AppendTouchIDs` haelt fest, dass die Funktion auf Desktops nichts tut;

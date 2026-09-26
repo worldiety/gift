@@ -74,10 +74,13 @@ var onScreenKeyboard atomic.Bool
 // the focus and dismisses it when it loses it. The keyboard itself is a view
 // the application places, once, at the top of its window:
 //
-//	ui.ZStack(
+//	ui.Window(
 //	    form,
 //	    ui.OnScreenKeyboard(),
 //	).Align(geom.Bottom)
+//
+// The form is then laid out above the keyboard while it is showing; see
+// [Overlay.AvoidKeyboard].
 //
 // An application that never places [OnScreenKeyboard] pays nothing for having
 // the switch on beyond one bool per focus change.
@@ -100,7 +103,11 @@ func OnScreenKeyboardEnabled() bool { return onScreenKeyboard.Load() }
 // logical pixels. It is a constant of the metrics and does not depend on the
 // window.
 //
-// It is exported so that a form can leave room under its last field; see
+// A form inside a [Window] or [ZStack] that holds the keyboard does not need
+// it: the overlay takes this much height away from the content by itself; see
+// [Overlay.AvoidKeyboard]. It is exported for the compositions where that does
+// not happen — avoidance turned off, or a keyboard wrapped in another
+// container — where a form has to leave room under its last field itself; see
 // [KeyboardView] for why a reveal alone cannot lift that field.
 func OnScreenKeyboardHeight() float32 {
 	return 2*kbPadding + kbRows*kbKeyHeight + (kbRows-1)*kbGap
@@ -337,38 +344,46 @@ func init() { kbState.reset() }
 // placed by touching the text, which [TextFieldView] already supports, and a
 // kiosk form is walked with the fingers rather than with tab.
 //
-// # Keeping the field clear of it, and what that cannot do
+// # Keeping the field clear of it
 //
-// Section 19 names [gift.App.ScrollIntoView] as the mechanism, and it is the
-// mechanism. This view declares [gift.Element.Obstructs], so the reveal aims
-// at the part of the scroll container the keyboard is not sitting on, and gift
-// re-runs the reveal on the frame after the keyboard appeared — which it has
-// to, because at the moment the field asks to be revealed the keyboard has not
-// been laid out yet.
-//
-// The limit is arithmetic and there is no way round it without a content inset
-// system, which section 19 does not ask for and which is not a small thing to
-// add: **a container can only lift the field by as much as it can still
-// scroll**, and it can only scroll while there is content left below. A field
-// that is the last row of a form therefore stays where the ordinary reveal put
-// it, at the bottom of the viewport, with the keyboard over it. An application
-// on a kiosk fixes that the way every mobile form does, by leaving room under
-// the last field:
-//
-//	ui.VScroll(form.PaddingInsets(geom.Insets{Bottom: ui.OnScreenKeyboardHeight()}))
-//
-// The other composition avoids the problem instead of solving it. Put the
-// keyboard *next to* the form rather than over it and the viewport genuinely
-// shrinks, so the plain reveal is exact and nothing is ever covered:
+// The overlay does most of it. A [ZStack] — and so a [Window] — that has this
+// view as a direct child lays the other children out in the part of the box
+// the keyboard leaves free while it is showing; see [Overlay.AvoidKeyboard].
+// The viewport of a scrolling form really is shorter then, so the ordinary
+// reveal of [gift.App.ScrollIntoView] is exact, a field in the last row of a
+// form can be lifted like any other, and a button pinned to the bottom of the
+// screen sits on top of the keys instead of under them. It is the composition
+// of a column,
 //
 //	ui.VStack(ui.VScroll(form).Flex(1), ui.OnScreenKeyboard())
 //
-// That is the better arrangement for a scrolling form and this view works in
-// it unchanged — it takes the height it needs and none of the obstruction
-// machinery comes into play, because there is nothing to obstruct. The ZStack
-// of section 19 is the right one when the thing behind the keyboard is not a
-// scroll container at all, where an overlay is the only way to put a keyboard
-// on the screen without relaying out the application.
+// without having to restructure the application around the keyboard, and the
+// column still works unchanged: the keyboard takes the height it needs and
+// there is nothing for it to cover.
+//
+// Section 19 names [gift.App.ScrollIntoView] as the mechanism, and it is still
+// the one that moves the field. The field asks to be revealed from its own
+// focus handler, before the keyboard was built; gift re-runs the reveal on the
+// frame after the keyboard appeared, when the layout has already shrunk the
+// content, which is the order that makes the second reveal see the final
+// viewport.
+//
+// # The obstruction, for the compositions that overlap
+//
+// This view also declares [gift.Element.Obstructs], so a reveal aims at the
+// part of a scroll container the keyboard is not sitting on. With avoidance on
+// that never changes anything — the viewport ends where the keyboard begins —
+// and it is there for the two compositions in which the keyboard does cover
+// the content: [Overlay.AvoidKeyboard] turned off, and a keyboard wrapped in
+// another container, which the overlay cannot recognise.
+//
+// Those keep the limit the obstruction has always had, and it is arithmetic:
+// **a container can only lift the field by as much as it can still scroll**,
+// and it can only scroll while there is content left below. A field that is
+// the last row of a form stays at the bottom of the viewport with the keyboard
+// over it, unless the form leaves room under it:
+//
+//	ui.VScroll(form.PaddingInsets(geom.Insets{Bottom: ui.OnScreenKeyboardHeight()}))
 type KeyboardView struct {
 	base
 	font Font
@@ -379,13 +394,16 @@ type KeyboardView struct {
 }
 
 // OnScreenKeyboard returns the keyboard view. Place it once, on top of
-// everything else, and align it to the bottom:
+// everything else, as a direct child of the [Window] and align it to the
+// bottom:
 //
-//	ui.ZStack(form, ui.OnScreenKeyboard()).Align(geom.Bottom)
+//	ui.Window(form, ui.OnScreenKeyboard()).Align(geom.Bottom)
 //
-// The alignment is the [Overlay]'s and applies to every child, which is
-// harmless here: a form that fills the window is already the size of the
-// Z stack and cannot be moved by an alignment.
+// The alignment is the [Overlay]'s and applies to every child. A form that
+// fills the window cannot be moved by it; one that does not is aligned to the
+// bottom of the space above the keyboard while the keyboard is showing, which
+// is where it has to be to stay in view. See [Overlay.AvoidKeyboard] for how
+// the content makes room.
 func OnScreenKeyboard() KeyboardView { return KeyboardView{} }
 
 // ViewType implements gift.View.

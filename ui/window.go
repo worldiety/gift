@@ -55,6 +55,17 @@ import (
 //
 //	return ui.Window(body, ui.OnScreenKeyboard()).Align(geom.Bottom)
 //
+// # The on-screen keyboard makes room for itself
+//
+// With an [OnScreenKeyboard] among the content, as in the example above, the
+// content is laid out in the part of the window above the keyboard while it is
+// showing, and gets the whole window back when it goes away: scroll views get
+// a shorter viewport, a button pinned to the bottom of a screen stays above
+// the keys, and a [Modal] sheet is centred in the remaining space. The page
+// background stays full size behind the keyboard. That is the default of every
+// [ZStack] holding a keyboard; [Overlay.AvoidKeyboard] has the reasons and the
+// way to turn it off.
+//
 // # The two-level hierarchy this makes real
 //
 // [ColorBackground] is the page and [ColorSurface] is what is raised on it —
@@ -70,5 +81,9 @@ func Window(content ...gift.View) Overlay {
 	children := make([]gift.View, 0, len(content)+1)
 	children = append(children, Box().Background(ColorBackground))
 	children = append(children, content...)
-	return ZStack(children...)
+	o := ZStack(children...)
+	// The plate is the one child that stays behind the keyboard when the
+	// others make room for it; see [Overlay.AvoidKeyboard].
+	o.plate = true
+	return o
 }
