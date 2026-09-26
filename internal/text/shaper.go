@@ -41,7 +41,68 @@ type Request struct {
 	// not broken, and the resulting line is wider than MaxWidth. See
 	// [Paragraph.Overflow].
 	MaxWidth float32
+	// MaxLines limits the paragraph to its first n visual lines. Zero or
+	// less, the default, means no limit.
+	//
+	// It is part of the request and not something a caller does to the
+	// result, because of Truncation below: an ellipsis changes the glyphs of
+	// the last line, and glyphs are this package's business. A caller that
+	// dropped lines itself could only ever cut hard. The price of that is a
+	// separate cache entry per limit, which costs nothing in practice — a
+	// label is shown with one limit, not with several.
+	MaxLines int
+	// Truncation selects what happens to the last visible line when the
+	// text does not fit: when MaxLines dropped lines after it, or when it is
+	// itself wider than MaxWidth. The zero value, [TruncateNone], cuts hard
+	// and leaves the last line as it was; see [Truncation] for the others.
+	//
+	// Truncation never applies to any line but the last visible one. A word
+	// wider than the limit on an earlier line keeps overflowing honestly,
+	// because an ellipsis in the middle of a paragraph would claim the text
+	// continues somewhere it does not.
+	Truncation Truncation
 }
+
+// Truncation selects whether and where the last visible line of a
+// [Paragraph] is shortened with an ellipsis when the text does not fit.
+//
+// # Why this is in the shaper and not in a painter
+//
+// Because the ellipsis has to be part of the one shaping result that measuring
+// and drawing share; see "One shaping result, used twice" in the package
+// documentation. A painter that drew "..." after a hard cut would place a
+// glyph at a position no measurement ever saw, and a layout that measured the
+// cut text without it would report a width nothing draws. Here the elided line
+// is an ordinary [Line]: its width is the sum of the advances of the glyphs it
+// really has, the ellipsis included.
+//
+// # What is hidden is still reported
+//
+// The project plan, section 7, forbids content that does not fit from
+// disappearing quietly, and an ellipsis is a visible mark but not a number.
+// [Paragraph.Hidden] carries the number, and ui reports it as overflow exactly
+// as it did for the hard cut that came before this type.
+type Truncation uint8
+
+const (
+	// TruncateNone drops the lines past Request.MaxLines and changes nothing
+	// else. The last visible line keeps its honest width, even when that is
+	// wider than the limit. This is the default and what every request
+	// without a Truncation gets.
+	TruncateNone Truncation = iota
+	// TruncateTail ends the last visible line with an ellipsis: as much of
+	// the rest of its source paragraph as fits, then "…". It is what a label
+	// with a line limit wants, and what ui uses unless told otherwise.
+	TruncateTail
+	// TruncateMiddle keeps the start and the end of the rest of the text and
+	// puts the ellipsis between them, for strings whose end matters as much
+	// as their start: a file path, a file name with its extension.
+	TruncateMiddle
+	// TruncateHead drops the start of the rest of the text and begins the
+	// last visible line with the ellipsis, so that the end of the text is
+	// what stays visible.
+	TruncateHead
+)
 
 // Config configures the shaping cache of a [Shaper].
 type Config struct {
@@ -113,11 +174,17 @@ func (s Stats) HitRatio() float64 {
 // two reasons: a NaN key would never match itself and would leak an entry per
 // lookup, and two sizes that differ by less than the 1/64 pixel the shaper can
 // represent produce identical output and should share an entry.
+//
+// maxLines and trunc are normalised in [Shaper.validate]: a limit of zero or
+// less is zero, and a truncation mode that is out of range panics there rather
+// than silently becoming a second key for the same result.
 type cacheKey struct {
-	text  string
-	font  *Font
-	size  int32
-	width int32
+	text     string
+	font     *Font
+	size     int32
+	width    int32
+	maxLines int32
+	trunc    Truncation
 }
 
 // widthUnbounded is the quantised width of an unbounded request. No finite
@@ -288,11 +355,20 @@ func (s *Shaper) validate(req Request) cacheKey {
 		}
 		width = int32(w)
 	}
+	if req.Truncation > TruncateHead {
+		panic(fmt.Sprintf("gift/internal/text: Request.Truncation is %d, which is not one of the Truncate constants", req.Truncation))
+	}
+	maxLines := int32(0)
+	if req.MaxLines > 0 {
+		maxLines = int32(min(req.MaxLines, math.MaxInt32))
+	}
 	return cacheKey{
-		text:  req.Text,
-		font:  req.Font,
-		size:  int32(math.Round(float64(req.Size) * 64)),
-		width: width,
+		text:     req.Text,
+		font:     req.Font,
+		size:     int32(math.Round(float64(req.Size) * 64)),
+		width:    width,
+		maxLines: maxLines,
+		trunc:    req.Truncation,
 	}
 }
 
@@ -324,6 +400,9 @@ func (s *Shaper) build(key cacheKey, req Request) *Paragraph {
 	for _, para := range s.paras {
 		s.shapeParagraph(e, req.Font, size, para, bounded, maxWidth)
 	}
+	// Still in pass one: the line limit and the ellipsis rewrite the tail of
+	// the temporary ranges, and nothing points into e.glyphs yet.
+	hidden := s.truncate(e, req, key, size, metrics, bounded, maxWidth)
 
 	// Pass two: materialise the runs, then the lines. Runs first and lines
 	// second, because a Line points into the run array and that array must be
@@ -357,6 +436,7 @@ func (s *Shaper) build(key cacheKey, req Request) *Paragraph {
 		Metrics:  metrics,
 		Lines:    e.lines,
 		Overflow: overflowOf(widest, req.MaxWidth),
+		Hidden:   hidden,
 	}
 	if borrowChecks {
 		// Stamp this incarnation of the entry. evictTail bumps the shared
