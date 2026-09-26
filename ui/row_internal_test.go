@@ -37,13 +37,13 @@ func TestTheLargestRowBuildsItsChildrenInOneAllocation(t *testing.T) {
 
 	// The fixture has to take every append, or the count below would be
 	// satisfied by a row that simply has fewer children than the capacity.
-	if got := len(widest.parts()); got != 6 {
+	if got, _, _ := widest.parts(); len(got) != 6 {
 		t.Fatalf("the widest row this type can produce has %d children, not the 6 the capacity "+
 			"in RowView.parts is claimed to be exact for. Either an append was added or one "+
-			"was removed; the capacity and this test both have to follow.", got)
+			"was removed; the capacity and this test both have to follow.", len(got))
 	}
 
-	parts := widest.parts()
+	parts, _, _ := widest.parts()
 	if got := cap(parts); got != len(parts) {
 		t.Errorf("the children of the widest row came back in a slice of length %d and capacity "+
 			"%d. The capacity in RowView.parts is supposed to be exact for this row, so the "+
