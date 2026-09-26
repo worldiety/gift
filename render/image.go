@@ -1,5 +1,7 @@
 package render
 
+import "github.com/worldiety/gift/geom"
+
 // ImageID names one image resource that is resident in a backend right now.
 //
 // It is an index into backend owned storage and nothing else: no pointer, no
@@ -123,4 +125,77 @@ type Images interface {
 	// used sweep to notice. A resource that the frame in progress has already
 	// drawn is *not* released immediately; see the backend implementation.
 	Deallocate(h ImageHandle)
+}
+
+// ImageFit is how an [OpImage] maps its texture onto [Op.Bounds].
+//
+// # Why the display list learned a crop after all
+//
+// [OpImage] used to state that a crop is a clip: the producer pushed the tile
+// rectangle, emitted an oversized Bounds and popped, and the backend trimmed
+// the geometry. That is exact for a rectangle and it stopped being enough the
+// moment a picture had to be *rounded*. The rounded shape belongs to the
+// rectangle the picture is seen in — the tile — and a clip cannot carry it:
+// the clip table holds the intersection of every enclosing clip, so a tile
+// half scrolled out of its gallery would have been rounded where the viewport
+// cut it rather than where its own corners are. The operation therefore has to
+// know the destination rectangle and the crop separately, and there were three
+// ways to say so:
+//
+//   - A source rectangle in [Op]. Sixteen bytes on every operation of every
+//     list, which is the growth [OpImage] refused the first time, for reasons
+//     that have not changed.
+//   - A side table of source rectangles and an index into it. Four bytes on
+//     every operation, and the only crop gift ever produces is the one below.
+//   - This: one byte that names the mapping, in the three bytes of padding
+//     [Op] already had after Kind. It costs nothing — TestOpIsStillPlainOldData
+//     still says 72 — and the backend computes the crop from the texture size
+//     it already knows, with the arithmetic of [ImageFit.Source] so that the
+//     two sides cannot drift.
+//
+// The clip is still the answer for any *other* crop: an off centre or an
+// animated one is an oversized Bounds under a clip, exactly as before, and
+// only its corners are square.
+type ImageFit uint8
+
+const (
+	// ImageStretch maps the whole texture onto Bounds, whatever the aspect
+	// ratios. It is the zero value and the historical meaning of [OpImage];
+	// a letterboxed picture is a smaller Bounds, which the producer computes.
+	ImageStretch ImageFit = iota
+	// ImageCover preserves the aspect ratio of the texture, scales it until
+	// it covers Bounds and crops the overhang symmetrically, so the centre of
+	// the picture is the centre of Bounds. Bounds is then the rectangle the
+	// picture is *seen* in, which is what a rounded corner is measured on.
+	ImageCover
+)
+
+// Source returns the rectangle of a w by h texture, in texels, that f maps
+// onto dst.
+//
+// For [ImageStretch] that is the whole texture. For [ImageCover] it is the
+// largest centred rectangle with the aspect ratio of dst that fits inside the
+// texture: the part of the picture that survives the crop. A degenerate dst or
+// texture returns the whole texture,
+// because there is no aspect ratio to preserve and the operation is skipped
+// for its empty bounds anyway.
+//
+// It is exported so that a backend and a test compute the crop with one piece
+// of arithmetic; see [Shadow.Extent] for the same rule applied to shadows.
+func (f ImageFit) Source(dst geom.Rect, w, h int) geom.Rect {
+	full := geom.Rc(0, 0, float32(w), float32(h))
+	if f != ImageCover || w <= 0 || h <= 0 {
+		return full
+	}
+	dw, dh := dst.Width(), dst.Height()
+	if !(dw > 0) || !(dh > 0) {
+		return full
+	}
+	tw, th := float32(w), float32(h)
+	// The scale that makes the texture cover dst is the larger of the two
+	// axis ratios; the visible part of the texture is dst divided by it.
+	s := max(dw/tw, dh/th)
+	sw, sh := min(dw/s, tw), min(dh/s, th)
+	x0, y0 := (tw-sw)*0.5, (th-sh)*0.5
+	return geom.Rc(x0, y0, x0+sw, y0+sh)
 }

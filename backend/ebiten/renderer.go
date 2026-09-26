@@ -23,6 +23,9 @@ var kawaseDownSrc []byte
 //go:embed kawase_up.kage
 var kawaseUpSrc []byte
 
+//go:embed roundimage.kage
+var roundImageSrc []byte
+
 // ShapeShaderSource returns the Kage source of the shared shape shader.
 //
 // It is exported so that a test can compile it without a window;
@@ -38,6 +41,10 @@ func GlassShaderSource() []byte { return glassShaderSrc }
 // KawaseShaderSources returns the downsample and upsample shaders of the
 // dual-Kawase chain.
 func KawaseShaderSources() (down, up []byte) { return kawaseDownSrc, kawaseUpSrc }
+
+// RoundImageShaderSource returns the Kage source of the rounded picture
+// shader, under the same rule as [ShapeShaderSource].
+func RoundImageShaderSource() []byte { return roundImageSrc }
 
 // aaPad is how far the geometry of an antialiased shape is grown beyond its
 // bounds, in device pixels. It is converted to local units per axis by
@@ -134,6 +141,12 @@ type Renderer struct {
 	// rectangle happens to be, and the ladder of asset.Config.Sizes only
 	// promises to be *near* it.
 	imageOpts eb.DrawTrianglesOptions
+	// roundImageShader draws a picture with rounded corners, and
+	// roundImageOpts are its options. Images[0] is set to the texture of the
+	// batch for the duration of one draw call and cleared again, so the
+	// options never keep a texture alive. See [Renderer.appendRoundImage].
+	roundImageShader *eb.Shader
+	roundImageOpts   eb.DrawTrianglesShaderOptions
 
 	// atlas is the glyph atlas. It is created by NewRenderer and is the only
 	// thing in this package that knows what a glyph looks like.
@@ -207,6 +220,8 @@ type Renderer struct {
 	imageBatches uint64
 	glyphQuads   uint64
 	imageOps     uint64
+	// roundImageOps is the subset of imageOps drawn with rounded corners.
+	roundImageOps uint64
 
 	// shadowOps counts shadow operations that produced geometry and
 	// shadowSharpOps the subset of them with no blur at all. There is no
@@ -251,6 +266,13 @@ const (
 	// batched with anything: a material region is a barrier, so it is always
 	// a batch of exactly one quad. See [Renderer.appendMaterial].
 	MaterialGlass
+	// MaterialRoundImage is a picture with rounded corners: the texture of
+	// one image drawn through the rounded picture shader. It is a material of
+	// its own rather than a flavour of MaterialImage because it is a
+	// different program, and a batch is one program and one texture. Two
+	// rounded pictures of the same texture in a row still share a batch. See
+	// [Renderer.appendRoundImage].
+	MaterialRoundImage
 )
 
 // String makes a failing test readable.
@@ -264,6 +286,8 @@ func (m Material) String() string {
 		return "image"
 	case MaterialGlass:
 		return "glass"
+	case MaterialRoundImage:
+		return "round image"
 	default:
 		return "none"
 	}
@@ -291,15 +315,20 @@ func NewRenderer() (*Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gift/backend/ebiten: compiling the Kawase upsample shader: %w", err)
 	}
+	ri, err := eb.NewShader(roundImageSrc)
+	if err != nil {
+		return nil, fmt.Errorf("gift/backend/ebiten: compiling the rounded picture shader: %w", err)
+	}
 	r := &Renderer{
-		shader:      sh,
-		glassShader: gl,
-		downShader:  down,
-		upShader:    up,
-		atlas:       NewGlyphAtlas(AtlasConfig{}),
-		textures:    NewTextureCache(TextureConfig{}),
-		targets:     NewTargetPool(TargetConfig{}),
-		policy:      NewGlassPolicy(GlassPolicyConfig{}),
+		shader:           sh,
+		glassShader:      gl,
+		downShader:       down,
+		upShader:         up,
+		roundImageShader: ri,
+		atlas:            NewGlyphAtlas(AtlasConfig{}),
+		textures:         NewTextureCache(TextureConfig{}),
+		targets:          NewTargetPool(TargetConfig{}),
+		policy:           NewGlassPolicy(GlassPolicyConfig{}),
 	}
 	r.glyphOpts.ColorScaleMode = eb.ColorScaleModePremultipliedAlpha
 	r.imageOpts.ColorScaleMode = eb.ColorScaleModePremultipliedAlpha
@@ -803,14 +832,21 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 	r.appendTransformed(quad, clip, xf, shape)
 }
 
-// appendImage turns one [render.OpImage] into a textured quad.
+// appendImage turns one [render.OpImage] into a textured quad, or into the
+// four quads of a rounded picture.
 //
-// The whole texture is mapped onto the operation's bounds. There is no source
-// rectangle in the display list — see [render.OpImage] for why — so cropping
-// is a clip, and the clip is applied here exactly as it is for a glyph: the
-// visible rectangle is the intersection and the texture coordinates are
-// interpolated into it. A cropped tile therefore costs no fragments for the
-// part that is cut away, because the geometry is trimmed before it is emitted.
+// The texture is mapped onto the operation's bounds as [render.ImageFit]
+// says: the whole of it for a stretch, the centred crop of
+// [render.ImageFit.Source] for a cover. Any other crop is a clip, and the clip
+// is applied here exactly as it is for a glyph: the visible rectangle is the
+// intersection and the texture coordinates are interpolated into it. A
+// cropped tile therefore costs no fragments for the part that is cut away,
+// because the geometry is trimmed before it is emitted.
+//
+// A radius, clamped exactly as [Renderer.appendOp] clamps the radius of a
+// rounded fill, sends the picture to [Renderer.appendRoundImage]. A radius of
+// zero keeps the cheaper path: Ebitengine's own linear filter and no distance
+// field at all.
 func (r *Renderer) appendImage(l *render.List, op render.Op) {
 	if op.Color.IsTransparent() {
 		r.skipTransparent++
@@ -841,13 +877,21 @@ func (r *Renderer) appendImage(l *render.List, op render.Op) {
 		return
 	}
 
-	src := geom.Rc(0, 0, float32(w), float32(h))
+	src := op.Fit.Source(b, w, h)
 	xf := l.Xform(op.Xform)
-	r.material(MaterialImage, img)
+	// The clamp of appendOp, for the same reason: a per operation constant
+	// is computed once here and not per fragment.
+	radius := min(op.CornerRadius, b.Width()*0.5, b.Height()*0.5)
 	var wrote bool
-	if xf.B == 0 && xf.C == 0 && xf.A > 0 && xf.D > 0 {
+	switch {
+	case radius > 0:
+		r.material(MaterialRoundImage, img)
+		wrote = r.appendRoundImage(b, src, clip, xf, op.Color, radius)
+	case xf.B == 0 && xf.C == 0 && xf.A > 0 && xf.D > 0:
+		r.material(MaterialImage, img)
 		wrote = r.appendTexturedQuad(b, src, clip, xf, op.Color)
-	} else {
+	default:
+		r.material(MaterialImage, img)
 		wrote = r.appendTexturedQuadTransformed(b, src, clip, xf, op.Color)
 	}
 	if !wrote {
@@ -855,7 +899,188 @@ func (r *Renderer) appendImage(l *render.List, op render.Op) {
 		return
 	}
 	r.imageOps++
+	if radius > 0 {
+		r.roundImageOps++
+	}
 	r.emitted++
+}
+
+// appendRoundImage emits a picture with rounded corners as four quads, one
+// per quadrant of its bounds, for the rounded picture shader.
+//
+// # Why four quads and not one
+//
+// Because the shader receives the distance field half evaluated: the
+// attribute is q = |p| - halfExtent + radius rather than the position p, which
+// saves the two slots the half extents would have needed and which a textured
+// vertex does not have; roundimage.kage has the arithmetic. |p| is not affine
+// across the centre of the box, and a vertex attribute is interpolated
+// affinely, so one quad would fold the distance field into a wrong shape. On
+// each side of both centre lines the sign of p is fixed and q is exactly
+// affine, so each quadrant is interpolated without error — also after the
+// clip has cut it, because clipping a convex piece only shrinks it and never
+// carries it across a centre line.
+//
+// The price is sixteen vertices and eight triangles per picture instead of
+// four and two. The fragments are the same ones, since the four quads tile the
+// one they replace.
+//
+// # The quads are grown by the antialiasing pad
+//
+// One device pixel on every side, exactly like a rounded fill, because the
+// coverage ramp is centred on the boundary and its outer half lies outside the
+// bounds. The texture coordinates are extrapolated into the pad along with
+// the position; for a cover crop that samples the picture just beyond the
+// crop, which is the right neighbour, and at the edge of the texture the
+// shader clamps. It is also why a rounded picture and a rounded fill of the
+// same bounds cover the same pixels, which [render.OpImage] promises.
+func (r *Renderer) appendRoundImage(b, src, clip geom.Rect, xf geom.Affine2D, col render.Color, radius float32) bool {
+	sx, sy := deviceScale(xf)
+	// The single factor of the radius, as for a rounded fill; see
+	// [Renderer.appendOp] for why the smaller one is the safe choice.
+	rd := radius * min(sx, sy)
+
+	if xf.B == 0 && xf.C == 0 && xf.A > 0 && xf.D > 0 {
+		// The fast path: the box is an axis aligned rectangle in device
+		// space too, so everything is computed there and the clip is a
+		// rectangle intersection per quadrant.
+		dev := geom.Rc(
+			xf.A*b.Min.X+xf.TX, xf.D*b.Min.Y+xf.TY,
+			xf.A*b.Max.X+xf.TX, xf.D*b.Max.Y+xf.TY)
+		m := newRoundImageMap(dev, src, 1, 1, rd, col)
+		xs := [3]float32{dev.Min.X - aaPad, m.c.X, dev.Max.X + aaPad}
+		ys := [3]float32{dev.Min.Y - aaPad, m.c.Y, dev.Max.Y + aaPad}
+		wrote := false
+		for j := range 2 {
+			for i := range 2 {
+				vis := geom.Rc(xs[i], ys[j], xs[i+1], ys[j+1]).Intersect(clip)
+				if vis.IsEmpty() {
+					continue
+				}
+				base := uint32(len(r.verts))
+				r.verts = append(r.verts,
+					m.vertex(vis.Min.X, vis.Min.Y, vis.Min.X, vis.Min.Y),
+					m.vertex(vis.Max.X, vis.Min.Y, vis.Max.X, vis.Min.Y),
+					m.vertex(vis.Max.X, vis.Max.Y, vis.Max.X, vis.Max.Y),
+					m.vertex(vis.Min.X, vis.Max.Y, vis.Min.X, vis.Max.Y),
+				)
+				r.idx = append(r.idx, base, base+1, base+2, base, base+2, base+3)
+				wrote = true
+			}
+		}
+		return wrote
+	}
+
+	// The general path: the quadrants are cut in local space, mapped into
+	// device space and clipped as convex polygons. The clipper interpolates
+	// the local position, and the texture coordinate and q follow from it
+	// per vertex, because both are affine in it inside one quadrant. gift
+	// produces no transform that takes this path; it exists for the same
+	// reason [Renderer.appendTexturedQuadTransformed] does.
+	m := newRoundImageMap(b, src, sx, sy, rd, col)
+	padX, padY := aaPad/sx, aaPad/sy
+	xs := [3]float32{b.Min.X - padX, m.c.X, b.Max.X + padX}
+	ys := [3]float32{b.Min.Y - padY, m.c.Y, b.Max.Y + padY}
+	wrote := false
+	for j := range 2 {
+		for i := range 2 {
+			poly := &r.poly[0]
+			other := &r.poly[1]
+			corners := [4]geom.Point{
+				{X: xs[i], Y: ys[j]},
+				{X: xs[i+1], Y: ys[j]},
+				{X: xs[i+1], Y: ys[j+1]},
+				{X: xs[i], Y: ys[j+1]},
+			}
+			for k, c := range corners {
+				d := xf.Apply(c)
+				poly[k] = clipVertex{dx: d.X, dy: d.Y, lx: c.X, ly: c.Y}
+			}
+			n := 4
+			n = clipHalfPlane(poly, n, other, edgeLeft, clip.Min.X)
+			poly, other = other, poly
+			n = clipHalfPlane(poly, n, other, edgeRight, clip.Max.X)
+			poly, other = other, poly
+			n = clipHalfPlane(poly, n, other, edgeTop, clip.Min.Y)
+			poly, other = other, poly
+			n = clipHalfPlane(poly, n, other, edgeBottom, clip.Max.Y)
+			poly = other
+			if n < 3 {
+				continue
+			}
+			base := uint32(len(r.verts))
+			for k := 0; k < n; k++ {
+				v := poly[k]
+				r.verts = append(r.verts, m.vertex(v.dx, v.dy, v.lx, v.ly))
+			}
+			for k := 1; k < n-1; k++ {
+				r.idx = append(r.idx, base, base+uint32(k), base+uint32(k)+1)
+			}
+			wrote = true
+		}
+	}
+	return wrote
+}
+
+// roundImageMap is what one vertex of a rounded picture is computed from: the
+// box in the space the vertices are placed in, the texture rectangle mapped
+// onto it, and the factors that turn that space into device pixels.
+//
+// On the fast path the space is device space and the scale is one; on the
+// general path it is local space and the scale is [deviceScale]. Either way
+// the attributes that leave here are texels and device pixels.
+type roundImageMap struct {
+	// box is the rectangle of the picture, c its centre and hw, hh its half
+	// extents, all in the space of the positions passed to vertex.
+	box    geom.Rect
+	c      geom.Point
+	hw, hh float32
+	// src is the texture rectangle mapped onto the box, and du and dv texels
+	// per unit of that space.
+	src    geom.Rect
+	du, dv float32
+	// sx and sy are device pixels per unit of that space, per axis.
+	sx, sy float32
+	// radius is the corner radius in device pixels, already clamped.
+	radius float32
+	col    render.Color
+}
+
+func newRoundImageMap(box, src geom.Rect, sx, sy, radius float32, col render.Color) roundImageMap {
+	return roundImageMap{
+		box: box,
+		c:   geom.Point{X: (box.Min.X + box.Max.X) * 0.5, Y: (box.Min.Y + box.Max.Y) * 0.5},
+		hw:  box.Width() * 0.5, hh: box.Height() * 0.5,
+		src: src, du: src.Width() / box.Width(), dv: src.Height() / box.Height(),
+		sx: sx, sy: sy, radius: radius, col: col,
+	}
+}
+
+// vertex builds one vertex at device position (dx, dy) whose position in the
+// space of m is (x, y).
+//
+// q is the first line of sdRoundBox, evaluated here because it is affine
+// inside the quadrant the vertex belongs to; see [Renderer.appendRoundImage].
+func (m *roundImageMap) vertex(dx, dy, x, y float32) eb.Vertex {
+	ax, ay := x-m.c.X, y-m.c.Y
+	if ax < 0 {
+		ax = -ax
+	}
+	if ay < 0 {
+		ay = -ay
+	}
+	return eb.Vertex{
+		DstX: dx, DstY: dy,
+		SrcX:    m.src.Min.X + (x-m.box.Min.X)*m.du,
+		SrcY:    m.src.Min.Y + (y-m.box.Min.Y)*m.dv,
+		ColorR:  m.col.R,
+		ColorG:  m.col.G,
+		ColorB:  m.col.B,
+		ColorA:  m.col.A,
+		Custom0: (ax-m.hw)*m.sx + m.radius,
+		Custom1: (ay-m.hh)*m.sy + m.radius,
+		Custom2: m.radius,
+	}
 }
 
 // material starts a new batch when the material of the next primitive differs
@@ -1409,6 +1634,12 @@ func (r *Renderer) flush() {
 		r.dst.DrawTriangles32(r.verts, r.idx, r.curPage, &r.glyphOpts)
 	case r.curMat == MaterialImage:
 		r.dst.DrawTriangles32(r.verts, r.idx, r.curPage, &r.imageOpts)
+	case r.curMat == MaterialRoundImage:
+		// The texture goes into the options for exactly one call and out
+		// again, so the reused options never keep an evicted texture alive.
+		r.roundImageOpts.Images[0] = r.curPage
+		r.dst.DrawTrianglesShader32(r.verts, r.idx, r.roundImageShader, &r.roundImageOpts)
+		r.roundImageOpts.Images[0] = nil
 	default:
 		r.dst.DrawTrianglesShader32(r.verts, r.idx, r.shader, &r.opts)
 	}
@@ -1417,7 +1648,7 @@ func (r *Renderer) flush() {
 	switch r.curMat {
 	case MaterialGlyph:
 		r.glyphBatches++
-	case MaterialImage:
+	case MaterialImage, MaterialRoundImage:
 		r.imageBatches++
 	default:
 		r.shapeBatches++
@@ -1459,7 +1690,8 @@ type RendererStats struct {
 	// order, and per atlas page switch inside such a run. See
 	// [Renderer.material] for why they are not sorted together.
 	ShapeBatches, GlyphBatches uint64
-	// ImageBatches is the number of draw calls issued for image material.
+	// ImageBatches is the number of draw calls issued for image material,
+	// square and rounded pictures together.
 	// One per run of consecutive operations sampling the same texture, so a
 	// gallery of sixty visible thumbnails issues sixty of them.
 	//
@@ -1475,6 +1707,12 @@ type RendererStats struct {
 	ImageBatches uint64
 	// ImageOps is the number of image operations that produced geometry.
 	ImageOps uint64
+	// RoundImageOps is the subset of ImageOps drawn with rounded corners,
+	// through the rounded picture shader rather than Ebitengine's own linear
+	// filter. The two cost the same four texel fetches per fragment; the
+	// rounded one adds a distance field and twelve vertices per picture. See
+	// [Renderer.appendRoundImage].
+	RoundImageOps uint64
 	// GlyphQuads is the number of glyph quads emitted. Together with Ops it
 	// says how much of a frame is text.
 	GlyphQuads uint64
@@ -1620,6 +1858,7 @@ func (r *Renderer) Stats() RendererStats {
 		GlyphBatches:       r.glyphBatches,
 		ImageBatches:       r.imageBatches,
 		ImageOps:           r.imageOps,
+		RoundImageOps:      r.roundImageOps,
 		GlyphQuads:         r.glyphQuads,
 		ShadowOps:          r.shadowOps,
 		ShadowSharpOps:     r.shadowSharpOps,

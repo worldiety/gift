@@ -41,31 +41,55 @@ const (
 	// shadow with a spread and an offset but no blur is. StrokeWidth is
 	// ignored: a shadow is never stroked.
 	OpShadow
-	// OpImage draws the whole of the image resource named by Image into
-	// Bounds, modulated by Color.
+	// OpImage draws the image resource named by Image into Bounds, modulated
+	// by Color, with its corners rounded by CornerRadius.
 	//
-	// The mapping is the obvious affine one: the full texture is stretched
-	// onto Bounds. There is deliberately no source rectangle in an operation,
-	// and that is a decision with a reason rather than an omission. Four more
-	// float32 would have grown every operation of every list by sixteen
-	// bytes, and the two things a source rectangle is wanted for are both
-	// already expressible:
+	// The mapping is selected by Fit; see [ImageFit]. The zero value stretches
+	// the full texture onto Bounds, which is the obvious affine mapping and
+	// what this operation did before it had a Fit at all. There is still no
+	// general source rectangle in an operation, and that remains a decision
+	// with a reason rather than an omission: four more float32 would grow
+	// every operation of every list by sixteen bytes, and what a source
+	// rectangle is wanted for is expressible without it:
 	//
 	//   - Letterboxing is a *smaller Bounds*. The producer knows the aspect
 	//     ratio of the picture it asked for, so it computes the fitted
 	//     rectangle and emits that.
-	//   - Cropping to fill is a *clip*. The producer pushes the tile
-	//     rectangle, emits an oversized Bounds and pops. The backend already
-	//     clips exactly, at vertex level, interpolating the texture
-	//     coordinates along with the corners — which is the same machinery a
-	//     source rectangle would have needed anyway, minus the sixteen bytes.
+	//   - Cropping to fill is [ImageCover]: Bounds is the rectangle the
+	//     picture is seen in and the backend crops the texture symmetrically,
+	//     with the arithmetic of [ImageFit.Source].
+	//   - Any other crop is a *clip*. The producer pushes the visible
+	//     rectangle, emits an oversized Bounds and pops. The backend clips
+	//     exactly, at vertex level, interpolating the texture coordinates
+	//     along with the corners.
+	//
+	// Cropping to fill used to be the clip of the last item, and [ImageFit]
+	// records why it no longer is: a clip cannot carry the rounded corners of
+	// the rectangle the picture is seen in.
+	//
+	// # Rounded corners
+	//
+	// CornerRadius rounds Bounds exactly as it rounds an [OpFillRoundRect]:
+	// the same clamp to half the smaller edge, the same antialiased edge one
+	// device pixel wide, centred on the boundary. So a rounded picture and a
+	// rounded fill of the same Bounds and radius cover the same pixels to the
+	// same degree, which is what lets a placeholder turn into its picture
+	// without changing shape, and what lets an [OpStrokeRoundRect] of the same
+	// Bounds and radius sit on its edge: the outer contour of the stroke is the
+	// contour of the picture, and its inner contour is the concentric one of
+	// radius max(0, CornerRadius-StrokeWidth).
+	//
+	// Rounding is a property of this operation and not a clip. A rounded clip
+	// would have to be intersected with every enclosing clip, and two rounded
+	// rectangles do not intersect to a rounded rectangle; the picture, on the
+	// other hand, knows its own shape. A radius of zero or less is the plain
+	// textured quad, which is cheaper to shade; see the backend.
 	//
 	// Color is a *tint*, premultiplied like every other colour here. Opaque
 	// white leaves the picture alone; a lower alpha fades it over whatever is
 	// behind it, which is how a cross fade or a disabled state is drawn
 	// without a second material. A fully transparent colour skips the
-	// operation. CornerRadius, StrokeWidth and Blur are ignored: rounding an
-	// image means clipping it, and that is the caller's clip.
+	// operation. StrokeWidth and Blur are ignored.
 	OpImage
 	// OpMaterial declares a material region: a background whose appearance
 	// depends on what was drawn before it. Bounds is the region, CornerRadius
@@ -140,8 +164,9 @@ const (
 // again after the first frames.
 //
 // The four bytes of [OpMaterial] are Material, and they take the struct from
-// 68 to 72 bytes. Measured with unsafe.Sizeof in TestOpSize, which pins the
-// number so that the next field is a decision and not an accident.
+// 68 to 72 bytes. Measured with unsafe.Sizeof in TestOpIsStillPlainOldData,
+// which pins the number so that the next field is a decision and not an
+// accident. (This note used to name a TestOpSize that never existed.)
 //
 // This one was worth arguing about, because a material operation is rare —
 // one or two per frame against hundreds of fills — and four bytes on every
@@ -166,9 +191,19 @@ const (
 // The cost is measured rather than assumed: BenchmarkFramePath is unchanged at
 // 0 B/op, and a frame of a thousand operations grew from 68 to 72 kilobytes of
 // reused backing array.
+//
+// Fit, the crop mode of [OpImage], did not grow it: it is one byte in the
+// padding after Kind. See [ImageFit] for why it had to exist.
 type Op struct {
 	// Kind selects how the remaining fields are interpreted.
 	Kind OpKind
+	// Fit is how an [OpImage] maps its texture onto Bounds; see [ImageFit].
+	// It is ignored by every other kind.
+	//
+	// It sits directly after Kind on purpose: the two are one byte each and
+	// Bounds is four byte aligned, so Fit occupies padding the struct already
+	// had and costs nothing. Moving it below a float32 would cost four bytes.
+	Fit ImageFit
 	// Bounds is the axis aligned target rectangle in the coordinate system
 	// selected by Xform.
 	Bounds geom.Rect
@@ -176,8 +211,9 @@ type Op struct {
 	// [OpGlyphs] it is the text colour, which is where the colour of text
 	// comes from: the glyph atlas holds coverage only.
 	Color Color
-	// CornerRadius is the corner radius for the round rect kinds. It is
-	// clamped by the backend to half of the smaller edge.
+	// CornerRadius is the corner radius for the round rect kinds, a shadow,
+	// a material and an [OpImage]. It is clamped by the backend to half of the
+	// smaller edge.
 	CornerRadius float32
 	// StrokeWidth is the line width for the stroke kinds.
 	StrokeWidth float32

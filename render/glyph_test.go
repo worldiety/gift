@@ -18,7 +18,8 @@ func TestOpIsStillPlainOldData(t *testing.T) {
 	// fields with the documented alignment, which a pointer field would
 	// change.
 	// 52 before OpGlyphs, 60 after, 64 since OpShadow added Blur, 68 since
-	// OpImage added Image, 72 since OpMaterial added Material. The growth is
+	// OpImage added Image, 72 since OpMaterial added Material — and still 72
+	// after Fit, which lives in the padding behind Kind. The growth is
 	// deliberate and argued on Op; the point of this assertion is that it is
 	// never accidental.
 	const want = 72
