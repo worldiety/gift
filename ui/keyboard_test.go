@@ -19,8 +19,14 @@ import (
 // document.
 
 // kbFixture is a scrolling form whose last row is a text field, with the
-// keyboard overlaid on top of it. The form is deliberately taller than the
+// keyboard in a ZStack with it. The form is deliberately taller than the
 // window, so that revealing the field is a real scroll and not a no-op.
+//
+// By default the form makes room for the keyboard, which is what every ZStack
+// holding one does; see [ui.Overlay.AvoidKeyboard]. [newKeyboardOverlapping]
+// is the same fixture with that turned off, for the tests of the obstruction
+// reveal, which is the only thing keeping the field clear in that
+// composition.
 type kbFixture struct {
 	h      *gifttest.Harness
 	ed     *ui.TextEditor
@@ -49,6 +55,18 @@ const (
 // note on process wide state in section 13 of the project plan.
 func newKeyboard(t testing.TB, on bool) *kbFixture {
 	t.Helper()
+	return newKeyboardWith(t, on, true)
+}
+
+// newKeyboardOverlapping is [newKeyboard] with [ui.Overlay.AvoidKeyboard]
+// turned off, so that the keyboard covers the form rather than shrinking it.
+func newKeyboardOverlapping(t testing.TB) *kbFixture {
+	t.Helper()
+	return newKeyboardWith(t, true, false)
+}
+
+func newKeyboardWith(t testing.TB, on, avoid bool) *kbFixture {
+	t.Helper()
 	f := &kbFixture{ed: ui.NewTextEditor("")}
 	font := loadTestFont(t)
 
@@ -68,11 +86,13 @@ func newKeyboard(t testing.TB, on bool) *kbFixture {
 		OnSubmit(func(s string) { f.submit = append(f.submit, s) }).
 		Key("field"))
 	// Content below the field, and this is not padding for the layout's sake.
-	// A reveal can only lift the field by as much as the container can still
-	// scroll, and a container can only scroll while there is content left
-	// underneath; a field that is the last thing in a form cannot be moved
-	// above the keyboard at all. That is the honest limit of the mechanism and
-	// it is stated on [ui.SetOnScreenKeyboard].
+	// With the overlap of [newKeyboardOverlapping] a reveal can only lift the
+	// field by as much as the container can still scroll, and a container can
+	// only scroll while there is content left underneath; a field that is the
+	// last thing in a form cannot be moved above the keyboard at all. That is
+	// the honest limit of the obstruction and it is stated on
+	// [ui.KeyboardView]. The avoiding composition has no such limit, and
+	// TestTheLastFieldOfAFormIsRevealedAboveTheKeyboard is the test of that.
 	rows = append(rows, ui.Box().Frame(geom.Unbounded(), 300).
 		Background(ui.RGB(20, 20, 20)).Key("tail"))
 
@@ -80,7 +100,7 @@ func newKeyboard(t testing.TB, on bool) *kbFixture {
 		View: ui.ZStack(
 			ui.VScroll(ui.VStack(rows...).Gap(8).Padding(8)).Key("form"),
 			ui.OnScreenKeyboard().Font(font).Key("kb"),
-		).Align(geom.Bottom).Frame(kbWindowW, kbWindowH),
+		).Align(geom.Bottom).AvoidKeyboard(avoid).Frame(kbWindowW, kbWindowH),
 		Size: geom.Sz(kbWindowW, kbWindowH),
 		Font: font,
 	})
@@ -486,12 +506,23 @@ func TestTheKeyboardIsNotBuiltWhenTheSwitchIsOff(t *testing.T) {
 // TestTheFocusedFieldIsNotBehindTheKeyboard is the avoidance requirement of
 // section 19.
 //
-// The field is the last row of a form that is twice as tall as the window, so
+// The field is near the end of a form that is twice as tall as the window, so
 // before the keyboard appears it is somewhere below the fold; focusing it
-// reveals it, and the keyboard then lands on top of the place it was revealed
-// to. Only a second reveal, against the reduced viewport, can put it back.
+// reveals it, and the keyboard then appears over the place it was revealed
+// to. Only a second reveal, on the frame after, can put it back, and it has to
+// work in both compositions: against the shorter viewport of the avoiding
+// overlay, and against the obstruction of the overlapping one.
 func TestTheFocusedFieldIsNotBehindTheKeyboard(t *testing.T) {
-	f := newKeyboard(t, true)
+	t.Run("avoiding", func(t *testing.T) {
+		checkFieldNotBehindKeyboard(t, newKeyboard(t, true))
+	})
+	t.Run("overlapping", func(t *testing.T) {
+		checkFieldNotBehindKeyboard(t, newKeyboardOverlapping(t))
+	})
+}
+
+func checkFieldNotBehindKeyboard(t *testing.T, f *kbFixture) {
+	t.Helper()
 	f.field().Focus()
 
 	field, kb := f.field().Bounds(), f.kb().Bounds()
@@ -541,6 +572,16 @@ func TestTheFieldStaysTypeableAfterTheKeyboardCoveredIt(t *testing.T) {
 //
 // A reveal that scrolled unconditionally would jerk every form on every focus
 // change, which is the kind of thing that only shows up on the hardware.
+//
+// The form fills the window from the top, in a column with a flexible scroll
+// view. It used to be the bare scroll view, which shrink-wraps its short
+// content and was therefore aligned to the *bottom* of the window by the
+// overlay's alignment: straight behind the keyboard. The test passed all the
+// same, because a field that is covered and stays covered has not moved.
+// Since the overlay makes room for the keyboard (see
+// [ui.Overlay.AvoidKeyboard]) that form is lifted above the keys, which is
+// the fix of exactly that case and fails the comparison below for the right
+// reason; the fixture now asks the question its name asks.
 func TestAFormThatFitsIsNotScrolledByTheKeyboard(t *testing.T) {
 	ui.SetOnScreenKeyboard(nil, true)
 	t.Cleanup(func() { ui.SetOnScreenKeyboard(nil, false) })
@@ -548,10 +589,10 @@ func TestAFormThatFitsIsNotScrolledByTheKeyboard(t *testing.T) {
 	ed := ui.NewTextEditor("")
 	h := gifttest.New(t, gifttest.Options{
 		View: ui.ZStack(
-			ui.VScroll(ui.VStack(
+			ui.VStack(ui.VScroll(ui.VStack(
 				ui.TextField(ed).Font(font).FontSize(16).Frame(200, geom.Unbounded()).Key("field"),
 				ui.Box().Frame(geom.Unbounded(), 40).Background(ui.RGB(30, 30, 30)),
-			).Gap(8).Padding(8)).Key("form"),
+			).Gap(8).Padding(8)).Key("form").Flex(1)),
 			ui.OnScreenKeyboard().Font(font).Key("kb"),
 		).Align(geom.Bottom).Frame(kbWindowW, kbWindowH),
 		Size: geom.Sz(kbWindowW, kbWindowH),
@@ -583,8 +624,10 @@ func TestTheAdvertisedHeightIsTheHeightItTakes(t *testing.T) {
 // recommended.
 //
 // The field is the last row of the form and there is nothing below it, which
-// is precisely the case the overlay arrangement cannot fix. Here it has to
-// work, because the viewport really is smaller while the keyboard is up.
+// is precisely the case an overlapping overlay cannot fix. Here it has to
+// work, because the viewport really is smaller while the keyboard is up; the
+// avoiding overlay reaches the same layout without the column, and
+// TestTheLastFieldOfAFormIsRevealedAboveTheKeyboard is its test.
 func TestTheKeyboardInAColumnShrinksTheFormInsteadOfCoveringIt(t *testing.T) {
 	ui.SetOnScreenKeyboard(nil, true)
 	t.Cleanup(func() { ui.SetOnScreenKeyboard(nil, false) })

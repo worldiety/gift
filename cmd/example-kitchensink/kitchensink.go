@@ -124,7 +124,10 @@ func Screen(ctx *gift.Context) gift.View {
 
 	// The keyboard is an overlay over the whole application and is the last
 	// child, so it is drawn last and hit tested first. It draws nothing at all
-	// while no field has the focus.
+	// while no field has the focus, and while it is showing the rest of the
+	// window — the modal host with the tabs and the tab bar — is laid out in
+	// the space above it, so no form needs room of its own for it; see
+	// ui.Overlay.AvoidKeyboard.
 	//
 	// [ui.Window] is the first thing here and not a detail: gift paints
 	// nothing an application did not ask for, so without it the gaps between
@@ -525,12 +528,6 @@ func (s state) form() gift.View {
 				"error is visible to the naked eye.").
 				FontSize(12).Foreground(ui.ColorSecondaryLabel),
 		).Padding(12).Header("Divider"),
-
-		// Room under the last card for the keyboard. A scroll container can
-		// only lift a field by as much as it can still scroll, so a form whose
-		// last field is at the bottom stays under the keyboard without this;
-		// see ui.KeyboardView.
-		ui.Box().Frame(geom.Unbounded(), ui.OnScreenKeyboardHeight()),
 	).Gap(16).Padding(16).Flex(1)
 }
 

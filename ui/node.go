@@ -45,6 +45,19 @@ type node struct {
 	// allocation; see the type documentation.
 	bar scrollBarState
 
+	// kb is one more than the index of the child that is an on-screen
+	// keyboard the other children avoid, or zero when there is none. It is
+	// read by kindOverlay only and set by [Overlay.Build]; see
+	// [node.layoutAvoiding]. Offset by one so that the zero value, which is
+	// what every other container gets, means "no keyboard" without a
+	// separate flag.
+	kb int
+
+	// plate says that child 0 is the window background of [Window], which
+	// keeps the whole box while the other children avoid the keyboard. It is
+	// only read when kb is set.
+	plate bool
+
 	// ctx is the layout context of the call in progress. It exists so that
 	// the node can implement layout.Measurer through a pointer receiver:
 	// boxing a wrapper value into the Measurer interface on every layout
@@ -120,7 +133,11 @@ func (n *node) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 		// more than the constraints offer.
 		res.Size = cc.Constrain(size)
 	default:
-		res = layout.Overlay(n.spec.Padding, n.spec.Alignment, cc, k, n, n.items, n.origins)
+		if n.kb > 0 && n.kb <= k {
+			res = n.layoutAvoiding(cc, k)
+		} else {
+			res = layout.Overlay(n.spec.Padding, n.spec.Alignment, cc, k, n, n.items, n.origins)
+		}
 	}
 
 	for i := range k {
@@ -307,6 +324,128 @@ func (n *node) layoutLayer(ctx *gift.LayoutContext, cc geom.Constraints, k int) 
 	outer := cc.Constrain(size)
 	return layout.Result{Size: outer, Overflow: geom.Sz(
 		clampLow(size.W-outer.W), clampLow(size.H-outer.H))}
+}
+
+// layoutAvoiding is the overlay algorithm of a [ZStack] that holds an
+// on-screen keyboard: the keyboard is laid out against the whole box, and every
+// other child in the band of the box the keyboard leaves free. It is the
+// "adjust resize" of the mobile platforms, and [Overlay.AvoidKeyboard] says why
+// it is the default.
+//
+// # The algorithm
+//
+// The keyboard is measured first, with exactly the constraints
+// [layout.Overlay] would have given it, because its height is the one number
+// the rest depends on. A hidden keyboard measures zero — see [kbHidden] — and
+// then nothing below differs from [layout.Overlay] by a single pixel: the
+// constraints, the size and the origins are the same expressions with a
+// reserve of zero. That is what keeps every screen of an application without a
+// focused field, and every golden taken of one, exactly as it was.
+//
+// With a keyboard up, the other children are measured with the maximum height
+// lowered by the keyboard's, and aligned inside the band between the keyboard
+// and the opposite edge rather than inside the whole box. A flexible layout
+// therefore re-flows into the smaller band — a scroll container gets a shorter
+// viewport, a control pinned to the bottom of a screen moves up to sit on the
+// keyboard — and a scroll reveal of the focused field needs no help, because
+// there is nothing left to obstruct.
+//
+// # When nothing is reserved
+//
+// Three cases, and each falls back to plain overlap rather than to a guess:
+//
+//   - the height is unbounded, so there is no "remaining" height to hand out;
+//   - the overlay's vertical alignment is neither the top nor the bottom edge.
+//     A keyboard aligned to the middle would split the box into two bands, and
+//     a child cannot be laid out into two bands;
+//   - the keyboard is hidden, which is the zero reserve above.
+//
+// The window background of [Window] is the one other child that keeps the
+// whole box, so that the page is painted behind the keyboard too. A keyboard
+// with a translucent or rounded panel would otherwise show a strip of
+// unpainted framebuffer, which is exactly the defect [Window] exists to
+// prevent.
+//
+// It allocates nothing: the scratch buffers are the node's, as for every other
+// kind.
+func (n *node) layoutAvoiding(cc geom.Constraints, k int) layout.Result {
+	pad := n.spec.Padding
+	align := n.spec.Alignment
+	kb := n.kb - 1
+	inner := cc.Deflate(pad).Loosen()
+
+	kbs := n.MeasureChild(kb, inner)
+	n.items[kb].Size = kbs
+
+	var reserve float32
+	if inner.HasBoundedHeight() && (align.Y == 0 || align.Y == 1) && kbs.H > 0 {
+		reserve = kbs.H
+	}
+	rest := inner
+	rest.Max.H = clampLow(inner.Max.H - reserve)
+
+	w, h := kbs.W, kbs.H
+	for i := range k {
+		if i == kb {
+			continue
+		}
+		fill := n.plate && i == 0
+		c := rest
+		if fill {
+			c = inner
+		}
+		sz := n.MeasureChild(i, c)
+		n.items[i].Size = sz
+		if sz.W > w {
+			w = sz.W
+		}
+		// A child in the band needs its own height plus the keyboard's to be
+		// shown whole; the plate and the keyboard need only their own.
+		eh := sz.H
+		if !fill {
+			eh += reserve
+		}
+		if eh > h {
+			h = eh
+		}
+	}
+
+	content := geom.Sz(w, h).Outset(pad)
+	outer := cc.Constrain(content)
+	inside := geom.Sz(
+		clampLow(outer.W-pad.Horizontal()),
+		clampLow(outer.H-pad.Vertical()),
+	)
+	// The band the keyboard leaves free: above it when it sits on the bottom
+	// edge, below it when it sits on the top one. With no reserve it is the
+	// whole inside, which is the plain overlay.
+	bandTop := pad.Top
+	if align.Y == 0 {
+		bandTop += reserve
+	}
+	bandH := clampLow(inside.H - reserve)
+	for i := range k {
+		sz := n.items[i].Size
+		x := pad.Left + (inside.W-sz.W)*align.X
+		if i == kb || (n.plate && i == 0) {
+			n.origins[i] = geom.Pt(x, pad.Top+(inside.H-sz.H)*align.Y)
+			continue
+		}
+		n.origins[i] = geom.Pt(x, bandTop+(bandH-sz.H)*align.Y)
+	}
+	return layout.Result{Size: outer, Overflow: geom.Sz(
+		overflowBy(content.W, outer.W), overflowBy(content.H, outer.H))}
+}
+
+// overflowBy is how far content exceeds permitted, zero when it does not and
+// zero for an unbounded or NaN difference, which is the rule of the excess in
+// internal/layout: an infinity must not travel into the diagnostics.
+func overflowBy(content, permitted float32) float32 {
+	d := content - permitted
+	if !(d > 0) || !isFinite(d) {
+		return 0
+	}
+	return d
 }
 
 // clampLow returns v or zero, whichever is larger.

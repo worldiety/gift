@@ -14,6 +14,15 @@ var zstackType = gift.RegisterType("ui.ZStack")
 type Overlay struct {
 	base
 	children []gift.View
+
+	// coverContent is [Overlay.AvoidKeyboard] negated, so that the zero
+	// value — every ZStack nobody configured — is the default of avoiding.
+	coverContent bool
+
+	// plate marks child 0 as the window background of [Window]; see
+	// [node.layoutAvoiding] for why it is the one child that is not moved
+	// out from under the keyboard.
+	plate bool
 }
 
 // ZStack draws its children on top of each other, first child at the bottom.
@@ -22,6 +31,10 @@ type Overlay struct {
 // Every child is measured with the same loose but bounded constraints, so a
 // greedy child such as an unframed [Box] fills the whole box on both axes.
 // A child's Flex is ignored; see [Overlay.Flex] for why.
+//
+// The one exception is a direct child that is an [OnScreenKeyboard]: while it
+// is showing, the other children are laid out in the part of the box it does
+// not cover. See [Overlay.AvoidKeyboard].
 func ZStack(children ...gift.View) Overlay {
 	return Overlay{children: children}
 }
@@ -30,9 +43,101 @@ func ZStack(children ...gift.View) Overlay {
 func (o Overlay) ViewType() gift.TypeID { return zstackType }
 
 // Build implements gift.View.
+//
+// It is also where the keyboard child is found, by its type, once per build;
+// the layout pass then reads one int. See [Overlay.AvoidKeyboard].
 func (o Overlay) Build(*gift.BuildContext) gift.Element {
-	return element(o.base, kindOverlay, 0, layout.Vertical, layout.CrossAlignPosition, o.children)
+	e := element(o.base, kindOverlay, 0, layout.Vertical, layout.CrossAlignPosition, o.children)
+	if o.coverContent {
+		return e
+	}
+	// The last keyboard wins, which is the rule [gift.Element.Obstructs]
+	// already has for the same mistake of placing two.
+	kb := -1
+	for i, c := range o.children {
+		if _, ok := c.(KeyboardView); ok {
+			kb = i
+		}
+	}
+	if kb >= 0 {
+		n := e.Layouter.(*node)
+		n.kb = kb + 1
+		n.plate = o.plate
+	}
+	return e
 }
+
+// AvoidKeyboard says whether the other children make room for an
+// [OnScreenKeyboard] that is a direct child of this overlay. The default is
+// true.
+//
+//	ui.Window(screen, ui.OnScreenKeyboard()).Align(geom.Bottom)
+//
+// While the keyboard is showing, every other child is laid out in the part of
+// the box the keyboard leaves free — above it for the bottom alignment that
+// is the normal placement, below it for a keyboard aligned to the top — as if
+// the window had become shorter by [OnScreenKeyboardHeight]. When the keyboard
+// goes away they get the whole box back. It is what iOS does for a view that
+// respects the keyboard layout guide and what Android calls "adjustResize".
+//
+// # Why this is the default, and why it lives here
+//
+// Because a keyboard laid *over* an application was only ever right for a
+// screen with nothing at the bottom. On the 800x480 kiosk panel it covers more
+// than half the window, and what it covered was typically the thing the user
+// needs next: the button that submits the form they are typing into, the tab
+// bar, the last field of a form that has no content left below it to scroll
+// up. The obstruction reveal of [KeyboardView] could lift a field only as far
+// as its container could still scroll, and every application worked round the
+// rest with a spacer of the keyboard's height at the bottom of each scroll
+// view. A default that every application has to undo in the same way is the
+// wrong default.
+//
+// It is a property of the overlay rather than of [Window] because the
+// keyboard's placement is the overlay's: [OnScreenKeyboard] has always been
+// documented as a child of a ZStack, [Window] is a ZStack, and a ZStack is the
+// only container in this package that puts two children in the same place.
+// An avoidance that worked in one spelling of that composition and not in the
+// other would be a difference nobody could see from the call site.
+//
+// It is decided in the layout and not in the build, from the height the
+// keyboard actually measured. A hidden keyboard measures zero, so the switch
+// being on costs nothing and changes nothing until a field asks for the
+// keyboard; a keyboard given a different height with [KeyboardView.Frame]
+// reserves that height, not the constant.
+//
+// # What stays under it
+//
+// Only a keyboard that is a *direct* child is recognised, because the
+// recognition is by type in [Overlay.Build]: one wrapped in another container
+// is laid out like any other child and the overlay cannot know it is there.
+// The obstruction reveal of [KeyboardView] still works for that composition,
+// with its old limit. The background plate of [Window] keeps the whole box,
+// so the page is painted behind the keyboard as well.
+//
+// A vertical alignment other than the top or bottom edge reserves nothing: a
+// keyboard in the middle of the box would split it into two bands, and a
+// child can only be laid out into one.
+//
+// # When to turn it off
+//
+// AvoidKeyboard(false) restores the overlap. That is right for a screen that
+// must not re-flow while somebody types — a full screen camera preview with
+// one field over it, say, where a smaller preview would be a jump of the
+// whole picture — and for nothing a form is part of.
+//
+// # Modals
+//
+// A [Modal] belongs *inside* the window, with the keyboard next to it:
+//
+//	ui.Window(ui.Modal(screen, sheet), ui.OnScreenKeyboard()).Align(geom.Bottom)
+//
+// The modal is then one of the children that avoid the keyboard, so its
+// scrim and its centred sheet are laid out in the band above it, and a field
+// in the sheet stays visible while it is being typed into. The other way
+// round — a keyboard inside the modal's content — puts the keyboard under the
+// scrim, where no key can be pressed.
+func (o Overlay) AvoidKeyboard(v bool) Overlay { o.coverContent = !v; return o }
 
 // Padding sets the same padding on all four edges, replacing any previous
 // padding. It must be finite and non negative; see [Stack.Padding].
