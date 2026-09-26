@@ -15,6 +15,9 @@ const (
 	kindBox
 	kindScroll
 	kindLayer
+	// kindRow is the content stack of a [RowView]: a horizontal stack whose
+	// labels give way before the row overflows; see [node.layoutRow].
+	kindRow
 )
 
 // node is the retained half of every container view: it is both the
@@ -58,6 +61,10 @@ type node struct {
 	// only read when kb is set.
 	plate bool
 
+	// row is the shrink state of a kindRow node and is unused by every other
+	// kind, for the reason bar is here.
+	row rowShrink
+
 	// ctx is the layout context of the call in progress. It exists so that
 	// the node can implement layout.Measurer through a pointer receiver:
 	// boxing a wrapper value into the Measurer interface on every layout
@@ -66,7 +73,13 @@ type node struct {
 }
 
 // MeasureChild implements layout.Measurer.
+//
+// A row narrows the constraints of its labels here, which is how it makes them
+// give way without a second stack algorithm; see [node.layoutRow].
 func (n *node) MeasureChild(i int, c geom.Constraints) geom.Size {
+	if n.kind == kindRow {
+		c = n.row.limit(i, c)
+	}
 	return n.ctx.Measure(i, c)
 }
 
@@ -97,6 +110,8 @@ func (n *node) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 			n.items[i].Flex = ctx.ChildFlex(i)
 		}
 		res = layout.Stack(n.spec, cc, k, n, n.items, n.origins)
+	case kindRow:
+		res = n.layoutRow(ctx, cc, k)
 	case kindScroll:
 		res = n.layoutScroll(ctx, cc, k)
 	case kindLayer:

@@ -20,6 +20,12 @@ func TestCacheHitIsAllocationFree(t *testing.T) {
 		{Text: "the quick brown fox jumps over the lazy dog", Font: f, Size: 13, MaxWidth: 120},
 		{Text: "line one\nline two", Font: f, Size: 16, MaxWidth: 200},
 		{Text: "", Font: f, Size: 16, MaxWidth: 200},
+		// A truncated paragraph is shaped twice on a miss, and a hit on it
+		// must still be the same map lookup as any other.
+		{Text: "the quick brown fox jumps over the lazy dog", Font: f, Size: 13, MaxWidth: 120,
+			MaxLines: 1, Truncation: TruncateTail},
+		{Text: "/a/rather/long/path/to/IMG_0001.jpg", Font: f, Size: 13, MaxWidth: 90,
+			MaxLines: 1, Truncation: TruncateMiddle},
 	}
 	for _, r := range reqs { // warm up
 		s.Layout(r)
@@ -86,8 +92,8 @@ func TestCacheCounters(t *testing.T) {
 	}
 }
 
-// TestCacheKeyDistinguishes asserts that the four components of the key really
-// are part of it. A key that ignored the width limit would hand a caller the
+// TestCacheKeyDistinguishes asserts that the components of the key really are
+// part of it. A key that ignored the width limit would hand a caller the
 // layout of a different column width, which is the kind of bug that only shows
 // up after a resize.
 func TestCacheKeyDistinguishes(t *testing.T) {
@@ -105,6 +111,9 @@ func TestCacheKeyDistinguishes(t *testing.T) {
 		{"other width", func() Request { r := base; r.MaxWidth = 60; return r }()},
 		{"other font", func() Request { r := base; r.Font = f2; return r }()},
 		{"unbounded width", func() Request { r := base; r.MaxWidth = geom.Unbounded(); return r }()},
+		{"a line limit", func() Request { r := base; r.MaxLines = 1; return r }()},
+		{"a tail truncation", func() Request { r := base; r.MaxLines = 1; r.Truncation = TruncateTail; return r }()},
+		{"a middle truncation", func() Request { r := base; r.MaxLines = 1; r.Truncation = TruncateMiddle; return r }()},
 	}
 	for _, v := range variants {
 		s.Layout(v.req)
@@ -121,6 +130,13 @@ func TestCacheKeyDistinguishes(t *testing.T) {
 	s.Layout(r)
 	if after := s.Stats().Misses; after != before {
 		t.Errorf("a size difference of 1/512 pixel created a new entry; sizes are quantised to 1/64")
+	}
+	// Every line limit of zero or less is "no limit", and one key.
+	r = base
+	r.MaxLines = -3
+	s.Layout(r)
+	if after := s.Stats().Misses; after != before {
+		t.Errorf("MaxLines -3 created a new entry; it is the same request as MaxLines 0")
 	}
 }
 

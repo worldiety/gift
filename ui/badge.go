@@ -42,6 +42,8 @@ const (
 // The text is one line and is not truncated. A badge with a sentence in it is
 // a badge with the wrong content; a [TextView] with MaxLines is the thing that
 // truncates, and silently shortening a count would be worse than a wide badge.
+// That is why its label asks for [TruncateNone] explicitly: MaxLines alone
+// ends in an ellipsis, and "12" squeezed into "1…" is a different number.
 //
 // # Colour
 //
@@ -81,7 +83,7 @@ func (v BadgeView) Build(bc *gift.BuildContext) gift.Element {
 		fg = v.fg
 	}
 	return ZStack(
-		Text(v.text).FontSize(badgeFontSize).Foreground(fg).MaxLines(1).Key("label"),
+		Text(v.text).FontSize(badgeFontSize).Foreground(fg).MaxLines(1).Truncation(TruncateNone).Key("label"),
 	).
 		Align(geom.Center).
 		PaddingInsets(geom.Insets{Left: badgeInset, Right: badgeInset}).

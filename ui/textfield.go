@@ -361,6 +361,12 @@ type textFieldNode struct {
 	// event handlers need its width to keep the caret in view and its left
 	// edge to turn a pointer position into a text offset.
 	inner geom.Rect
+
+	// lineTop is the top of the line box inside the field, in local space,
+	// and lineH its height: the band the glyphs, the placeholder, the
+	// selection and the caret are drawn in. The band is centred in inner;
+	// see [textFieldNode.Layout].
+	lineTop, lineH float32
 }
 
 // para returns the shaped document, refreshing the request text from the
@@ -392,6 +398,26 @@ func (n *textFieldNode) para() *text.Paragraph {
 // here calls [gift.EventContext.RequestLayout]. An earlier version did, for
 // the unbounded case; it could not change an outcome, because the answer
 // there is a constant.
+//
+// # A field taller than its text
+//
+// A [TextFieldView.Frame] or a [TextFieldView.MinHeight] can make the field
+// taller than one line of its font — a form that sets every control to the
+// same 44 pixel touch height does exactly that — and the line is then centred
+// vertically in the content area. It used to sit at the top, directly under
+// the top padding, with the caret and the placeholder along with it, which on
+// a 44 pixel field with a 16 pixel font read as a field whose text had
+// slipped.
+//
+// The offset is rounded to a whole pixel, because the baseline is drawn from
+// it and the project plan, section 7, rules out a fractional baseline. It is
+// never negative: a field shorter than its line keeps the line at the top and
+// clips the bottom, as before, rather than cutting into the ascenders.
+//
+// Only the vertical position moves. Hit testing maps a pointer to an offset
+// by x alone, so a press anywhere in the field's height still lands on the
+// character under it, and the caret and the selection are drawn in the same
+// band as the glyphs; see [textFieldNode.paintContent].
 func (n *textFieldNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 	n.ed.checkSingleMount(ctx)
 	cc := n.fr.apply(c)
@@ -405,6 +431,8 @@ func (n *textFieldNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom
 	size := cc.Constrain(geom.Sz(w, h))
 	n.inner = geom.Rc(n.pad.Left, n.pad.Top,
 		size.W-n.pad.Right, size.H-n.pad.Bottom)
+	n.lineH = p.Size.H
+	n.lineTop = n.pad.Top + clampLow(roundf((n.inner.Height()-n.lineH)/2))
 	// The one place that knows both the text and the width, and therefore the
 	// only place an offset left over from a wider field or a longer value can
 	// be caught before it is painted; see [textFieldNode.clampScroll].
@@ -415,7 +443,7 @@ func (n *textFieldNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom
 	// number that would be reported is the length of the line, which would
 	// make gifttest.AssertNoOverflow fail for every field somebody typed into.
 	ctx.ReportOverflow(geom.Size{})
-	ctx.ReportBaseline(n.pad.Top + p.Metrics.FirstBaseline)
+	ctx.ReportBaseline(n.lineTop + p.Metrics.FirstBaseline)
 	return size
 }
 
@@ -593,9 +621,15 @@ func (n *textFieldNode) paintContent(ctx *gift.PaintContext, b geom.Rect, ia gif
 	p := n.para()
 	line := &p.Lines[0]
 	x := roundf(b.Min.X + n.pad.Left - n.ed.scroll)
-	baseline := roundf(b.Min.Y + n.pad.Top + line.Baseline)
-	top := b.Min.Y + n.pad.Top
-	bottom := b.Max.Y - n.pad.Bottom
+	// The line band of [textFieldNode.Layout]: centred in a field taller than
+	// its text, and exactly the content area otherwise. The caret and the
+	// selection span the band and not the content area, so that in a tall
+	// field they are as tall as the line they stand in rather than as tall
+	// as the field. The bottom is still clamped to the content area, which
+	// is what it always was for a field shorter than its line.
+	top := b.Min.Y + n.lineTop
+	baseline := roundf(top + line.Baseline)
+	bottom := min(top+n.lineH, b.Max.Y-n.pad.Bottom)
 
 	fg := n.fg
 	if ia.Disabled {
@@ -1229,7 +1263,8 @@ func (v TextFieldView) PaddingInsets(i geom.Insets) TextFieldView {
 
 // Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
 // free; the width then falls back to [defaultFieldWidth] and the height to one
-// line of the font.
+// line of the font. A height taller than one line centres the line in it; see
+// [textFieldNode.Layout].
 func (v TextFieldView) Frame(w, h float32) TextFieldView { v.setFrame(w, h); return v }
 
 // MinWidth raises the minimum width of the field, and the maximum with it if
@@ -1237,7 +1272,9 @@ func (v TextFieldView) Frame(w, h float32) TextFieldView { v.setFrame(w, h); ret
 func (v TextFieldView) MinWidth(f float32) TextFieldView { v.setMinWidth(f); return v }
 
 // MinHeight raises the minimum height of the field, and the maximum with it if
-// that is lower; see [frameSpec].
+// that is lower; see [frameSpec]. The line is centred vertically in the extra
+// height, which is how a field matches the touch height of the buttons next to
+// it.
 func (v TextFieldView) MinHeight(f float32) TextFieldView { v.setMinHeight(f); return v }
 
 // MaxWidth lowers the maximum width of the field, and the minimum with it if

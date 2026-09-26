@@ -30,6 +30,47 @@ const (
 	AlignTrailing
 )
 
+// Truncation is how a [TextView] shortens its last visible line when the text
+// does not fit: when [TextView.MaxLines] cut lines off after it, or when the
+// line itself is wider than the view. See [TextView.Truncation].
+//
+// The zero value is [TruncateTail], because that is what a label with a line
+// limit wants in nearly every case, and a default that has to be asked for is
+// one every call site forgets.
+type Truncation uint8
+
+const (
+	// TruncateTail ends the last visible line with an ellipsis after as much
+	// of the text as fits: "Hochzeit Anna & B…". It is the default.
+	TruncateTail Truncation = iota
+	// TruncateMiddle keeps the start and the end and puts the ellipsis
+	// between them: "/Volumes/fot…/IMG_0001.jpg". It is for strings whose end
+	// tells two of them apart — a file path, a file name with its extension,
+	// an identifier with a serial number at the end.
+	TruncateMiddle
+	// TruncateHead drops the start and keeps the end: "…/IMG_0001.jpg".
+	TruncateHead
+	// TruncateNone cuts hard: the lines past the limit are dropped and the
+	// last visible line is left exactly as it was broken, with no ellipsis
+	// and, for a single word wider than the view, its honest overflowing
+	// width. It is what MaxLines did before truncation existed.
+	TruncateNone
+)
+
+// text returns the internal/text mode of t.
+func (t Truncation) text() text.Truncation {
+	switch t {
+	case TruncateMiddle:
+		return text.TruncateMiddle
+	case TruncateHead:
+		return text.TruncateHead
+	case TruncateNone:
+		return text.TruncateNone
+	default:
+		return text.TruncateTail
+	}
+}
+
 // DefaultFontSize is the em size a [TextView] uses when [TextView.FontSize]
 // was not called.
 const DefaultFontSize = 14
@@ -52,6 +93,11 @@ const DefaultFontSize = 14
 // reported through [gift.LayoutContext.ReportOverflow] and shows up in
 // [gift.Diagnostics] like every other overflow. That is the text form of the
 // overflow model of the project plan, section 7.
+//
+// The one exception is asked for by name: a view with [TextView.MaxLines] or
+// [TextView.Truncation] shortens its last visible line with an ellipsis
+// instead, and reports what the ellipsis hides as overflow all the same; see
+// [TextView.MaxLines].
 //
 // # Colour
 //
@@ -103,6 +149,8 @@ type TextView struct {
 	hasFG    bool
 	align    TextAlign
 	maxLines int
+	trunc    Truncation
+	hasTrunc bool
 }
 
 // Text returns a text view for s at [DefaultFontSize] in [ColorLabel].
@@ -132,18 +180,31 @@ func (t TextView) Build(*gift.BuildContext) gift.Element {
 		// would otherwise be ignored for one frame.
 		fg = ResolveColor(ColorLabel)
 	}
+	// The line limit and the truncation mode become part of the shaping
+	// request: the ellipsis replaces glyphs, and only the shaper can do that
+	// without measuring one text and drawing another. An explicit truncation
+	// without a limit means one line, because a truncation needs a last line
+	// to act on and a wrapping label has none until its width runs out.
+	maxLines := t.maxLines
+	if t.hasTrunc && t.trunc != TruncateNone && maxLines <= 0 {
+		maxLines = 1
+	}
+	req := text.Request{
+		Text: t.s,
+		Font: resolveFont(t.font),
+		Size: size,
+	}
+	if maxLines > 0 {
+		req.MaxLines = maxLines
+		req.Truncation = t.trunc.text()
+	}
 	n := &textNode{
-		fr:       t.frame,
-		st:       st,
-		pad:      t.pad,
-		fg:       fg,
-		align:    t.align,
-		maxLines: t.maxLines,
-		req: text.Request{
-			Text: t.s,
-			Font: resolveFont(t.font),
-			Size: size,
-		},
+		fr:    t.frame,
+		st:    st,
+		pad:   t.pad,
+		fg:    fg,
+		align: t.align,
+		req:   req,
 	}
 	return gift.Element{
 		Key:      t.key,
@@ -172,14 +233,9 @@ type textNode struct {
 	st  styleSpec
 	pad geom.Insets
 
-	req      text.Request
-	fg       Color
-	align    TextAlign
-	maxLines int
-
-	// lines is how many of the paragraph's lines are drawn, which differs
-	// from the paragraph's own count only when MaxLines cut it short.
-	lines int
+	req   text.Request
+	fg    Color
+	align TextAlign
 }
 
 // Layout implements gift.Layouter.
@@ -197,23 +253,24 @@ func (n *textNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size
 	p := text.Default().Layout(n.req)
 	m := p.Metrics
 
-	h := p.Size.H
-	n.lines = len(p.Lines)
-	var cut float32
-	if n.maxLines > 0 && n.lines > n.maxLines {
-		n.lines = n.maxLines
-		h = m.FirstBaseline + float32(n.maxLines-1)*m.LineHeight + ceilf(m.Descent)
-		cut = p.Size.H - h
-	}
-
-	size := geom.Sz(p.Size.W+n.pad.Horizontal(), h+n.pad.Vertical())
+	// The paragraph already has at most MaxLines lines, with the ellipsis in
+	// the last one; see [TextView.MaxLines].
+	size := geom.Sz(p.Size.W+n.pad.Horizontal(), p.Size.H+n.pad.Vertical())
 	// The reported size is what the constraints permit and the excess is a
 	// number, which is rule 3 of the overflow model: the content keeps its
 	// honest extent, the container reports the allowed one, and the
 	// difference is visible in gift.Diagnostics instead of being silently
 	// clipped or silently grown.
+	//
+	// What MaxLines and the ellipsis took away is the same kind of number and
+	// is reported the same way. The width is the larger of the two and not
+	// the sum: the hidden width belongs to the last line, an overflow of the
+	// node to whichever line is widest, and adding them would count a line
+	// that is both twice.
 	out := cc.Constrain(size)
-	ctx.ReportOverflow(geom.Sz(sizeOverflow(size.W, out.W), sizeOverflow(size.H, out.H)+cut))
+	ctx.ReportOverflow(geom.Sz(
+		max(sizeOverflow(size.W, out.W), p.Hidden.W),
+		sizeOverflow(size.H, out.H)+p.Hidden.H))
 	// The first baseline of the paragraph, offset by the top padding. Nothing
 	// reads it yet; see gift.LayoutContext.ReportBaseline for why the channel
 	// exists before a consumer does.
@@ -276,9 +333,6 @@ func (n *textNode) paintGlyphs(ctx *gift.PaintContext, b geom.Rect) {
 	p := text.Default().Layout(n.req)
 
 	lines := p.Lines
-	if n.lines > 0 && n.lines < len(lines) {
-		lines = lines[:n.lines]
-	}
 	innerW := b.Width() - n.pad.Horizontal()
 	originX := b.Min.X + n.pad.Left
 	originY := b.Min.Y + n.pad.Top
@@ -341,7 +395,6 @@ func sizeOverflow(want, got float32) float32 {
 }
 
 func roundf(v float32) float32 { return float32(math.Round(float64(v))) }
-func ceilf(v float32) float32  { return float32(math.Ceil(float64(v))) }
 
 // --- modifiers -------------------------------------------------------------
 //
@@ -384,6 +437,20 @@ func (t TextView) Align(v TextAlign) TextView { t.align = v; return t }
 // MaxLines limits the view to the first n visual lines. Zero or less, the
 // default, means no limit.
 //
+// # The ellipsis
+//
+// When the text does not fit, the last visible line ends in an ellipsis after
+// as much of the text as fits into it: a one line label in a row that is too
+// narrow reads "Hochzeit Anna & B…" rather than stopping at "Hochzeit Anna &"
+// with nothing to say that the name goes on. The same happens to a last line
+// that is a single word wider than the view. [TextView.Truncation] moves the
+// ellipsis to the middle or the head, or turns it off.
+//
+// Only the last visible line is ever shortened. A word too wide for an earlier
+// line of a wrapping label still overflows honestly, because an ellipsis in
+// the middle of a paragraph would say the text continues somewhere it does
+// not.
+//
 // # Why this is not a silent truncation
 //
 // The project plan, section 7, forbids content that does not fit from
@@ -396,11 +463,40 @@ func (t TextView) Align(v TextAlign) TextView { t.align = v; return t }
 // It exists because the alternative for a fixed height row is worse. Without
 // it a two line label in a list row either overflows into the row below it or
 // forces every row to be tall enough for the longest entry, and both are
-// decided by the data rather than by the design. There is no ellipsis: that
-// needs a trailing glyph substitution the shaper does not do yet, and
-// pretending otherwise by drawing "..." after a hard cut would put the
-// ellipsis at a position no shaping result contains.
+// decided by the data rather than by the design.
+//
+// The ellipsis is a visible mark, not a number, so it does not change any of
+// this: the width it hides is reported as horizontal overflow and the lines
+// it drops as vertical overflow, exactly as for the hard cut of
+// [TruncateNone]. It is shaped by internal/text together with the rest of the
+// line, which is why it can exist at all: a painter that drew "..." after a
+// hard cut would put a glyph at a position no measurement ever saw.
+//
+// # What changed
+//
+// MaxLines used to cut hard and never draw an ellipsis. The tail ellipsis is
+// the default now because a hard cut in the middle of a name reads as the
+// whole name; [TruncateNone] is the old behaviour for a caller that relied
+// on it.
 func (t TextView) MaxLines(v int) TextView { t.maxLines = v; return t }
+
+// Truncation sets how the last visible line is shortened when the text does
+// not fit; see [Truncation] for the modes and [TextView.MaxLines] for when a
+// line is shortened at all.
+//
+// Without MaxLines, a Truncation other than [TruncateNone] limits the view to
+// one line: a truncation needs a last line to act on, and the natural reading
+// of
+//
+//	ui.Text(path).Truncation(ui.TruncateMiddle)
+//
+// is a one line path with the ellipsis in the middle, not a path wrapped over
+// as many lines as it needs. With MaxLines it applies to the last of those
+// lines, and the part after the ellipsis is the end of the whole text.
+func (t TextView) Truncation(v Truncation) TextView {
+	t.trunc, t.hasTrunc = v, true
+	return t
+}
 
 // Padding sets the same padding on all four edges, replacing any previous
 // padding. It must be finite and non negative; see [Stack.Padding].

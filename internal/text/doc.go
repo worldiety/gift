@@ -24,7 +24,9 @@
 //   - kerning and ligatures exactly as the font specifies them,
 //   - line breaking at word boundaries following UAX 14 in the form
 //     github.com/go-text/typesetting provides,
-//   - integer baseline and integer glyph positions, no subpixel positioning.
+//   - integer baseline and integer glyph positions, no subpixel positioning,
+//   - a line limit and an ellipsis at the tail, in the middle or at the head
+//     of the last visible line, when a caller asks for one; see [Truncation].
 //
 // What is deliberately not in scope, and what this package therefore does not
 // pretend to do:

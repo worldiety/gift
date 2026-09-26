@@ -121,16 +121,42 @@ type Paragraph struct {
 	// stays visible and the amount by which it does not fit is a number
 	// somebody can read, rather than a silent collapse or a silent ellipsis.
 	// A caller who wants the excess cut off clips it, explicitly, in the
-	// layer that owns the clip stack.
+	// layer that owns the clip stack, or asks for an ellipsis by name with
+	// [Request.Truncation] — and then the amount moves to Hidden, where it is
+	// still a number, rather than disappearing.
 	Overflow float32
+
+	// Hidden is how much of the honest extent of the text this paragraph
+	// does not show because [Request.MaxLines] or [Request.Truncation] took
+	// it away. It is zero for a request with neither.
+	//
+	// H is the height of the lines past MaxLines: their count times
+	// Metrics.LineHeight, which is exactly the difference between the height
+	// of the whole text and the height of this paragraph. W is how far the
+	// last visible line, as it was broken before an ellipsis replaced its
+	// tail, was wider than the width limit; it is zero for a line that was
+	// shortened only because lines after it were dropped.
+	//
+	// It is a number and not a flag because of the overflow model of the
+	// project plan, section 7: an ellipsis is a visible mark, but what it
+	// stands for is content that does not fit, and ui reports that amount
+	// through gift.Diagnostics like any other overflow. See [Truncation].
+	Hidden geom.Size
 
 	// Metrics are the vertical font metrics the lines were laid out with.
 	Metrics Metrics
 
-	// Lines are the visual lines, top to bottom. A request with an empty text
-	// produces exactly one empty line, because an empty label still occupies
-	// one line box and a caller that lays out a form must not have the row
-	// height jump when the string becomes empty.
+	// Lines are the visual lines, top to bottom, at most [Request.MaxLines]
+	// of them. A request with an empty text produces exactly one empty line,
+	// because an empty label still occupies one line box and a caller that
+	// lays out a form must not have the row height jump when the string
+	// becomes empty.
+	//
+	// A line that carries an ellipsis covers, in Start and End, everything
+	// from its own start to the end of the text: it stands for all of that.
+	// The glyphs of the ellipsis have the cluster of the first byte they
+	// replace. Lines dropped without an ellipsis, under [TruncateNone], are
+	// simply absent, and their bytes are covered by no line.
 	Lines []Line
 
 	// tok and gen identify which incarnation of a cache entry this paragraph
