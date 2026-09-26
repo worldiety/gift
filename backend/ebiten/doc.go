@@ -42,6 +42,18 @@
 // its automatic atlas they usually do. See [TextureCache] for the evidence and
 // [RendererStats.ImageBatches] for the number.
 //
+// A picture with rounded corners is the one image that does not take
+// Ebitengine's own filter. It is drawn through roundimage.kage, which samples
+// the texture bilinearly itself and multiplies it by the coverage of the same
+// distance field a rounded fill uses — so a rounded placeholder and the
+// rounded picture that replaces it cover the same pixels, and a border of the
+// same bounds and radius sits on the picture's edge. That shader is a
+// different program and therefore a fourth material, with the same batching
+// rule. A crop to fill no longer needs a clip either: [render.ImageCover]
+// names it, and the crop is computed here from the texture size with the
+// arithmetic of [render.ImageFit.Source]. See [Renderer.appendRoundImage] for
+// why the picture is emitted as four quads.
+//
 // Uploads are admitted per *drawn* frame and not per update, which is the
 // distinction the project plan, section 11, draws and the reason the budget is
 // reset in [Renderer.BeginFrame]: several Ebitengine updates may precede one
