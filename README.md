@@ -70,6 +70,23 @@ func counter(ctx *gift.Context) gift.View {
 explicitly sets its font and window size. See
 [`cmd/example-counter`](cmd/example-counter/main.go) for a complete example.
 
+### Kiosks And Appliances
+
+A device that shows the same screen for hours does not need sixty frames a
+second. Two settings in `backend.Config` take the load off:
+
+```go
+backend.Run(app, backend.Config{
+    DrawOnDemand: true, // draw only when something changed, keep the last frame otherwise
+    IdleTPS:      10,   // and tick slowly while nothing happens
+})
+```
+
+With `DrawOnDemand` a frame is drawn only while the tree changed, an
+animation runs, or the renderer still has pictures to upload; every other
+display refresh keeps the previous frame. On an idle screen that is a few
+frames a minute instead of sixty a second.
+
 ## Testing And Automation
 
 ```sh

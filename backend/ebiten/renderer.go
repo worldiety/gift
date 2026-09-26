@@ -393,6 +393,23 @@ func (r *Renderer) GlassLevel() render.GlassQuality {
 	return r.policy.Level()
 }
 
+// SkipFrame tells the renderer that a display refresh went by without a
+// frame being drawn, because nothing had changed; see [Config.DrawOnDemand].
+//
+// It matters for exactly one thing: the glass policy decides its quality
+// from the intervals between drawn frames, and an interval that spans a
+// pause of three idle seconds is not a slow frame. Without this the first
+// frame after every pause would read as a stall, and a still screen would
+// talk the policy into reduced glass.
+func (r *Renderer) SkipFrame() { r.lastDraw = time.Time{} }
+
+// NeedsFrame reports whether the frame last drawn left work that only another
+// frame can finish: picture uploads the per frame budget deferred. The
+// backend draws again while it is true even if the tree has not changed.
+func (r *Renderer) NeedsFrame() bool {
+	return r.textures != nil && r.textures.Deferred() > 0
+}
+
 // BeginFrame implements [render.Backend].
 //
 // The size is not retained. It was, in a field that nothing ever read, and the

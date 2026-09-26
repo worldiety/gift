@@ -469,10 +469,12 @@ func (a *App) invalidateScopesIn(h scene.Handle, depth int) {
 
 // NeedsPaint reports whether the tree changed since the last Paint.
 //
-// It is informational. gift redraws the whole screen every frame anyway,
-// because Ebitengine clears it; see the project plan, section 6. The flag
-// exists so that the three invalidation levels stay distinct and observable,
-// not so that frames can be skipped.
+// By default it is informational: the ebiten backend redraws the whole screen
+// every frame, because Ebitengine clears it; see the project plan, section 6.
+// With [ebiten.Config.DrawOnDemand] it becomes load bearing — a frame is drawn
+// only while this, or the renderer, says so. Every change that shows on the
+// screen must therefore mark it: through a state write, a layout, a hover or
+// press, or [PaintContext.Animate] for anything that moves with the clock.
 func (a *App) NeedsPaint() bool { return a.needsPaint }
 
 // Viewport returns the logical size the application was last laid out at,

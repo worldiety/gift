@@ -57,6 +57,49 @@ type Config struct {
 	// rate is applied. Zero or less selects sixty, that is about a second.
 	IdleFrames int
 
+	// DrawOnDemand skips drawing a frame when nothing on the screen has
+	// changed, and leaves the previous frame standing instead.
+	//
+	// # Why this exists next to IdleTPS
+	//
+	// IdleTPS lowers the *update* rate. Ebitengine calls Draw once per
+	// display refresh whatever the tick rate is, and gift used to paint the
+	// whole display list in every one of them: sixty full frames a second of
+	// shaders, glyph quads and blurred glass for a screen that shows a clock
+	// changing once a minute. On a Raspberry Pi in a closed housing that is
+	// the heat. Lowering the tick rate alone does not touch it.
+	//
+	// With this set, Ebitengine is told not to clear the screen between
+	// frames — its documented way to skip drawing, see
+	// ebiten.SetScreenClearedEveryFrame — and Draw paints only when
+	//
+	//   - the tree changed since the last paint ([gift.App.NeedsPaint]),
+	//     which is also what every animation, caret blink, progress bar and
+	//     control transition keeps true while it runs,
+	//   - the renderer left work for another frame ([Renderer.NeedsFrame]:
+	//     picture uploads the per frame budget deferred),
+	//   - or the screen changed size, or the frame is one of the first two.
+	//
+	// Everything else is a refresh with nothing to say, and costs a single
+	// copy of the retained frame inside Ebitengine. A screenshot through the
+	// automation interface shows that retained frame too, so a driver sees
+	// what the user sees and not a frame painted for its benefit.
+	//
+	// # What it relies on
+	//
+	// That nothing appears on the screen without a paint request. That is
+	// the discipline gift already keeps — a painter that reads the clock
+	// enrols with Animate, a picture that arrives invalidates its node — and
+	// it is what [Config.IdleTPS] has been measuring idleness with. A
+	// painter that changes its output silently shows the old frame until
+	// something else repaints; that is a bug in the painter, and with this
+	// flag it becomes visible instead of being papered over at sixty hertz.
+	//
+	// It is off by default because it changes what a frame interval
+	// measurement means: a benchmark of a still scene would record only the
+	// frames that were drawn. Kiosks and appliances want it on.
+	DrawOnDemand bool
+
 	// NominalFrameInterval is the interval the display is expected to hold,
 	// for example 16667 microseconds at sixty hertz. Zero or less derives it
 	// from TPS.
@@ -256,6 +299,7 @@ func Run(app *gift.App, cfg Config) error {
 		busyTPS:   tps,
 		idleTPS:   cfg.IdleTPS,
 		idleAfter: idleAfter,
+		onDemand:  cfg.DrawOnDemand,
 		w:         w,
 		h:         h,
 	}
@@ -274,6 +318,9 @@ func Run(app *gift.App, cfg Config) error {
 	eb.SetWindowSize(w, h)
 	eb.SetWindowResizingMode(eb.WindowResizingModeEnabled)
 	eb.SetTPS(tps)
+	if cfg.DrawOnDemand {
+		eb.SetScreenClearedEveryFrame(false)
+	}
 
 	if cfg.Logger != nil {
 		cfg.Logger.Info("gift/backend/ebiten: starting",
@@ -284,8 +331,12 @@ func Run(app *gift.App, cfg Config) error {
 
 	err = eb.RunGame(g)
 	if cfg.Logger != nil {
+		// Skipped refreshes are the evidence that DrawOnDemand works: on an
+		// idle kiosk they outnumber the drawn frames by orders of
+		// magnitude.
 		cfg.Logger.Info("gift/backend/ebiten: stopped",
-			slog.Uint64("frames", g.r.Stats().Frames))
+			slog.Uint64("frames", g.r.Stats().Frames),
+			slog.Uint64("skipped", g.skipped))
 	}
 	return err
 }
@@ -322,6 +373,14 @@ type game struct {
 
 	w, h     int
 	lastDraw time.Time
+
+	// onDemand is [Config.DrawOnDemand]. drawnSize is the screen size of the
+	// frame last drawn, drawn the number of frames drawn and skipped the
+	// number of refreshes that were not; see [game.mustDraw].
+	onDemand  bool
+	drawnSize geom.Size
+	drawn     uint64
+	skipped   uint64
 
 	// shot is the read-back buffer of [game.capture]. It stays nil, and the
 	// field itself is unreachable, without the giftauto build tag.
@@ -583,6 +642,28 @@ func (g *game) Draw(screen *eb.Image) {
 	// the density times the viewport [game.Update] hands to gift.
 	size := geom.Sz(float32(b.Dx()), float32(b.Dy()))
 
+	if g.onDemand {
+		if !g.mustDraw(size) {
+			g.skipped++
+			g.r.SkipFrame()
+			// A screenshot of a skipped refresh is the retained frame, which
+			// is what the window shows. Painting a fresh one for it would
+			// hide exactly the bug DrawOnDemand can introduce: a change
+			// that never asked for a paint.
+			if autoEnabled && autoWantsFrame() {
+				autoFrame(g.capture(screen))
+			}
+			return
+		}
+		// The screen is no longer cleared for us, and the display list
+		// does not have to cover every pixel: a window without a
+		// background is legal. Clearing here is what keeps the previous
+		// frame from showing through.
+		screen.Clear()
+	}
+	g.drawn++
+	g.drawnSize = size
+
 	g.r.SetTarget(screen)
 	g.r.BeginFrame(size)
 	g.r.Submit(g.app.Paint())
@@ -600,6 +681,26 @@ func (g *game) Draw(screen *eb.Image) {
 	if metrics.Enabled() {
 		g.rec.RecordDraw(time.Since(start))
 	}
+}
+
+// mustDraw decides whether a display refresh gets a new frame under
+// [Config.DrawOnDemand]. It is a pure function of flags that are already
+// there and allocates nothing.
+func (g *game) mustDraw(size geom.Size) bool {
+	switch {
+	case g.drawn < 2:
+		// The first frame, and the one after it: Ebitengine may present
+		// the first before the window has its final size.
+		return true
+	case size != g.drawnSize:
+		// A new screen image has undefined content.
+		return true
+	case g.app.NeedsPaint():
+		return true
+	case g.r.NeedsFrame():
+		return true
+	}
+	return false
 }
 
 // capture reads the framebuffer back into the reusable buffer and returns it

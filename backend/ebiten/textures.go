@@ -183,6 +183,13 @@ type TextureCache struct {
 	frameUploads int
 	frameBytes   int64
 
+	// frameDeferred counts the uploads the budget turned away in the frame
+	// in progress, or, between two frames, in the frame last drawn. A
+	// deferred picture is drawn as its placeholder and asks again when it is
+	// next painted, so a backend that skips unchanged frames must draw
+	// another one while this is not zero; see [TextureCache.Deferred].
+	frameDeferred int
+
 	stats TextureStats
 
 	// epoch makes the generations of this cache disjoint from those of every
@@ -260,7 +267,13 @@ func textureEpoch() uint32 {
 func (t *TextureCache) BeginFrame() {
 	t.frameUploads = 0
 	t.frameBytes = 0
+	t.frameDeferred = 0
 }
+
+// Deferred reports how many uploads the budget turned away in the frame last
+// drawn. Those pictures are placeholders on the screen right now and become
+// pictures only in a frame that paints them again.
+func (t *TextureCache) Deferred() int { return t.frameDeferred }
 
 // Tick advances the frame clock and evicts textures that have gone undrawn for
 // longer than [TextureConfig.MaxAge]. The renderer calls it once per drawn
@@ -323,6 +336,7 @@ func (t *TextureCache) Acquire(px render.Pixels) (render.ImageHandle, bool) {
 	need := px.Bytes()
 	if t.cfg.UploadsPerFrame >= 0 && t.frameUploads >= t.cfg.UploadsPerFrame {
 		t.stats.Deferred++
+		t.frameDeferred++
 		return render.ImageHandle{}, false
 	}
 	if t.cfg.UploadBytesPerFrame >= 0 && t.frameBytes+need > t.cfg.UploadBytesPerFrame &&
@@ -340,6 +354,7 @@ func (t *TextureCache) Acquire(px render.Pixels) (render.ImageHandle, bool) {
 		// Whether the overshoot is affordable is a property of the picture
 		// and not of the order its neighbours happen to be painted in.
 		t.stats.Deferred++
+		t.frameDeferred++
 		return render.ImageHandle{}, false
 	}
 	if !t.makeRoom(need) {
