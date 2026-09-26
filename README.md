@@ -87,6 +87,22 @@ animation runs, or the renderer still has pictures to upload; every other
 display refresh keeps the previous frame. On an idle screen that is a few
 frames a minute instead of sixty a second.
 
+### Camera Photos
+
+Galleries of 12–50 megapixel camera JPEGs thumbnail several times faster with
+libjpeg-turbo, which also decodes straight to 1/2, 1/4 or 1/8 of the size when
+only a tile is needed. It is loaded at run time, still without CGO; install
+`libturbojpeg0` on Raspberry Pi OS or `jpeg-turbo` with Homebrew, and register
+it explicitly:
+
+```go
+if turbojpeg.Register() { // github.com/worldiety/gift/asset/turbojpeg
+    asset.RegisterDecoder(asset.MIMEJPEG, turbojpeg.Decoder{})
+}
+```
+
+Without the library, `Register` returns false and image/jpeg stays in charge.
+
 ## Testing And Automation
 
 ```sh

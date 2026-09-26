@@ -1724,6 +1724,31 @@ Orientierung wird also von selbst richtig zwischengespeichert.
 Sniffing ohnehin Vorrang vor dem Medientyp hat, ist das die zweite
 Verteidigungslinie und nicht die erste.
 
+### Skaliertes JPEG mit libjpeg-turbo
+
+Kamerafotos haben 12 bis 50 Megapixel. `image/jpeg` dekodiert jedes Pixel,
+und die Pipeline wirft fuer eine Galeriekachel fast alle wieder weg; auf dem
+Raspberry Pi kostet das pro Bild einen grossen Teil einer Sekunde.
+`asset/turbojpeg` laedt libjpeg-turbo (`libturbojpeg0` auf Raspberry Pi OS)
+zur Laufzeit ueber purego, ohne cgo, und benutzt nur die TurboJPEG-2-API,
+weil Bookworm libjpeg-turbo 2.1 ausliefert.
+
+Der Vertrag bekommt dafuer die optionale Schnittstelle `asset.ScaledDecoder`:
+Die Pipeline fragt nach mindestens der Kachelgroesse im gespeicherten Raster,
+der Decoder waehlt den kleinsten Faktor aus 1/8, 1/4, 1/2 und 1/1, der das
+noch erfuellt, und der Resampler erledigt den Rest. Die uebrigen Achtel
+bietet die Bibliothek auch an, sie laufen aber ohne SIMD und waren gemessen
+langsamer als ein voller Decode. Das Dekodierbudget (Abschnitt 9) wird vom
+Decoder selbst beziffert, weiterhin aus dem Bild und dem Codec-Risiko: Ein
+progressives JPEG haelt alle Koeffizienten in voller Groesse, gleich wie
+klein die Ausgabe ist, ein Baseline-JPEG nur Ausgabe und Zeilenpuffer.
+
+Die Anmeldung bleibt ausdruecklich (Abschnitt 12, Schritt 4). gift nimmt
+libjpeg-turbo nicht von selbst, nur weil sie installiert ist: Die Pixel
+beider Decoder sind nicht bitgleich, und Vorschaubilder, die sich mit den
+installierten Paketen aendern, sind schwerer zu testen als eine Wahl der
+Anwendung.
+
 ### Rechtlicher Hinweis zu HEIF/HEIC
 
 Das Format ist unerwuenscht. Es ist mit diversen Patenten belastet, und die
