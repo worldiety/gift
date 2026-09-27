@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/geom"
+	"github.com/worldiety/gift/render"
 )
 
 var segmentedType = gift.RegisterType("ui.SegmentedControl")
@@ -106,6 +107,7 @@ type SegmentedControlView struct {
 	fontSize float32
 	hasFont  bool
 	hasSize  bool
+	capsule  bool
 }
 
 // SegmentedControl returns a segmented control showing labels with segment
@@ -143,6 +145,7 @@ func (s SegmentedControlView) Build(*gift.BuildContext) gift.Element {
 		indicator: ResolveColor(defaultSegmentedIndicator),
 		border:    resolveBorder(defaultSegmentedIndicatorBorder),
 		focusRing: resolveBorder(defaultSegmentedFocusRing),
+		capsule:   s.capsule,
 	}
 	if s.disabled {
 		n.tray = ResolveColor(ColorControlDisabled)
@@ -211,6 +214,9 @@ type segmentedNode struct {
 	tray, indicator Color
 	border          Border
 	focusRing       Border
+	// capsule rounds tray and indicator fully; see
+	// [SegmentedControlView.Capsule].
+	capsule bool
 
 	// sizes is the scratch buffer of measured child sizes.
 	//
@@ -335,12 +341,22 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 	assertResolvedBorder(n.focusRing, "the focus ring of a SegmentedControl")
 
 	b := ctx.Bounds()
-	fillRounded(ctx, b, segmentedRadius, n.tray)
+	tray := segmentedRadius
+	if n.capsule {
+		tray = min(b.Width(), b.Height()) / 2
+	}
+	fillRounded(ctx, b, tray, n.tray)
 
 	if n.hasSelection() {
 		p := controlPhase(ctx.ControlState(), ctx.Now())
 		r := n.indicatorRect(b, p)
-		radius := segmentedRadius - segmentedInset
+		radius := tray - segmentedInset
+		if n.capsule {
+			// A capsule's indicator floats: a soft shadow lifts it off the
+			// tray, as the thumb of iOS 26 does.
+			ctx.Add(render.Op{Kind: render.OpShadow, Bounds: r.Translate(geom.Pt(0, 1)), CornerRadius: radius,
+				Blur: 6, Color: render.RGBA(0, 0, 0, 36)})
+		}
 		fillRounded(ctx, r, radius, n.indicator)
 		if n.border.IsVisible() {
 			ctx.Add(strokeOp(r, radius, n.border))
@@ -352,7 +368,7 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 	ia := ctx.Interaction()
 	if ia.FocusVisible && !ia.Disabled && n.focusRing.IsVisible() {
 		g := geom.InsetsAll(-segmentedFocusGap)
-		ctx.Add(strokeOp(b.Inset(g), segmentedRadius+segmentedFocusGap, n.focusRing))
+		ctx.Add(strokeOp(b.Inset(g), tray+segmentedFocusGap, n.focusRing))
 	}
 }
 
@@ -480,6 +496,11 @@ func (s SegmentedControlView) FontSize(v float32) SegmentedControlView {
 	s.fontSize, s.hasSize = v, true
 	return s
 }
+
+// Capsule rounds the tray and the indicator fully and lifts the indicator
+// with a soft shadow, the segmented control of iOS 26. The default is the
+// rounded rectangle of earlier releases.
+func (s SegmentedControlView) Capsule(v bool) SegmentedControlView { s.capsule = v; return s }
 
 // Label sets the accessible name of the control as a whole — what the choice
 // is about, as opposed to the choices, which are the segments' own labels. It
