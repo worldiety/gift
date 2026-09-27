@@ -23,6 +23,9 @@ const (
 	// segmentedRadius is the corner of the tray. The indicator is rounded by
 	// the same amount less the inset, so the two curves are concentric.
 	segmentedRadius   = float32(9)
+	// segmentedLens is the magnification of the labels under a travelling
+	// capsule thumb.
+	segmentedLens = float32(1.15)
 	segmentedFocusGap = float32(3)
 )
 
@@ -349,6 +352,8 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 	}
 	fillRounded(ctx, b, tray, n.tray)
 
+	var lens geom.Rect
+	var lensRadius float32
 	if n.hasSelection() {
 		p := controlPhase(ctx.ControlState(), ctx.Now())
 		r := n.indicatorRect(b, p)
@@ -363,6 +368,7 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 				dx, dy := r.Width()*0.18*k, r.Height()*0.06*k
 				r = geom.Rc(r.Min.X-dx, r.Min.Y+dy, r.Max.X+dx, r.Max.Y-dy)
 				radius = r.Height() / 2
+				lens, lensRadius = r, radius
 			}
 			// A capsule's indicator floats: a soft shadow lifts it off the
 			// tray, as the thumb of iOS 26 does.
@@ -376,6 +382,24 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 	}
 
 	ctx.PaintChildren()
+
+	if !lens.IsEmpty() {
+		// The lens: while the thumb travels it magnifies the labels under
+		// it, as the glass thumb of iOS 26 does. Not by reading the screen
+		// but by drawing the labels a second time, larger, clipped to the
+		// thumb – a few glyphs more for the frames it moves.
+		fillRounded(ctx, lens, lensRadius, n.indicator)
+		d := ctx.DeviceBounds()
+		sx, sy := d.Width()/b.Width(), d.Height()/b.Height()
+		ctx.PushClip(geom.Rc(
+			d.Min.X+(lens.Min.X-b.Min.X)*sx, d.Min.Y+(lens.Min.Y-b.Min.Y)*sy,
+			d.Min.X+(lens.Max.X-b.Min.X)*sx, d.Min.Y+(lens.Max.Y-b.Min.Y)*sy))
+		c := geom.Pt((lens.Min.X+lens.Max.X)/2, (lens.Min.Y+lens.Max.Y)/2)
+		ctx.PushTransform(geom.Translate(geom.Pt(-c.X, -c.Y)).Mul(geom.Scale(segmentedLens, segmentedLens)).Mul(geom.Translate(c)))
+		ctx.PaintChildren()
+		ctx.PopTransform()
+		ctx.PopClip()
+	}
 
 	ia := ctx.Interaction()
 	if ia.FocusVisible && !ia.Disabled && n.focusRing.IsVisible() {

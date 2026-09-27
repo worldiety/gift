@@ -68,13 +68,29 @@ func TestACapsuleThumbStretchesOnItsWay(t *testing.T) {
 		}
 		return geom.Rect{}
 	}()
+	glyphRuns := func() int {
+		n := 0
+		for _, op := range h.Ops() {
+			if op.Kind == render.OpGlyphs {
+				n++
+			}
+		}
+		return n
+	}
 	rest := indicator().Width()
+	restRuns := glyphRuns()
 	h.ClickAt(geom.Pt(tray.Max.X-20, (tray.Min.Y+tray.Max.Y)/2))
 	h.Advance(ui.ControlAnimation / 2)
 	if w := indicator().Width(); !(w > rest*1.2) {
 		t.Errorf("half way the thumb is %v wide, at rest %v; it does not stretch", w, rest)
 	}
+	if n := glyphRuns(); n <= restRuns {
+		t.Errorf("half way %d label runs are drawn, at rest %d; the lens draws none", n, restRuns)
+	}
 	h.Advance(ui.ControlAnimation)
+	if n := glyphRuns(); n != restRuns {
+		t.Errorf("arrived %d label runs are drawn, want %d; the lens stays", n, restRuns)
+	}
 	if w := indicator().Width(); w != rest || sel != 1 {
 		t.Errorf("arrived the thumb is %v wide (rest %v), selection %d", w, rest, sel)
 	}
