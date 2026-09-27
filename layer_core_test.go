@@ -104,7 +104,9 @@ func TestATransitionIsALayerOnlyWhileItMoves(t *testing.T) {
 	if hasLayer(ta.frame()) {
 		t.Error("a node at rest was painted as a layer")
 	}
-	ta.set(true)
+	if !hasLayer(ta.set(true)) {
+		t.Error("the first frame of the movement, in which the node has not moved yet, was not a layer")
+	}
 	if !hasLayer(ta.advance(testTransition / 2)) {
 		t.Error("a node its transition is moving was not painted as a layer")
 	}

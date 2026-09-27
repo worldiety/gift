@@ -239,6 +239,18 @@ func (nd *nodeData) transPhase(now time.Duration) float32 {
 	return nd.trans.phase(now)
 }
 
+// transMoving reports whether the node's transition is under way and moves
+// it: from its first frame, in which it is still where it started, to its
+// last. A transition with no offset – a covered screen that waits – does not
+// move anything.
+func (nd *nodeData) transMoving(now time.Duration) bool {
+	t := nd.trans
+	if t == nil || !t.armed || (t.park.X == 0 && t.park.Y == 0) {
+		return false
+	}
+	return t.phase(now) != t.target
+}
+
 // paintedDespiteHidden reports whether a hidden node still has to be drawn
 // because it is on its way out.
 func (nd *nodeData) paintedDespiteHidden(now time.Duration) bool {

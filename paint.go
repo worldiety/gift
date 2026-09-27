@@ -335,7 +335,10 @@ func (a *App) paintNode(h scene.Handle) {
 	prevXform := a.pctx.xform
 	prevPhase := a.transPhase
 	m, moved := nd.transXform(a.in.now, n.Bounds)
-	sliding := moved
+	// From the first frame of the movement, in which the node has not moved
+	// yet: the picture drawn into the layer there is the one every further
+	// frame reuses.
+	sliding := nd.transMoving(a.in.now)
 	if nd.xform != nil {
 		if moved {
 			m = nd.xform.Mul(m)
