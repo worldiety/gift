@@ -49,9 +49,13 @@ import (
 
 // maxCovers is the number of pictures followed at a time, maxDirty the number
 // of rectangles drawn over one before they are merged into their bounds.
+//
+// A home screen draws about a hundred things over its wallpaper, most of them
+// inside a card that is already a single rectangle, so 128 is rarely reached;
+// following them costs a few microseconds a frame.
 const (
 	maxCovers = 4
-	maxDirty  = 32
+	maxDirty  = 128
 )
 
 // cover is an opaque picture a pane may use as its backdrop.
@@ -82,18 +86,44 @@ func (t *backdropTracker) drew(r geom.Rect) {
 	}
 	for i := range t.n {
 		c := &t.covers[i]
-		if !c.vis.Overlaps(r) {
-			continue
+		if c.vis.Overlaps(r) {
+			c.dirty = addDirty(c.dirty, r)
 		}
-		if len(c.dirty) == maxDirty {
-			u := c.dirty[0]
-			for _, d := range c.dirty[1:] {
-				u = u.Union(d)
-			}
-			c.dirty = append(c.dirty[:0], u)
-		}
-		c.dirty = append(c.dirty, r)
 	}
+}
+
+// addDirty adds r to a list of at most maxDirty rectangles, keeping it as
+// tight as it can: a rectangle inside another adds nothing, one that contains
+// others replaces them, and when the list is full r is merged into the
+// rectangle whose area grows least by it.
+//
+// Merging everything into one bounding box instead, as a first version did,
+// turned a card with a row of thumbnails into a dirty band across the whole
+// screen, and the panes next to it lost their static backdrop.
+func addDirty(dirty []geom.Rect, r geom.Rect) []geom.Rect {
+	keep := dirty[:0]
+	for _, d := range dirty {
+		if d.Intersect(r) == r {
+			return dirty
+		}
+		if r.Intersect(d) != d {
+			keep = append(keep, d)
+		}
+	}
+	dirty = keep
+	if len(dirty) < maxDirty {
+		return append(dirty, r)
+	}
+
+	best, grow := 0, float32(math.MaxFloat32)
+	for i, d := range dirty {
+		u := d.Union(r)
+		if g := u.Width()*u.Height() - d.Width()*d.Height(); g < grow {
+			best, grow = i, g
+		}
+	}
+	dirty[best] = dirty[best].Union(r)
+	return dirty
 }
 
 // picture records an opaque picture drawn at c.vis. It covers what the other

@@ -144,3 +144,39 @@ func TestAPaneInASlidingPageKeepsItsStaticBackdrop(t *testing.T) {
 		t.Errorf("the wallpaper of a sliding page was blurred %d times", st.GlassStaticBlurs)
 	}
 }
+
+// TestManyThingsBesideAPaneLeaveItStatic: a card full of thumbnails and
+// labels on one side of the screen does not take the backdrop of a pane on
+// the other side.
+func TestManyThingsBesideAPaneLeaveItStatic(t *testing.T) {
+	r, _ := sceneRenderer(t, 800, 600)
+	id := wallpaper(t, r, 64, 48, 255)
+	paneFrame(t, r, func(l *render.List) {
+		addPicture(l, id, geom.Rc(0, 0, 800, 600))
+		for i := range 100 {
+			x, y := float32(i%10)*30, float32(i/10)*30
+			addRect(l, geom.Rc(x, y, x+20, y+20), render.RGB(200, 10, 10))
+		}
+		// And one below the pane, so that a bounding box of everything
+		// would cover it.
+		addRect(l, geom.Rc(720, 500, 780, 560), render.RGB(200, 10, 10))
+		addGlass(l, geom.Rc(420, 100, 700, 300), 16, paneGlass)
+	})
+	if st := r.Stats(); st.GlassStaticOps != 1 {
+		t.Errorf("a pane beside a hundred small drawings was live: %d static", st.GlassStaticOps)
+	}
+}
+
+func TestAddDirtyKeepsTheListTight(t *testing.T) {
+	var d []geom.Rect
+	d = addDirty(d, geom.Rc(0, 0, 100, 100))
+	d = addDirty(d, geom.Rc(10, 10, 20, 20))
+	if len(d) != 1 {
+		t.Errorf("a rectangle inside another was added: %v", d)
+	}
+	d = addDirty(d, geom.Rc(200, 0, 210, 10))
+	d = addDirty(d, geom.Rc(190, 0, 300, 50))
+	if len(d) != 2 || d[1] != geom.Rc(190, 0, 300, 50) {
+		t.Errorf("a rectangle containing another did not replace it: %v", d)
+	}
+}
