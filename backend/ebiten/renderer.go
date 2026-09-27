@@ -28,6 +28,9 @@ var kawaseUpSrc []byte
 //go:embed roundimage.kage
 var roundImageSrc []byte
 
+//go:embed glassstatic.kage
+var glassStaticSrc []byte
+
 // ShapeShaderSource returns the Kage source of the shared shape shader.
 //
 // It is exported so that a test can compile it without a window;
@@ -171,9 +174,25 @@ type Renderer struct {
 	// layers are the cached layers by key, and inLayer is how deep the
 	// renderer is inside drawing one. through, when set, maps the operations
 	// of a layer that is drawn straight into the frame. See layers.go.
-	layers                                   map[render.ImageID]*layerEntry
-	inLayer                                  int
-	through                                  throughSpace
+	layers  map[render.ImageID]*layerEntry
+	inLayer int
+	through throughSpace
+
+	// The static backdrops of backdrop.go: the tracker of the plan, the
+	// decisions it made for this frame and the pictures it blurred.
+	backdrops    backdropTracker
+	statics      []staticPane
+	staticNext   int
+	blurs        map[blurKey]*blurEntry
+	staticShader *eb.Shader
+	staticOpts   eb.DrawTrianglesShaderOptions
+	staticOrigin []float32
+	scaleOpts    eb.DrawTrianglesOptions
+	staticBlurs  uint64
+	glassStatic  uint64
+	noStatic     bool
+	// curOp is the index in the list of the operation being translated.
+	curOp                                    int
 	inThrough                                bool
 	noLayerCache                             bool
 	layerThrough                             uint64
@@ -333,12 +352,18 @@ func NewRenderer() (*Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gift/backend/ebiten: compiling the rounded picture shader: %w", err)
 	}
+	gs, err := eb.NewShader(glassStaticSrc)
+	if err != nil {
+		return nil, fmt.Errorf("gift/backend/ebiten: compiling the static glass shader: %w", err)
+	}
 	r := &Renderer{
 		shader:           sh,
 		glassShader:      gl,
 		downShader:       down,
 		upShader:         up,
 		roundImageShader: ri,
+		staticShader:     gs,
+		staticOrigin:     make([]float32, 2),
 		atlas:            NewGlyphAtlas(AtlasConfig{}),
 		textures:         NewTextureCache(TextureConfig{}),
 		targets:          NewTargetPool(TargetConfig{}),
@@ -371,6 +396,15 @@ func NewRenderer() (*Renderer, error) {
 	// nearest for a Kage shader and the blur shaders do their own filtering.
 	// See kawase_down.kage.
 	r.blurOpts.Blend = eb.BlendCopy
+	// The one uniform of the static glass shader, written once as a slice
+	// the renderer then mutates in place, so that no draw allocates; see
+	// glassstatic.kage.
+	r.staticOpts.Uniforms = map[string]any{"BackOrigin": r.staticOrigin}
+	// Drawing a picture at the size a static backdrop is shown at, before it
+	// is blurred: a replace, and filtered, because it is scaled.
+	r.scaleOpts.Blend = eb.BlendCopy
+	r.scaleOpts.ColorScaleMode = eb.ColorScaleModePremultipliedAlpha
+	r.scaleOpts.Filter = eb.FilterLinear
 	// Set explicitly. It was already nearest, but only because
 	// eb.FilterNearest happens to be the zero value of eb.Filter, and a
 	// comment two fields up claimed the choice was deliberate. One of those
@@ -567,13 +601,17 @@ func (r *Renderer) Submit(l *render.List) {
 		return
 	}
 	ops := l.Ops()
-	// Changed layers are drawn before the frame touches its target, and
-	// their batches go to their own textures, not to it; see layers.go.
+	// Blurred backdrops and changed layers are drawn before the frame
+	// touches its target, and their batches go to their own images, not to
+	// it; see backdrop.go and layers.go.
 	batches := r.frameBatches
-	r.prepareLayers(l, ops, r.frameSize)
+	r.backdrops.reset()
+	r.statics, r.staticNext = r.statics[:0], 0
+	live := r.planBackdrops(l, ops, 0)
+	r.prepareLayers(l, ops, 0, r.frameSize)
 	r.frameBatches = batches
-	r.ensureScene(l)
-	r.drawOps(l, ops)
+	r.ensureScene(live)
+	r.drawOps(l, ops, 0)
 }
 
 // ensureScene redirects the frame into an offscreen when the list contains a
@@ -601,9 +639,10 @@ func (r *Renderer) Submit(l *render.List) {
 //     bounded pool as everything else.
 //   - One full screen blit per frame, plus one full screen clear. On a fill
 //     rate bound GPU that is two extra passes over the framebuffer.
-//   - Both are paid only while a material is on screen. A frame with no
-//     material never allocates the target and never blits; the pool ages it
-//     out two seconds after the last glass panel disappears.
+//   - Both are paid only while a material that needs a live backdrop is on
+//     screen; live is the answer of [Renderer.planBackdrops]. A frame with
+//     no such material never allocates the target and never blits; the pool
+//     ages it out two seconds after the last live glass panel disappears.
 //
 // The region copy itself is still a region copy, and the blur chain is still
 // confined to the region. What section 8 could not have known is that the
@@ -611,9 +650,9 @@ func (r *Renderer) Submit(l *render.List) {
 //
 // # Why the decision is taken here and not in BeginFrame
 //
-// Because BeginFrame has no list. The scan is one pass over the operations
-// comparing a byte, which is cheap next to translating them, and it happens
-// before any of them is drawn.
+// Because BeginFrame has no list. The plan is one pass over the operations,
+// which is cheap next to translating them, and it happens before any of them
+// is drawn.
 //
 // A material in a *second* list, submitted after something has already been
 // drawn, is too late: the pixels are on the screen and the screen cannot be
@@ -621,7 +660,7 @@ func (r *Renderer) Submit(l *render.List) {
 // [RendererStats.GlassLate]. gift submits one list per frame, so the counter
 // is expected to stay at zero; it exists because "expected to" is not the same
 // as "does".
-func (r *Renderer) ensureScene(l *render.List) {
+func (r *Renderer) ensureScene(live bool) {
 	if r.scene != nil || r.screen == nil || r.targets == nil {
 		return
 	}
@@ -630,7 +669,7 @@ func (r *Renderer) ensureScene(l *render.List) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if !r.listHasVisibleMaterial(l, geom.Rc(0, 0, float32(w), float32(h))) {
+	if !live {
 		return
 	}
 	if r.frameBatches != 0 || len(r.idx) != 0 {
@@ -653,65 +692,6 @@ func (r *Renderer) ensureScene(l *render.List) {
 	}
 	r.scene, r.sceneW, r.sceneH = img, w, h
 	r.dst = img
-}
-
-// listHasVisibleMaterial reports whether l contains a material that will
-// actually be drawn inside screen.
-//
-// # Why it is not merely "is there an OpMaterial"
-//
-// Because the project plan, section 11, as amended after WU-S, draws the line
-// exactly here: the screen sized scene target is paid "nur solange ein
-// Material *sichtbar* ist - nicht bloss, solange eines in der Display-Liste
-// steht. Wer diesen Unterschied nicht erzwingt, zahlt bei 1080p acht Megabyte,
-// ein Clear und einen Vollbild-Blit je Frame fuer ein Panel, das niemand
-// sieht." A glass header scrolled out of its clip is precisely that panel.
-//
-// So the scan applies the same three tests [Renderer.appendMaterial] applies
-// — empty bounds, empty clip, nothing surviving the clip and the screen — and
-// it applies them in the same order and with the same arithmetic, so the two
-// cannot disagree about whether a material is going to draw. It is still one
-// pass over the operations with no allocation, and it short circuits on the
-// first material that survives.
-func (r *Renderer) listHasVisibleMaterial(l *render.List, screen geom.Rect) bool {
-	if l.MaterialsLen() <= 1 {
-		// The side table holds nothing but its sentinel, so no painter added
-		// a material. One integer compare for the overwhelmingly common case.
-		return false
-	}
-	ops := l.Ops()
-	for i := 0; i < len(ops); i++ {
-		op := ops[i]
-		if op.Kind == render.OpLayer {
-			// A layer with a material in it is drawn through, and needs the
-			// scene if it is visible at all; one without needs none.
-			sub := layerRange(ops, i)
-			i += len(sub)
-			if needsBackdrop(l, sub) && !r.composite(l, op, geom.Size{W: screen.Width(), H: screen.Height()}).vis.IsEmpty() {
-				return true
-			}
-			continue
-		}
-		if op.Kind != render.OpMaterial || op.Material == 0 {
-			continue
-		}
-		if l.Material(op.Material).Kind != render.MaterialGlass {
-			continue
-		}
-		if op.Bounds.IsEmpty() {
-			continue
-		}
-		clip := l.Clip(op.Clip)
-		if clip.IsEmpty() {
-			continue
-		}
-		region := l.Xform(op.Xform).TransformRect(op.Bounds).Canon()
-		if region.Intersect(clip).Intersect(screen).IsEmpty() {
-			continue
-		}
-		return true
-	}
-	return false
 }
 
 // EndFrame implements [render.Backend].
@@ -746,6 +726,7 @@ func (r *Renderer) EndFrame() {
 		r.textures.Tick()
 	}
 	r.evictLayers()
+	r.evictBlurs()
 	if r.targets != nil {
 		if n := r.targets.Leased(); n != 0 {
 			// A leaked lease is a pooled target nothing will ever hand back,
@@ -1846,6 +1827,10 @@ type RendererStats struct {
 	// be redirected into the scene target any more. gift submits one list per
 	// frame, so this is expected to stay at zero; see [Renderer.ensureScene].
 	GlassLate uint64
+	// GlassStaticOps is the number of panes drawn over a static backdrop and
+	// GlassStaticBlurs the number of pictures blurred for them; see
+	// backdrop.go. GlassStaticOps is part of GlassOps.
+	GlassStaticOps, GlassStaticBlurs uint64
 	// GlassLevel is the level the last drawn frame used and GlassPinned
 	// whether the application fixed it. The project plan, section 8, requires
 	// the effective level to be visible in the diagnostics.
@@ -1947,6 +1932,8 @@ func (r *Renderer) Stats() RendererStats {
 		GlassPasses:        r.glassPasses,
 		GlassDrawCalls:     r.glassBatches,
 		GlassLate:          r.glassLate,
+		GlassStaticOps:     r.glassStatic,
+		GlassStaticBlurs:   r.staticBlurs,
 		Layers:             r.LayerStats(),
 	}
 	if r.policy != nil {

@@ -275,7 +275,7 @@ func nearly(a, b float32) bool {
 // it was last drawn, and marks every other one as current. Layers that are not
 // visible in a target of the given size are left alone. It runs before the
 // frame draws anything; see the section on two passes above.
-func (r *Renderer) prepareLayers(l *render.List, ops []render.Op, size geom.Size) {
+func (r *Renderer) prepareLayers(l *render.List, ops []render.Op, off int, size geom.Size) {
 	for i := 0; i < len(ops); i++ {
 		op := ops[i]
 		if op.Kind != render.OpLayer {
@@ -303,7 +303,7 @@ func (r *Renderer) prepareLayers(l *render.List, ops []render.Op, size geom.Size
 				e.tex, e.valid = nil, false
 			}
 			prev, was := r.enterThrough(l, op)
-			r.prepareLayers(l, sub, size)
+			r.prepareLayers(l, sub, off+i-len(sub)+1, size)
 			r.leaveThrough(prev, was)
 			continue
 		}
@@ -314,13 +314,13 @@ func (r *Renderer) prepareLayers(l *render.List, ops []render.Op, size geom.Size
 			continue
 		}
 		// The layers inside first, so that this one composites them.
-		r.prepareLayers(l, sub, geom.Size{W: float32(c.w), H: float32(c.h)})
-		r.drawLayer(e, l, sub, c.w, c.h)
+		r.prepareLayers(l, sub, off+i-len(sub)+1, geom.Size{W: float32(c.w), H: float32(c.h)})
+		r.drawLayer(e, l, sub, off+i-len(sub)+1, c.w, c.h)
 	}
 }
 
 // drawLayer draws ops into the texture of e, which is w by h pixels.
-func (r *Renderer) drawLayer(e *layerEntry, l *render.List, ops []render.Op, w, h int) {
+func (r *Renderer) drawLayer(e *layerEntry, l *render.List, ops []render.Op, off, w, h int) {
 	if e.tex == nil || w > e.tw || h > e.th || 2*w*h < e.tw*e.th {
 		if e.tex != nil {
 			e.tex.Deallocate()
@@ -337,7 +337,7 @@ func (r *Renderer) drawLayer(e *layerEntry, l *render.List, ops []render.Op, w, 
 	dst, size := r.dst, r.frameSize
 	r.dst, r.frameSize = e.tex, geom.Size{W: float32(w), H: float32(h)}
 	r.inLayer++
-	r.drawOps(l, ops)
+	r.drawOps(l, ops, off)
 	r.flush()
 	r.inLayer--
 	r.dst, r.frameSize = dst, size
@@ -351,15 +351,17 @@ func (r *Renderer) drawLayer(e *layerEntry, l *render.List, ops []render.Op, w, 
 	r.layerDraws++
 }
 
-// drawOps translates ops, compositing the layers among them.
-func (r *Renderer) drawOps(l *render.List, ops []render.Op) {
+// drawOps translates ops, compositing the layers among them. off is the
+// index of ops[0] in the list.
+func (r *Renderer) drawOps(l *render.List, ops []render.Op, off int) {
 	for i := 0; i < len(ops); i++ {
 		op := ops[i]
 		if op.Kind == render.OpLayer {
 			sub := layerRange(ops, i)
+			r.appendLayer(l, op, sub, off+i+1)
 			i += len(sub)
-			r.appendLayer(l, op, sub)
 		} else {
+			r.curOp = off + i
 			r.appendOp(l, op)
 		}
 		if len(r.verts) >= maxBatchVertices {
@@ -371,7 +373,7 @@ func (r *Renderer) drawOps(l *render.List, ops []render.Op) {
 // appendLayer composites the texture of the layer opened by op, or draws a
 // layer with glass in it through. Its n operations were accounted for when they were drawn into the texture, or are
 // accounted for here as reused from it.
-func (r *Renderer) appendLayer(l *render.List, op render.Op, sub []render.Op) {
+func (r *Renderer) appendLayer(l *render.List, op render.Op, sub []render.Op, off int) {
 	n := len(sub)
 	e := r.layers[op.Image]
 	c := r.composite(l, op, r.frameSize)
@@ -383,7 +385,7 @@ func (r *Renderer) appendLayer(l *render.List, op render.Op, sub []render.Op) {
 	e.used = r.drawn
 	if e.through {
 		prev, was := r.enterThrough(l, op)
-		r.drawOps(l, sub)
+		r.drawOps(l, sub, off)
 		r.leaveThrough(prev, was)
 		r.layerThrough++
 		return

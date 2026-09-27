@@ -238,10 +238,13 @@ type glassCounters struct {
 	// Fallbacks is the number of materials drawn as a plain tint because no
 	// backdrop could be obtained. Non zero means glass degraded on screen.
 	Fallbacks uint64 `json:"fallbacks"`
-	Passes    uint64 `json:"passes"`
-	DrawCalls uint64 `json:"draw_calls"`
-	Level     string `json:"level"`
-	Pinned    bool   `json:"pinned"`
+	// StaticOps are drawn over a picture blurred once; see the backend.
+	StaticOps   uint64 `json:"static_ops"`
+	StaticBlurs uint64 `json:"static_blurs"`
+	Passes      uint64 `json:"passes"`
+	DrawCalls   uint64 `json:"draw_calls"`
+	Level       string `json:"level"`
+	Pinned      bool   `json:"pinned"`
 	// LevelChanges over the whole run. In an adaptive run a large number is
 	// the flicker the hysteresis exists to prevent.
 	LevelChanges uint64 `json:"level_changes"`
@@ -276,6 +279,7 @@ func glassOf(rs RendererStats) *glassCounters {
 	return &glassCounters{
 		Ops: rs.GlassOps, ReducedOps: rs.GlassReducedOps,
 		FullOps: rs.GlassFullOps, Fallbacks: rs.GlassFallbacks,
+		StaticOps: rs.GlassStaticOps, StaticBlurs: rs.GlassStaticBlurs,
 		Passes: rs.GlassPasses, DrawCalls: rs.GlassDrawCalls,
 		Level: rs.GlassLevel, Pinned: rs.GlassPinned,
 		LevelChanges: rs.GlassLevelChanges,

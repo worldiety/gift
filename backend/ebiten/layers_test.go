@@ -192,4 +192,3 @@ func TestAnUnusedLayerIsReleased(t *testing.T) {
 		t.Errorf("an unused layer was kept: %+v", s)
 	}
 }
-

@@ -515,6 +515,9 @@ const (
 	// once however many there are — which is why it is a stage of its own and
 	// not a second copy.
 	glassPassScene
+	// glassPassStatic is the composite over a static backdrop; see
+	// backdrop.go.
+	glassPassStatic
 )
 
 // String makes a failing test readable.
@@ -530,6 +533,8 @@ func (p glassPass) String() string {
 		return "composite"
 	case glassPassScene:
 		return "scene"
+	case glassPassStatic:
+		return "static"
 	default:
 		return "fallback"
 	}
@@ -659,10 +664,6 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 
 	r.glassOps++
 	r.emitted++
-	area := float64(vis.Width()) * float64(vis.Height())
-	if r.policy != nil && r.inLayer == 0 {
-		r.policy.AddArea(area)
-	}
 
 	sx, sy := deviceScale(xf)
 	sr := sx
@@ -691,6 +692,19 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 		// describing a frame that was drawn at the other one. When both are
 		// set the policy wins and the material's own request is ignored.
 		q = g.Level
+	}
+
+	if s, ok := r.staticFor(r.curOp); ok && r.inLayer == 0 {
+		// A picture blurred once lies behind it; see backdrop.go. No copy,
+		// no chain, and no area for the policy, which weighs what live
+		// glass costs.
+		r.glassStatic++
+		r.glassPass(glassPassStatic)
+		r.compositeStatic(s, vis, region, halfW, halfH, radius, sr, g)
+		return
+	}
+	if r.policy != nil && r.inLayer == 0 {
+		r.policy.AddArea(float64(vis.Width()) * float64(vis.Height()))
 	}
 
 	back, rw, rh := r.leaseBackdrop(region)

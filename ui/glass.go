@@ -48,7 +48,18 @@ const (
 // children, not a later sibling — and it is clipped to the node's shape, that
 // is to its bounds and [CornerRadius]. Scrolling underneath it makes it dirty,
 // every frame, so a glass frame that never moves is still re-blurred whenever
-// what is behind it moves. There is no reusable cache and section 8 says so.
+// what is behind it moves.
+//
+// # Over a picture it is cheap
+//
+// When all that lies behind a pane is one opaque picture – a wallpaper, a
+// photo – with nothing drawn over it inside the pane, the backend blurs that
+// picture once, keeps it, and draws the pane as a single pass that samples
+// it. No copy of the screen, no blur per frame, and none of the barrier that
+// makes live glass expensive on a tile based GPU such as a Raspberry Pi's.
+// Nothing has to be declared for it: put the panes on the picture and keep
+// other content from underneath them. The backend's backdrop.go says what it
+// overlooks.
 //
 // It is not a reimplementation of anybody else's material. The project plan,
 // section 8, states plainly that there is no claim to pixel parity with

@@ -99,6 +99,9 @@ type texRecord struct {
 	// pendingFree marks a slot whose owner asked for release while the frame
 	// in progress was already drawing it; see [TextureCache.Deallocate].
 	pendingFree bool
+	// opaque says that every pixel has full alpha, which is what lets a
+	// picture serve as the static backdrop of a glass pane; see backdrop.go.
+	opaque bool
 }
 
 // TextureCache is the image resource service of this backend: residency,
@@ -372,6 +375,7 @@ func (t *TextureCache) Acquire(px render.Pixels) (render.ImageHandle, bool) {
 	r.pendingFree = false
 	t.bytes += need
 	t.writePixels(r, px)
+	r.opaque = opaquePixels(px)
 
 	t.frameUploads++
 	t.frameBytes += need
@@ -516,6 +520,29 @@ func (t *TextureCache) image(id render.ImageID) *eb.Image {
 		return nil
 	}
 	return t.recs[i].img
+}
+
+// opaque reports whether every pixel of an id has full alpha.
+func (t *TextureCache) opaque(id render.ImageID) bool {
+	i := uint32(id)
+	return i != 0 && int(i) < len(t.recs) && t.recs[i].live && t.recs[i].opaque
+}
+
+// opaquePixels reports whether every alpha byte of px is 255. It reads one
+// byte in four and stops at the first translucent pixel, so a photograph
+// costs one pass over its alpha channel at upload and a picture with
+// transparency costs almost nothing.
+func opaquePixels(px render.Pixels) bool {
+	n := px.W * 4
+	for y := range px.H {
+		row := px.Pix[y*px.Stride : y*px.Stride+n]
+		for x := 3; x < n; x += 4 {
+			if row[x] != 255 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // size returns the pixel dimensions of an id.

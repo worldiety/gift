@@ -1,0 +1,102 @@
+//kage:unit pixels
+
+package main
+
+// The composite of a glass pane over a static backdrop.
+//
+// It is glass.kage with one difference: the backdrop is not a copy of the
+// region under the pane but a picture that lies under it and was blurred
+// once, see backdrop.go. Source 0 is that blurred picture, at device
+// resolution, and BackOrigin is where its top left texel lands in the
+// destination. Everything else – the vertex layout, the packed style, the
+// edge factor, the rim, the streak and the grain – is glass.kage's, and so
+// are the reasons, which are not repeated here.
+//
+// # The one uniform
+//
+// glass.kage has none, because a uniform write allocates per draw. This one
+// is written into a slice that the options hold for the renderer's lifetime,
+// so a draw mutates two floats and allocates nothing.
+
+// BackOrigin is the destination pixel the blurred picture's texel (0, 0)
+// covers.
+var BackOrigin vec2
+
+func sdRoundBox(p vec2, b vec2, r float) float {
+	q := abs(p) - b + vec2(r)
+	return length(max(q, vec2(0))) + min(max(q.x, q.y), 0.0) - r
+}
+
+func roundBoxNormal(p vec2, b vec2, r float) vec2 {
+	q := abs(p) - b + vec2(r)
+	s := sign(p)
+	if max(q.x, q.y) > 0.0 {
+		m := max(q, vec2(0))
+		l := length(m)
+		if l > 0.0001 {
+			return s * (m / l)
+		}
+	}
+	if q.x > q.y {
+		return vec2(s.x, 0)
+	}
+	return vec2(0, s.y)
+}
+
+func hash21(p vec2) float {
+	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453)
+}
+
+func Fragment(dstPos vec4, src0Pos vec2, color vec4, custom vec4) vec4 {
+	origin := imageSrc0Origin()
+	half := custom.xy
+	radius := custom.z
+	packed := custom.w
+	rq := floor(packed / 65536.0)
+	rest := packed - rq*65536.0
+	hq := floor(rest / 256.0)
+	gq := rest - hq*256.0
+	refraction := rq
+	highlight := hq / 255.0
+	grain := gq / 255.0
+
+	// The position inside the pane arrives in the source coordinates, as in
+	// glass.kage; the picture is sampled by destination position instead.
+	local := src0Pos - origin
+	p := local - half
+	d := sdRoundBox(p, half, radius)
+	cov := clamp(0.5-d, 0.0, 1.0)
+	if cov <= 0.0 {
+		return vec4(0)
+	}
+	band := max(radius, 8.0)
+	e := clamp(1.0+d/band, 0.0, 1.0)
+	e = e * e
+	n := roundBoxNormal(p, half, radius)
+
+	// The displaced sample stays inside the pane, like in glass.kage, so a
+	// pane shows what is under it and not its neighbourhood.
+	size := half * 2.0
+	shifted := clamp(local+n*(refraction*e), vec2(0.5), size-vec2(0.5))
+	pos := dstPos.xy - imageDstOrigin() + (shifted - local)
+	uv := clamp(pos-BackOrigin, vec2(0.5), imageSrc0Size()-vec2(0.5))
+	back := imageSrc0UnsafeAt(uv + origin)
+
+	out := color + back*(1.0-color.a)
+	rim := e * highlight * 0.35
+	l := vec2(-0.7071, -0.7071)
+	sp := max(dot(n, l), 0.0)
+	sp = sp * sp
+	sp = sp * sp
+	spec := sp * e * highlight * 0.55
+	k := rim + spec
+	out += vec4(k, k, k, k)
+	if grain > 0.0 {
+		g := (hash21(local) - 0.5) * grain * 0.25 * out.a
+		out += vec4(g, g, g, 0)
+	}
+	out.a = min(out.a, 1.0)
+	out = vec4(min(out.rgb, vec3(out.a)), out.a)
+	out = vec4(max(out.rgb, vec3(0)), out.a)
+	return out * cov
+}

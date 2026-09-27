@@ -9,7 +9,9 @@
 //	go build -tags giftmetrics ./cmd/gift-glassbench
 //	GIFT_METRICS=1 ./gift-glassbench -scene full -duration 20s -fullscreen
 //
-// The scenes differ only in how the panels are filled:
+// The scenes differ only in how the panels are filled. Since the wallpaper is
+// an opaque picture, reduced and full panes get a static backdrop unless
+// -nostatic asks for a live one.
 //
 //	blank    a single full screen colour: the floor of a frame
 //	none     the wallpaper only, panels are not drawn at all
@@ -86,6 +88,7 @@ func main() {
 		direct     = flag.Bool("direct", false, "draw straight into the final screen (backend.Config.DirectToScreen)")
 		slide      = flag.Bool("slide", false, "switch between two copies of the scene with a page transition, without a pause")
 		nolayers   = flag.Bool("nolayers", false, "turn the layer cache off (Renderer.SetLayerCache)")
+		nostatic   = flag.Bool("nostatic", false, "give every pane a live backdrop (Renderer.SetStaticBackdrops)")
 	)
 	flag.Parse()
 
@@ -200,8 +203,9 @@ func main() {
 	}
 
 	cfg := backend.Config{Title: "gift glassbench", Width: W, Height: H, DirectToScreen: *direct}
-	if *nolayers {
-		cfg.OnRenderer = func(r *backend.Renderer) { r.SetLayerCache(false) }
+	cfg.OnRenderer = func(r *backend.Renderer) {
+		r.SetLayerCache(!*nolayers)
+		r.SetStaticBackdrops(!*nostatic)
 	}
 	switch *scene {
 	case "full":

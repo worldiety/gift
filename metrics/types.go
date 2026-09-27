@@ -208,6 +208,10 @@ type RendererStats struct {
 	// each was actually drawn at, plus the ones that degraded to a plain tint
 	// because no backdrop could be obtained.
 	GlassOps, GlassReducedOps, GlassFullOps, GlassFallbacks uint64
+	// GlassStaticOps is the part of GlassOps drawn over a picture blurred
+	// once instead of a live backdrop, and GlassStaticBlurs the number of
+	// pictures blurred for them.
+	GlassStaticOps, GlassStaticBlurs uint64
 	// GlassPasses is the number of material pass stages executed and
 	// GlassDrawCalls the draw calls they issued, including the scene to
 	// screen blit. GlassDrawCalls is part of DrawCalls.
