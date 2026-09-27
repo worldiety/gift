@@ -436,7 +436,7 @@ func (n *buttonNode) Paint(ctx *gift.PaintContext) {
 	}
 	paintBackground(ctx, st, b)
 	if lift > 0 {
-		paintLiftGlow(ctx, b, ctx.ControlState(), lift)
+		paintLiftGlow(ctx, b, st.radius, ctx.ControlState(), lift)
 	}
 	ctx.PaintChildren()
 	paintBorder(ctx, st, b)
