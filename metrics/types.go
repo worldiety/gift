@@ -226,6 +226,13 @@ type RendererStats struct {
 	// whole run. In a pinned run it is zero or one; in an adaptive run a
 	// large number is the flicker the hysteresis exists to prevent.
 	GlassLevelChanges uint64
+	// LayerComposites is the number of cached layers drawn as one textured
+	// quad, LayerHits how many of them were reused unchanged, LayerDraws how
+	// often one was drawn into its texture again, and LayerThrough how many
+	// were drawn straight into the frame because of the glass in them. On a
+	// page transition LayerDraws stays at two while LayerHits grows by two
+	// per frame; see gift.Element.Layer.
+	LayerComposites, LayerHits, LayerDraws, LayerThrough uint64
 	// Targets are the intermediate render target counters.
 	Targets TargetStats
 	// Ops is the number of operations that produced geometry.

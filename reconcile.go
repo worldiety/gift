@@ -159,6 +159,7 @@ func (a *App) applyElement(h scene.Handle, nd *nodeData, desc childDesc, owner *
 	nd.focusable = desc.elem.Focusable && desc.elem.Interactor != nil
 	nd.disabled = desc.elem.Disabled
 	nd.clip = desc.elem.Clip
+	nd.layer = desc.elem.Layer
 	// Before the obstruction below, because that one asks whether this node
 	// is visible and the answer is written here.
 	//

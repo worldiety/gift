@@ -262,6 +262,46 @@ type Element struct {
 	// the node is hidden; see [App.animate].
 	Hidden bool
 
+	// Layer lets the backend keep the drawing of this subtree as a picture
+	// of its own and composite that picture while the subtree does not
+	// change – a cached layer, in the sense of Core Animation.
+	//
+	// # When it pays
+	//
+	// When a large subtree moves without changing, which is exactly what a
+	// page transition is: without a layer every frame of the slide draws
+	// every card, label and picture of both pages again; with one it draws
+	// two textured rectangles. On a Raspberry Pi at full HD that is the
+	// difference between a slide that stutters and one that does not.
+	//
+	// # Transitions do it by themselves
+	//
+	// A node that its [TransitionSpec] is moving is painted as a layer for
+	// as long as it moves, whatever this field says, which is why the
+	// navigation containers of package ui slide cheaply without asking.
+	// Set Layer for a subtree that moves by other means – a Transform that
+	// an animation changes – or that sits unchanged under something that
+	// changes every frame.
+	//
+	// # How it knows
+	//
+	// It does not track anything. The subtree is painted every frame as
+	// usual, in the layer's own coordinate space, and the backend compares
+	// the operations with those of the frame before; see [render.OpLayer].
+	// Equal operations are an equal picture. A change of any kind – a
+	// picture that arrived, a caret, a new label – draws the layer again,
+	// which costs one extra composite over not having a layer at all.
+	//
+	// # What it cannot do
+	//
+	// The picture is the element's bounds: a shadow or a badge that paints
+	// outside them is cut off. A glass material shows what lies behind it,
+	// and in a picture of its own nothing does; a layer with glass in it is
+	// therefore drawn as if it were none, and saves nothing. A layer is drawn whole even where it is
+	// clipped, so that it can move into view without being redrawn; a layer
+	// much larger than the screen is therefore a waste of memory.
+	Layer bool
+
 	// FocusTrap confines the keyboard focus order to this node's subtree for
 	// as long as the node is mounted.
 	//

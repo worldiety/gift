@@ -118,6 +118,23 @@ const (
 	// number a material needs is in its side table entry, because there are
 	// six of them and a [Glass] may grow a seventh.
 	OpMaterial
+
+	// OpLayer opens a cached layer: the next GlyphCount operations belong to
+	// a subtree that the backend may rasterise once into a texture of its
+	// own and afterwards composite as a single picture. See [List.BeginLayer].
+	//
+	// Bounds is the layer in the space of Xform, which together with Clip
+	// is the transform and clip the *composite* is drawn with. Image is the
+	// layer key, stable for as long as the subtree lives. The operations of
+	// the layer are expressed in layer space – see [LayerXform] – so that
+	// moving the layer, as a page transition does, leaves them unchanged and
+	// the texture reusable.
+	//
+	// Two fields are reused rather than added, so that no other operation
+	// grows: GlyphCount is the number of operations in the layer and
+	// StrokeWidth the scale they were emitted at. [Op.LayerOps] and
+	// [Op.LayerScale] read them under their real names.
+	OpLayer
 )
 
 // Op is a single drawing operation.
@@ -260,6 +277,14 @@ type Op struct {
 // It is not the *visible* area: a clip may cut it, and a hit test ignores it
 // entirely. In particular it does not consult the colour: a transparent
 // shadow is skipped by the backend rather than resized here.
+// LayerOps is, for an [OpLayer], the number of operations that follow it and
+// belong to the layer.
+func (o Op) LayerOps() int { return int(o.GlyphCount) }
+
+// LayerScale is, for an [OpLayer], the pixel density its content was emitted
+// at: one layer unit is one texel.
+func (o Op) LayerScale() float32 { return o.StrokeWidth }
+
 func (o Op) PaintBounds() geom.Rect {
 	if o.Kind != OpShadow {
 		return o.Bounds

@@ -626,12 +626,12 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 		r.skipEmptyBounds++
 		return
 	}
-	clip := l.Clip(op.Clip)
+	clip := r.opClip(l, op.Clip)
 	if clip.IsEmpty() {
 		r.skipEmptyClip++
 		return
 	}
-	xf := l.Xform(op.Xform)
+	xf := r.opXform(l, op.Xform)
 	region := xf.TransformRect(b).Canon()
 	// The parent clip applies to the material exactly as it applies to a
 	// background fill, which is the project plan, section 8: "Ein
@@ -646,7 +646,7 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 	if r.frameSize.W > 0 && r.frameSize.H > 0 {
 		vis = vis.Intersect(geom.Rc(0, 0, r.frameSize.W, r.frameSize.H))
 	}
-	if r.scene != nil {
+	if r.scene != nil && r.inLayer == 0 {
 		vis = vis.Intersect(geom.Rc(0, 0, float32(r.sceneW), float32(r.sceneH)))
 	}
 	if vis.IsEmpty() {
@@ -660,7 +660,7 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 	r.glassOps++
 	r.emitted++
 	area := float64(vis.Width()) * float64(vis.Height())
-	if r.policy != nil {
+	if r.policy != nil && r.inLayer == 0 {
 		r.policy.AddArea(area)
 	}
 
@@ -727,7 +727,9 @@ func (r *Renderer) appendMaterial(l *render.List, op render.Op) {
 // corners of the shape would then be drawn at the edge of the screen instead
 // of off it.
 func (r *Renderer) leaseBackdrop(region geom.Rect) (*eb.Image, int, int) {
-	if r.scene == nil || r.targets == nil {
+	if r.scene == nil || r.targets == nil || r.inLayer > 0 {
+		// Inside a layer there is no backdrop but the layer itself; see
+		// render.OpLayer.
 		return nil, 0, 0
 	}
 	rw := int(math.Ceil(float64(region.Width())))

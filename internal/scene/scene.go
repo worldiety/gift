@@ -89,6 +89,11 @@ type Handle struct {
 	index, gen uint32
 }
 
+// Key folds the handle into 32 bits: the index in the low 24, the low 8 bits
+// of the generation above. Two live nodes never share a key while there are
+// fewer than 2^24 slots; a recycled slot differs in its generation.
+func (h Handle) Key() uint32 { return h.index&0xFFFFFF | h.gen<<24 }
+
 // IsZero reports whether h is the zero handle, which refers to no node.
 func (h Handle) IsZero() bool { return h.index == 0 && h.gen == 0 }
 

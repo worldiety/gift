@@ -46,14 +46,16 @@ func markerRect(t testing.TB, h *gifttest.Harness, i int) (geom.Rect, bool) {
 	t.Helper()
 	want := ui.ResolveColor(markerColor(i))
 	list := h.List()
-	for _, op := range h.Ops() {
+	for i, op := range h.Ops() {
 		if op.Kind != render.OpFillRect && op.Kind != render.OpFillRoundRect {
 			continue
 		}
 		if op.Color != render.Color(want) {
 			continue
 		}
-		return list.Xform(op.Xform).TransformRect(op.Bounds), true
+		// Through the layer a sliding screen is painted in; see
+		// gift.Element.Layer.
+		return list.DeviceXform(i).TransformRect(op.Bounds), true
 	}
 	return geom.Rect{}, false
 }

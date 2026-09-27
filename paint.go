@@ -335,6 +335,7 @@ func (a *App) paintNode(h scene.Handle) {
 	prevXform := a.pctx.xform
 	prevPhase := a.transPhase
 	m, moved := nd.transXform(a.in.now, n.Bounds)
+	sliding := moved
 	if nd.xform != nil {
 		if moved {
 			m = nd.xform.Mul(m)
@@ -355,6 +356,32 @@ func (a *App) paintNode(h scene.Handle) {
 		defer func() {
 			a.pctx.xform = prevXform
 			a.transPhase = prevPhase
+		}()
+	}
+
+	if nd.layer || sliding {
+		// A node that its transition is moving is a layer for as long as it
+		// moves: a page that slides is the same picture in every frame of
+		// the slide, and drawing it once is the whole of the saving. See
+		// [Element.Layer].
+		//
+		// The layer's content is emitted in the layer's own space; the
+		// transform that places it – including a transition offset – belongs
+		// to the composite alone. That is what keeps the content of a sliding
+		// page identical from frame to frame. See render.OpLayer.
+		//
+		// The layer is rasterised at the scale of the node without its
+		// transition, so that a transition that zooms moves a finished
+		// texture instead of drawing the subtree again at every step.
+		res := a.list.Xform(prevXform)
+		if nd.xform != nil {
+			res = nd.xform.Mul(res)
+		}
+		outer := a.pctx.xform
+		a.pctx.xform = a.list.BeginLayer(layerKey(h), n.Bounds, outer, render.LayerScale(res))
+		defer func() {
+			a.list.EndLayer()
+			a.pctx.xform = outer
 		}()
 	}
 
@@ -391,4 +418,10 @@ func (a *App) paintNode(h scene.Handle) {
 		panic("gift: painter returned with an unbalanced clip stack")
 	}
 	a.diag.PaintedNodes++
+}
+
+// layerKey is the key of the layer a node paints, stable for as long as the
+// node lives: its handle, folded into the 32 bits of a render.ImageID.
+func layerKey(h scene.Handle) render.ImageID {
+	return render.ImageID(h.Key())
 }

@@ -168,6 +168,18 @@ type Renderer struct {
 	// dst is the image of the frame in progress. It is set by [Renderer.SetTarget].
 	dst surface
 
+	// layers are the cached layers by key, and inLayer is how deep the
+	// renderer is inside drawing one. through, when set, maps the operations
+	// of a layer that is drawn straight into the frame. See layers.go.
+	layers                                   map[render.ImageID]*layerEntry
+	inLayer                                  int
+	through                                  throughSpace
+	inThrough                                bool
+	noLayerCache                             bool
+	layerThrough                             uint64
+	layerOps, layerHits, layerDraws          uint64
+	layerReused, layerAllocs, layerEvictions uint64
+
 	// verts and idx are the reused vertex and index buffers. They are the
 	// reason Submit does not allocate in the steady state.
 	verts []eb.Vertex
@@ -554,13 +566,14 @@ func (r *Renderer) Submit(l *render.List) {
 	if l == nil {
 		return
 	}
+	ops := l.Ops()
+	// Changed layers are drawn before the frame touches its target, and
+	// their batches go to their own textures, not to it; see layers.go.
+	batches := r.frameBatches
+	r.prepareLayers(l, ops, r.frameSize)
+	r.frameBatches = batches
 	r.ensureScene(l)
-	for _, op := range l.Ops() {
-		r.appendOp(l, op)
-		if len(r.verts) >= maxBatchVertices {
-			r.flush()
-		}
-	}
+	r.drawOps(l, ops)
 }
 
 // ensureScene redirects the frame into an offscreen when the list contains a
@@ -617,7 +630,7 @@ func (r *Renderer) ensureScene(l *render.List) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if !listHasVisibleMaterial(l, geom.Rc(0, 0, float32(w), float32(h))) {
+	if !r.listHasVisibleMaterial(l, geom.Rc(0, 0, float32(w), float32(h))) {
 		return
 	}
 	if r.frameBatches != 0 || len(r.idx) != 0 {
@@ -660,13 +673,25 @@ func (r *Renderer) ensureScene(l *render.List) {
 // cannot disagree about whether a material is going to draw. It is still one
 // pass over the operations with no allocation, and it short circuits on the
 // first material that survives.
-func listHasVisibleMaterial(l *render.List, screen geom.Rect) bool {
+func (r *Renderer) listHasVisibleMaterial(l *render.List, screen geom.Rect) bool {
 	if l.MaterialsLen() <= 1 {
 		// The side table holds nothing but its sentinel, so no painter added
 		// a material. One integer compare for the overwhelmingly common case.
 		return false
 	}
-	for _, op := range l.Ops() {
+	ops := l.Ops()
+	for i := 0; i < len(ops); i++ {
+		op := ops[i]
+		if op.Kind == render.OpLayer {
+			// A layer with a material in it is drawn through, and needs the
+			// scene if it is visible at all; one without needs none.
+			sub := layerRange(ops, i)
+			i += len(sub)
+			if needsBackdrop(l, sub) && !r.composite(l, op, geom.Size{W: screen.Width(), H: screen.Height()}).vis.IsEmpty() {
+				return true
+			}
+			continue
+		}
 		if op.Kind != render.OpMaterial || op.Material == 0 {
 			continue
 		}
@@ -720,6 +745,7 @@ func (r *Renderer) EndFrame() {
 	if r.textures != nil {
 		r.textures.Tick()
 	}
+	r.evictLayers()
 	if r.targets != nil {
 		if n := r.targets.Leased(); n != 0 {
 			// A leaked lease is a pooled target nothing will ever hand back,
@@ -789,7 +815,7 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 		r.skipEmptyBounds++
 		return
 	}
-	clip := l.Clip(op.Clip)
+	clip := r.opClip(l, op.Clip)
 	if clip.IsEmpty() {
 		r.skipEmptyClip++
 		return
@@ -812,7 +838,7 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 		stroke = lim
 	}
 
-	xf := l.Xform(op.Xform)
+	xf := r.opXform(l, op.Xform)
 	sx, sy := deviceScale(xf)
 	// A single factor has to do for the radius and the stroke width, because
 	// the distance field has one radius and not two. The smaller of the two
@@ -904,7 +930,7 @@ func (r *Renderer) appendImage(l *render.List, op render.Op) {
 		r.skipEmptyBounds++
 		return
 	}
-	clip := l.Clip(op.Clip)
+	clip := r.opClip(l, op.Clip)
 	if clip.IsEmpty() {
 		r.skipEmptyClip++
 		return
@@ -925,7 +951,7 @@ func (r *Renderer) appendImage(l *render.List, op render.Op) {
 	}
 
 	src := op.Fit.Source(b, w, h)
-	xf := l.Xform(op.Xform)
+	xf := r.opXform(l, op.Xform)
 	// The clamp of appendOp, for the same reason: a per operation constant
 	// is computed once here and not per fragment.
 	radius := min(op.CornerRadius, b.Width()*0.5, b.Height()*0.5)
@@ -1168,7 +1194,7 @@ func (r *Renderer) appendGlyphs(l *render.List, op render.Op) {
 		r.skipTransparent++
 		return
 	}
-	clip := l.Clip(op.Clip)
+	clip := r.opClip(l, op.Clip)
 	if clip.IsEmpty() {
 		r.skipEmptyClip++
 		return
@@ -1179,7 +1205,7 @@ func (r *Renderer) appendGlyphs(l *render.List, op render.Op) {
 		return
 	}
 
-	xf := l.Xform(op.Xform)
+	xf := r.opXform(l, op.Xform)
 	// The raster scale of the run. It is the density of the display at the
 	// root of the display list, times whatever a container above this text
 	// added, and it is the factor the atlas rasterises at; see
@@ -1867,6 +1893,11 @@ type RendererStats struct {
 	// UnknownKinds is the number of operations whose kind this backend does
 	// not know.
 	UnknownKinds uint64
+
+	// Layers are the counters of the layer cache. Its Reused operations are
+	// part of the total accounting: they were submitted and neither drawn
+	// nor skipped, because a cached picture of them was.
+	Layers LayerStats
 }
 
 // Skipped is the total number of operations that produced no geometry. It is
@@ -1878,10 +1909,10 @@ func (s RendererStats) Skipped() uint64 {
 		s.SkippedEmptyText + s.SkippedNoImage
 }
 
-// Accounted is Ops + Skipped + UnknownKinds. It must equal the total number of
-// operations submitted.
+// Accounted is Ops + Skipped + UnknownKinds + Layers.Reused +
+// Layers.Through. It must equal the total number of operations submitted.
 func (s RendererStats) Accounted() uint64 {
-	return s.Ops + s.Skipped() + s.UnknownKinds
+	return s.Ops + s.Skipped() + s.UnknownKinds + s.Layers.Reused + s.Layers.Through
 }
 
 // Stats returns the renderer counters. It is not synchronised and belongs to
@@ -1916,6 +1947,7 @@ func (r *Renderer) Stats() RendererStats {
 		GlassPasses:        r.glassPasses,
 		GlassDrawCalls:     r.glassBatches,
 		GlassLate:          r.glassLate,
+		Layers:             r.LayerStats(),
 	}
 	if r.policy != nil {
 		s.GlassLevel = r.policy.Level()

@@ -32,6 +32,9 @@ type List struct {
 	// clipStack holds indices into clips. Its first element is always 0,
 	// the unbounded sentinel, so the stack is never empty.
 	clipStack []uint32
+
+	// layerStack holds, for every open layer, the index of its [OpLayer].
+	layerStack []int
 }
 
 func (l *List) ensure() {
@@ -62,7 +65,68 @@ func (l *List) Reset() {
 	l.glyphs = l.glyphs[:0]
 	l.materials = l.materials[:0]
 	l.clipStack = l.clipStack[:0]
+	l.layerStack = l.layerStack[:0]
 	l.ensure()
+}
+
+// BeginLayer opens a cached layer over bounds, which are in the space of the
+// transform parent, and returns the index of the transform the layer's
+// content must be emitted with. Until the matching [List.EndLayer] the active
+// clip is the layer's own texture rectangle, not the clip outside: a layer
+// that is only partly visible is still drawn whole, so that it can be moved
+// into view without being drawn again.
+//
+// scale is the pixel density the content is rasterised at; zero means
+// [LayerScale] of the parent transform. A producer passes the scale of the
+// transform *without* a running animation, so that a layer that zooms in is
+// not rasterised again at every step of the zoom.
+//
+// A layer with no area or with a side above [MaxLayerSide] is not opened:
+// the content is emitted as it would be without a layer, parent is returned
+// unchanged, and the matching EndLayer does nothing.
+func (l *List) BeginLayer(key ImageID, bounds geom.Rect, parent uint32, scale float32) uint32 {
+	l.ensure()
+	if !(scale > 0) {
+		scale = LayerScale(l.Xform(parent))
+	}
+	w, h := LayerSize(bounds, scale)
+	if w <= 0 || h <= 0 || w > MaxLayerSide || h > MaxLayerSide {
+		l.layerStack = append(l.layerStack, -1)
+		return parent
+	}
+
+	l.ops = append(l.ops, Op{
+		Kind:        OpLayer,
+		Bounds:      bounds,
+		Clip:        l.CurrentClip(),
+		Xform:       parent,
+		Image:       key,
+		Color:       Color{R: 1, G: 1, B: 1, A: 1},
+		StrokeWidth: scale,
+	})
+	l.layerStack = append(l.layerStack, len(l.ops)-1)
+
+	l.clips = append(l.clips, geom.Rc(0, 0, float32(w), float32(h)))
+	l.clipStack = append(l.clipStack, uint32(len(l.clips)-1))
+
+	return l.PushXform(LayerXform(bounds, scale))
+}
+
+// EndLayer closes the innermost layer opened by [List.BeginLayer].
+func (l *List) EndLayer() {
+	l.ensure()
+	if len(l.layerStack) == 0 {
+		panic("gift/render: List.EndLayer without matching BeginLayer")
+	}
+
+	i := l.layerStack[len(l.layerStack)-1]
+	l.layerStack = l.layerStack[:len(l.layerStack)-1]
+	if i < 0 {
+		return
+	}
+
+	l.clipStack = l.clipStack[:len(l.clipStack)-1]
+	l.ops[i].GlyphCount = uint32(len(l.ops) - i - 1)
 }
 
 // PushClip intersects r with the currently active clip, appends the result

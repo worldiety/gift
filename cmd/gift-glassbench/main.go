@@ -20,8 +20,11 @@
 //	         on the CPU, as a rounded picture: what a static backdrop cache
 //	         would cost per frame
 //
-// -move slides the panel layer back and forth like a page transition, which
-// also rebuilds the scene every frame. -novsync draws as fast as the machine
+// -move slides the panel layer back and forth by changing its padding, which
+// rebuilds and lays out the scene every frame. -slide instead switches
+// between two copies of the scene with the page transition of a navigation
+// container, back and forth without a pause, which is what the layer cache
+// is for; -nolayers turns the cache off for the comparison. -novsync draws as fast as the machine
 // can, so that the frame interval is the cost of a frame rather than the
 // refresh rate of the display.
 package main
@@ -81,6 +84,8 @@ func main() {
 		move       = flag.Bool("move", false, "slide the panels back and forth")
 		novsync    = flag.Bool("novsync", false, "draw as fast as possible, so that the interval measures cost and not the display")
 		direct     = flag.Bool("direct", false, "draw straight into the final screen (backend.Config.DirectToScreen)")
+		slide      = flag.Bool("slide", false, "switch between two copies of the scene with a page transition, without a pause")
+		nolayers   = flag.Bool("nolayers", false, "turn the layer cache off (Renderer.SetLayerCache)")
 	)
 	flag.Parse()
 
@@ -107,12 +112,22 @@ func main() {
 	ui.SetDefaultFont(ui.MustFont(ui.FontQuery{Family: inter.Family}))
 
 	var shift float64
+	front := 0
+	var page func() gift.View
 	root := func(ctx *gift.Context) gift.View {
 		tick := ctx.State("tick", 0)
 		if *move {
 			ctx.Read(tick)
 		}
-
+		if *slide {
+			return ui.ZStack(
+				slideView{key: "a", hidden: front != 0, parked: geom.Pt(-1, 0), child: page()},
+				slideView{key: "b", hidden: front != 1, parked: geom.Pt(1, 0), child: page()},
+			)
+		}
+		return page()
+	}
+	page = func() gift.View {
 		if *scene == "blank" {
 			return ui.Box().Frame(float32(W), float32(H)).Background(ui.RGB(40, 90, 160))
 		}
@@ -185,6 +200,9 @@ func main() {
 	}
 
 	cfg := backend.Config{Title: "gift glassbench", Width: W, Height: H, DirectToScreen: *direct}
+	if *nolayers {
+		cfg.OnRenderer = func(r *backend.Renderer) { r.SetLayerCache(false) }
+	}
 	switch *scene {
 	case "full":
 		cfg.GlassQuality = render.Full
@@ -193,9 +211,16 @@ func main() {
 	}
 
 	start := time.Now()
+	switched := start
 	cfg.OnUpdate = func() error {
 		if time.Since(start) > *duration {
 			return backend.Terminate
+		}
+
+		if *slide && time.Since(switched) >= slideDuration {
+			switched = time.Now()
+			front = 1 - front
+			app.Invalidate()
 		}
 
 		if *move {
@@ -208,11 +233,47 @@ func main() {
 		return nil
 	}
 
-	fmt.Printf("gift-glassbench scene=%s size=%dx%d move=%v duration=%v\n", *scene, W, H, *move, *duration)
+	fmt.Printf("gift-glassbench scene=%s size=%dx%d move=%v slide=%v layers=%v duration=%v\n",
+		*scene, W, H, *move, *slide, !*nolayers, *duration)
 
 	if err := backend.Run(app, cfg); err != nil {
 		fail(err)
 	}
+}
+
+// slideDuration is the length of one page movement in -slide mode, and also
+// the time between two of them, so that the pages never rest.
+const slideDuration = 400 * time.Millisecond
+
+var slideType = gift.RegisterType("glassbench.slide")
+
+// slideView is a full size page whose change of visibility is a movement,
+// like the layer of a navigation container.
+type slideView struct {
+	key    string
+	hidden bool
+	parked geom.Point
+	child  gift.View
+}
+
+func (s slideView) ViewType() gift.TypeID { return slideType }
+
+func (s slideView) Build(*gift.BuildContext) gift.Element {
+	return gift.Element{
+		Key:        s.key,
+		Layouter:   fillLayout{},
+		Children:   []gift.View{s.child},
+		Hidden:     s.hidden,
+		Transition: gift.TransitionSpec{Parked: s.parked, Duration: slideDuration},
+	}
+}
+
+type fillLayout struct{}
+
+func (fillLayout) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
+	ctx.Measure(0, geom.Tight(c.Max))
+	ctx.Place(0, geom.Point{})
+	return c.Max
 }
 
 // wallpaper is a colourful picture with sharp detail, so that a blur has

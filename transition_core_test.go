@@ -57,9 +57,11 @@ var transColour = render.Color{R: 1, G: 0, B: 0, A: 1}
 // drawnAt returns where the fill of the transitioning node landed on the
 // device, and whether it was drawn at all.
 func drawnAt(list *render.List) (geom.Rect, bool) {
-	for _, op := range list.Ops() {
+	for i, op := range list.Ops() {
 		if op.Kind == render.OpFillRect && op.Color == transColour {
-			return list.Xform(op.Xform).TransformRect(op.Bounds), true
+			// Through the layer a moving node is painted in; see
+			// gift.Element.Layer.
+			return list.DeviceXform(i).TransformRect(op.Bounds), true
 		}
 	}
 	return geom.Rect{}, false

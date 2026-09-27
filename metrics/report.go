@@ -216,7 +216,10 @@ type rendererCounters struct {
 	// has never drawn a pane says something about the policy's internal
 	// state and nothing about the run, and a reader comparing two reports
 	// has to know that to discount it. No glass, no glass block.
-	Glass    *glassCounters  `json:"glass,omitempty"`
+	Glass *glassCounters `json:"glass,omitempty"`
+	// Layers is omitted on a run that composited no layer, for the reason
+	// Glass is.
+	Layers   *layerCounters  `json:"layers,omitempty"`
 	Atlas    atlasCounters   `json:"atlas"`
 	Textures textureCounters `json:"textures"`
 	Targets  targetCounters  `json:"targets"`
@@ -242,6 +245,26 @@ type glassCounters struct {
 	// LevelChanges over the whole run. In an adaptive run a large number is
 	// the flicker the hysteresis exists to prevent.
 	LevelChanges uint64 `json:"level_changes"`
+}
+
+// layerCounters are the layer cache numbers; see gift.Element.Layer.
+type layerCounters struct {
+	Composites uint64 `json:"composites"`
+	Hits       uint64 `json:"hits"`
+	Draws      uint64 `json:"draws"`
+	Through    uint64 `json:"through"`
+}
+
+// layersOf returns the layer block of a report, or nil when there was no
+// layer.
+func layersOf(rs RendererStats) *layerCounters {
+	if rs.LayerComposites == 0 && rs.LayerThrough == 0 {
+		return nil
+	}
+	return &layerCounters{
+		Composites: rs.LayerComposites, Hits: rs.LayerHits,
+		Draws: rs.LayerDraws, Through: rs.LayerThrough,
+	}
 }
 
 // glassOf returns the glass block of a report, or nil when the run drew no
@@ -448,6 +471,7 @@ func (r *Recorder) emit(kind string) {
 			ShadowOps:          rs.ShadowOps,
 			ShadowSharpOps:     rs.ShadowSharpOps,
 			Glass:              glassOf(rs),
+			Layers:             layersOf(rs),
 			Targets: targetCounters{
 				Leases: rs.Targets.Leases, Reuses: rs.Targets.Reuses,
 				Allocations: rs.Targets.Allocations, Deallocations: rs.Targets.Deallocations,

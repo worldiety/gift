@@ -49,6 +49,9 @@ type nodeData struct {
 	// not hit tested and not in the focus order.
 	hidden bool
 
+	// layer is [Element.Layer].
+	layer bool
+
 	// focusTrap is [Element.FocusTrap]: while this node is mounted, the focus
 	// order is confined to its subtree. See [App.focusRoot].
 	focusTrap bool
@@ -181,6 +184,7 @@ func (nd *nodeData) release() {
 	// This is the rule of the project plan, section 5: a payload field that
 	// is not refreshed on every build is cleared on unmount.
 	nd.hidden = false
+	nd.layer = false
 	nd.focusTrap = false
 	nd.keyFallback = false
 	nd.preservesFocus = false
