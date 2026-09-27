@@ -351,6 +351,9 @@ type Gallery struct {
 	// pool size the last layout pass wanted.
 	viewport     float64
 	desiredSlots int
+	// height is the whole height of the node, padding included: the band
+	// the tiles are visible in; see [Gallery.bindAndPlace].
+	height float64
 
 	// density is the device density of the last layout pass. It exists for
 	// one purpose, choosing the thumbnail rung in device pixels; see
@@ -1498,6 +1501,7 @@ func (n *galleryNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.S
 	}
 	size := cc.Constrain(geom.Sz(w, h))
 	g.viewport = float64(size.H - n.pad.Vertical())
+	g.height = float64(size.H)
 
 	contentW := float64(size.W - n.pad.Horizontal())
 	// Probed dimensions first, as one batch, so that the reflow below is the
@@ -1812,8 +1816,14 @@ func (g *Gallery) bindAndPlace(ctx *gift.LayoutContext, pad geom.Insets, off flo
 	// wider by the overscan, and the difference between the two intervals is
 	// exactly what separates a visible request from a prefetch; see
 	// [Gallery.requestImage].
+	// The whole height of the node and not the viewport less the padding:
+	// the tiles scroll through the padding too – under a floating header at
+	// the top and a bar at the bottom – and the band that starts at
+	// off - pad.Top is on screen for all of it. Measuring it by the padded
+	// viewport cut off pad.Top + pad.Bottom at the bottom, where the last
+	// row was released before it had left and bound after it had arrived.
 	visTop := off - float64(pad.Top)
-	visBottom := visTop + g.viewport
+	visBottom := visTop + g.height
 	if g.ix.Ready() {
 		g.want = g.ix.Visible(visTop-g.overscan, visBottom+g.overscan, g.want)
 	}
