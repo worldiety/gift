@@ -80,6 +80,7 @@ func main() {
 		fullscreen = flag.Bool("fullscreen", false, "run fullscreen")
 		move       = flag.Bool("move", false, "slide the panels back and forth")
 		novsync    = flag.Bool("novsync", false, "draw as fast as possible, so that the interval measures cost and not the display")
+		direct     = flag.Bool("direct", false, "draw straight into the final screen (backend.Config.DirectToScreen)")
 	)
 	flag.Parse()
 
@@ -183,7 +184,7 @@ func main() {
 		eb.SetVsyncEnabled(false)
 	}
 
-	cfg := backend.Config{Title: "gift glassbench", Width: W, Height: H}
+	cfg := backend.Config{Title: "gift glassbench", Width: W, Height: H, DirectToScreen: *direct}
 	switch *scene {
 	case "full":
 		cfg.GlassQuality = render.Full

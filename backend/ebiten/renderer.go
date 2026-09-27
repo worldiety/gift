@@ -1,6 +1,8 @@
 package ebiten
 
 import (
+	"image"
+
 	_ "embed"
 	"fmt"
 	"math"
@@ -110,7 +112,7 @@ type Renderer struct {
 	sceneW, sceneH int
 	// screen is what [Renderer.SetTarget] was given: the real destination,
 	// which scene is blitted to in EndFrame.
-	screen *eb.Image
+	screen surface
 	// lastDraw is the timestamp of the previous BeginFrame, which is what
 	// feeds the interval window of the policy.
 	lastDraw time.Time
@@ -164,7 +166,7 @@ type Renderer struct {
 	glyphOpts eb.DrawTrianglesOptions
 
 	// dst is the image of the frame in progress. It is set by [Renderer.SetTarget].
-	dst *eb.Image
+	dst surface
 
 	// verts and idx are the reused vertex and index buffers. They are the
 	// reason Submit does not allocate in the steady state.
@@ -384,7 +386,35 @@ func NewRenderer() (*Renderer, error) {
 // the two cases are pixel identical. Ebitengine clears the real screen before
 // every Draw anyway; a caller that hands over its own image — a golden
 // harness, for instance — keeps whatever it put there.
-func (r *Renderer) SetTarget(dst *eb.Image) { r.screen, r.dst = dst, dst }
+func (r *Renderer) SetTarget(dst *eb.Image) {
+	if dst == nil {
+		r.screen, r.dst = nil, nil
+		return
+	}
+
+	r.screen, r.dst = dst, dst
+}
+
+// SetFinalTarget draws the frame straight into Ebitengine's final screen
+// instead of an offscreen; see [Config.DirectToScreen].
+func (r *Renderer) SetFinalTarget(dst eb.FinalScreen) {
+	if dst == nil {
+		r.screen, r.dst = nil, nil
+		return
+	}
+
+	r.screen, r.dst = dst, dst
+}
+
+// surface is what the renderer draws on: an [eb.Image], or Ebitengine's
+// [eb.FinalScreen], which is the real framebuffer and cannot be read.
+// Everything the renderer reads from – the scene of a frame with a material,
+// the glass backdrops – is an image of its own, never the surface.
+type surface interface {
+	Bounds() image.Rectangle
+	DrawTriangles32(vertices []eb.Vertex, indices []uint32, img *eb.Image, options *eb.DrawTrianglesOptions)
+	DrawTrianglesShader32(vertices []eb.Vertex, indices []uint32, shader *eb.Shader, options *eb.DrawTrianglesShaderOptions)
+}
 
 // Targets returns the intermediate render target pool, for [TargetStats] and
 // for a test that wants a small budget in order to observe reuse, rejection

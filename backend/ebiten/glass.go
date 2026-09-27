@@ -919,11 +919,11 @@ func (r *Renderer) blitCopy(dst, src *eb.Image, srcRect geom.Rect, dstX, dstY fl
 
 // blitOver composites srcRect of src onto dst with source over. See
 // [Renderer.SetTarget] for why the scene blit must not replace.
-func (r *Renderer) blitOver(dst, src *eb.Image, srcRect geom.Rect, dstX, dstY float32) {
+func (r *Renderer) blitOver(dst surface, src *eb.Image, srcRect geom.Rect, dstX, dstY float32) {
 	r.blit(dst, src, srcRect, dstX, dstY, &r.blitOpts)
 }
 
-func (r *Renderer) blit(dst, src *eb.Image, srcRect geom.Rect, dstX, dstY float32, opts *eb.DrawTrianglesOptions) {
+func (r *Renderer) blit(dst surface, src *eb.Image, srcRect geom.Rect, dstX, dstY float32, opts *eb.DrawTrianglesOptions) {
 	if dst == nil || src == nil {
 		return
 	}

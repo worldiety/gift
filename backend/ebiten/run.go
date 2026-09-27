@@ -1,6 +1,8 @@
 package ebiten
 
 import (
+	"image/color"
+
 	"log/slog"
 	"math"
 	"time"
@@ -99,6 +101,33 @@ type Config struct {
 	// measurement means: a benchmark of a still scene would record only the
 	// frames that were drawn. Kiosks and appliances want it on.
 	DrawOnDemand bool
+
+	// DirectToScreen draws the frame straight into Ebitengine's final
+	// screen instead of its offscreen.
+	//
+	// # Why
+	//
+	// Ebitengine hands Draw an offscreen and copies it onto the real
+	// framebuffer afterwards. That copy is a full screen pass of its own, and
+	// on a Raspberry Pi at 1920x1080 a full screen pass is most of a frame:
+	// measured on a Pi 400, a single fill through the offscreen took 22.1 ms,
+	// the same fill into the final screen 14.8 ms. Rendering at a lower
+	// resolution and letting the copy scale did not help (23.2 ms): the cost
+	// is the copy, not the content.
+	//
+	// # How
+	//
+	// Draw paints the display list and only marks the offscreen as modified,
+	// so that Ebitengine presents the frame; the list is then submitted in
+	// DrawFinalScreen onto the framebuffer. Ebitengine keeps presenting for a
+	// few frames after the last change, and clears the framebuffer before
+	// each of them, so those frames submit the last list again; after that it
+	// stops swapping and the screen keeps the frame.
+	//
+	// The old path is taken for a frame whose offscreen and framebuffer
+	// differ in size (a letterboxed window), and for a frame the automation
+	// interface captures, because the framebuffer cannot be read back.
+	DirectToScreen bool
 
 	// NominalFrameInterval is the interval the display is expected to hold,
 	// for example 16667 microseconds at sixty hertz. Zero or less derives it
@@ -300,6 +329,7 @@ func Run(app *gift.App, cfg Config) error {
 		idleTPS:   cfg.IdleTPS,
 		idleAfter: idleAfter,
 		onDemand:  cfg.DrawOnDemand,
+		direct:    cfg.DirectToScreen,
 		w:         w,
 		h:         h,
 	}
@@ -318,7 +348,9 @@ func Run(app *gift.App, cfg Config) error {
 	eb.SetWindowSize(w, h)
 	eb.SetWindowResizingMode(eb.WindowResizingModeEnabled)
 	eb.SetTPS(tps)
-	if cfg.DrawOnDemand {
+	if cfg.DrawOnDemand || cfg.DirectToScreen {
+		// With DirectToScreen the offscreen holds nothing but a marker;
+		// clearing it every frame would be a full screen pass for nothing.
 		eb.SetScreenClearedEveryFrame(false)
 	}
 
@@ -329,7 +361,13 @@ func Run(app *gift.App, cfg Config) error {
 			slog.Int("tps", tps), slog.Int("idle_tps", cfg.IdleTPS))
 	}
 
-	err = eb.RunGame(g)
+	if cfg.DirectToScreen {
+		// Ebitengine asks for the interface when RunGame is called; only a
+		// game that has the method gets the final screen.
+		err = eb.RunGame(directGame{g})
+	} else {
+		err = eb.RunGame(g)
+	}
 	if cfg.Logger != nil {
 		// Skipped refreshes are the evidence that DrawOnDemand works: on an
 		// idle kiosk they outnumber the drawn frames by orders of
@@ -379,8 +417,17 @@ type game struct {
 	// number of refreshes that were not; see [game.mustDraw].
 	onDemand  bool
 	drawnSize geom.Size
-	drawn     uint64
-	skipped   uint64
+
+	// direct is [Config.DirectToScreen]. list is the display list of the
+	// frame last painted, finalSize the framebuffer size last seen, and
+	// viaOffscreen says that the frame last painted went through the
+	// offscreen and DrawFinalScreen only has to copy it.
+	direct       bool
+	list         *render.List
+	finalSize    geom.Size
+	viaOffscreen bool
+	drawn        uint64
+	skipped      uint64
 
 	// shot is the read-back buffer of [game.capture]. It stays nil, and the
 	// field itself is unreachable, without the giftauto build tag.
@@ -642,6 +689,14 @@ func (g *game) Draw(screen *eb.Image) {
 	// the density times the viewport [game.Update] hands to gift.
 	size := geom.Sz(float32(b.Dx()), float32(b.Dy()))
 
+	if g.direct {
+		g.drawDirect(screen, size)
+		if metrics.Enabled() {
+			g.rec.RecordDraw(time.Since(start))
+		}
+		return
+	}
+
 	if g.onDemand {
 		if !g.mustDraw(size) {
 			g.skipped++
@@ -681,6 +736,82 @@ func (g *game) Draw(screen *eb.Image) {
 	if metrics.Enabled() {
 		g.rec.RecordDraw(time.Since(start))
 	}
+}
+
+// drawDirect is Draw under [Config.DirectToScreen]: it paints, and leaves the
+// drawing to [directGame.DrawFinalScreen].
+func (g *game) drawDirect(offscreen *eb.Image, size geom.Size) {
+	capture := autoEnabled && autoWantsFrame()
+
+	if g.onDemand && !g.mustDraw(size) {
+		g.skipped++
+		g.r.SkipFrame()
+
+		// The retained frame is on the framebuffer, which cannot be read;
+		// a screenshot draws the last list into the offscreen instead. It
+		// is the same list, so it is the same picture.
+		if capture && g.list != nil {
+			g.renderOffscreen(offscreen, size, g.list)
+			autoFrame(g.capture(offscreen))
+		}
+
+		return
+	}
+
+	g.list = g.app.Paint()
+	g.drawn++
+	g.drawnSize = size
+
+	// A frame the framebuffer cannot hold as is, or one that has to be read
+	// back, takes the offscreen path.
+	if capture || g.finalSize != size {
+		g.renderOffscreen(offscreen, size, g.list)
+		g.viaOffscreen = true
+		if capture {
+			autoFrame(g.capture(offscreen))
+		}
+
+		return
+	}
+
+	// Nothing is drawn into the offscreen, but Ebitengine presents a frame
+	// only when the offscreen was modified. One pixel says so.
+	offscreen.Set(0, 0, color.Transparent)
+	g.viaOffscreen = false
+}
+
+// renderOffscreen draws list into the offscreen, the path of a frame without
+// DirectToScreen.
+func (g *game) renderOffscreen(offscreen *eb.Image, size geom.Size, list *render.List) {
+	offscreen.Clear()
+	g.r.SetTarget(offscreen)
+	g.r.BeginFrame(size)
+	g.r.Submit(list)
+	g.r.EndFrame()
+}
+
+// directGame is the game under [Config.DirectToScreen]: the same game with
+// the final screen hook.
+type directGame struct{ *game }
+
+// DrawFinalScreen submits the display list onto the framebuffer. It also runs
+// for the few frames Ebitengine still presents after the last change; the
+// framebuffer is cleared before each, so the last list is drawn again.
+func (d directGame) DrawFinalScreen(screen eb.FinalScreen, offscreen *eb.Image, geoM eb.GeoM) {
+	g := d.game
+	b := screen.Bounds()
+	g.finalSize = geom.Sz(float32(b.Dx()), float32(b.Dy()))
+
+	if g.viaOffscreen || g.list == nil || g.finalSize != g.drawnSize {
+		op := &eb.DrawImageOptions{GeoM: geoM}
+		screen.DrawImage(offscreen, op)
+		return
+	}
+
+	g.r.SetFinalTarget(screen)
+	g.r.BeginFrame(g.drawnSize)
+	g.r.Submit(g.list)
+	g.r.EndFrame()
 }
 
 // mustDraw decides whether a display refresh gets a new frame under
