@@ -121,6 +121,11 @@ type ScrollConfig struct {
 	MaxVelocity float32
 	// WheelStep is the distance one unit of wheel delta scrolls.
 	WheelStep float32
+	// Bounce lets the content be pulled past either end with growing
+	// resistance and spring back when it is let go, and makes a fling that
+	// reaches an end bounce off it: the rubber band of iOS. The default is
+	// the hard stop gift always had. See bounce.go.
+	Bounce bool
 }
 
 func (c ScrollConfig) withDefaults() ScrollConfig {
@@ -274,6 +279,15 @@ type scrollState struct {
 	// drag, which is also what says it has taken the press.
 	dragging bool
 
+	// pull is how far a drag has gone past an end, in offset units, and
+	// over the displacement that shows for it, see bounce.go. bouncing says
+	// that over is springing back from overFrom with the velocity overVel
+	// since overStart.
+	pull, over        float32
+	bouncing          bool
+	overFrom, overVel float32
+	overStart         time.Duration
+
 	// lastActive is the clock value at which this container last moved or was
 	// last touched by a gesture. [ScrollInfo.IdleFor] is derived from it.
 	//
@@ -384,7 +398,7 @@ func (s *scrollState) canMove(d float64) bool {
 // The float32 conversion happens once, here, and on the *difference* between
 // the offset and the content origin. See the type documentation.
 func (s *scrollState) xform() geom.Affine2D {
-	d := float32(s.origin - s.off)
+	d := float32(s.origin-s.off) - s.over
 	if s.axis == ScrollHorizontal {
 		return geom.Translate(geom.Pt(d, 0))
 	}
@@ -496,8 +510,10 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 		}
 		d := s.axis.of(e.Delta)
 		if !s.dragging {
-			if d == 0 || !s.canMove(-float64(d)) {
+			if d == 0 || (!s.canMove(-float64(d)) && !s.cfg.Bounce) {
 				// Nothing to give: let an outer scroller take the drag.
+				// A bouncing container has something to give anyway: the
+				// pull past its end.
 				return false
 			}
 			// Take the press away from whoever holds it. A drag that started
@@ -530,7 +546,11 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 			s.resetTrack()
 		}
 		s.track(e.Time, s.axis.of(e.Pos))
-		a.setScroll(h, s, s.off-float64(d))
+		if s.cfg.Bounce {
+			a.dragBounce(h, s, -float64(d))
+		} else {
+			a.setScroll(h, s, s.off-float64(d))
+		}
 		return true
 
 	case EventPointerUp:
@@ -543,6 +563,10 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 		// negated pointer velocity.
 		v := -s.velocity()
 		s.resetTrack()
+		if s.pull != 0 {
+			a.releaseBounce(h, s)
+			return true
+		}
 		if absf(v) >= s.cfg.FlingVelocity {
 			a.startFling(h, s, v)
 		}
@@ -565,6 +589,9 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 		}
 		s.dragging = false
 		s.resetTrack()
+		if s.pull != 0 {
+			a.releaseBounce(h, s)
+		}
 		return true
 	}
 	return false
@@ -708,6 +735,7 @@ func (a *App) startFling(h scene.Handle, s *scrollState, v float32) {
 
 func (a *App) stopFling(s *scrollState) {
 	s.flinging, s.vel = false, 0
+	s.bouncing, s.pull, s.over = false, 0, 0
 }
 
 // tickScrolls advances every running fling to now. It is called once per input
@@ -736,10 +764,17 @@ func (a *App) tickScrolls(now time.Duration) {
 			continue
 		}
 		s := a.data(h).scroll
-		if s == nil || !s.flinging {
+		if s == nil || (!s.flinging && !s.bouncing) {
 			continue
 		}
-		if a.stepFling(h, s, now) {
+		keep := false
+		if s.flinging {
+			keep = a.stepFling(h, s, now)
+		}
+		if s.bouncing {
+			keep = a.stepBounce(h, s, now) || keep
+		}
+		if keep {
 			out = append(out, h)
 		}
 	}
@@ -768,6 +803,13 @@ func (a *App) stepFling(h scene.Handle, s *scrollState, now time.Duration) bool 
 	s.vel *= decay
 
 	moved := a.setScroll(h, s, s.off+dist)
+	if !moved && s.cfg.Bounce && absf(s.vel) >= s.cfg.StopVelocity {
+		// The end came up while the content still had speed: it bounces
+		// off it instead of stopping dead.
+		a.startBounce(h, s, 0, s.vel)
+		s.flinging, s.vel = false, 0
+		return false
+	}
 	if !moved || absf(s.vel) < s.cfg.StopVelocity {
 		// Either the bound was reached or the curve has run out. A fling that
 		// hits the end stops there rather than bouncing.
