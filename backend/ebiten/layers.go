@@ -148,7 +148,12 @@ func needsBackdrop(l *render.List, ops []render.Op) bool {
 // layerOp is op without its side table indices, which is the part of it that
 // is compared as it is.
 func layerOp(op render.Op) render.Op {
-	op.Clip, op.Xform, op.Glyphs, op.Material = 0, 0, 0, 0
+	op.Clip, op.Xform, op.Glyphs = 0, 0, 0
+	if op.Material != 0 {
+		// Whether it has one is part of the operation; which slot it is in
+		// is not. The value is compared from the side table.
+		op.Material = 1
+	}
 	return op
 }
 
@@ -170,11 +175,15 @@ func (e *layerEntry) matches(r *Renderer, l *render.List, ops []render.Op) bool 
 				return false
 			}
 			gi += len(gs)
-		case render.OpMaterial:
+		}
+		if op.Material != 0 {
+			// A glass pane's parameters, or a fill's gradient.
 			if mi >= len(e.mats) || l.Material(op.Material) != e.mats[mi] {
 				return false
 			}
 			mi++
+		}
+		switch op.Kind {
 		case render.OpImage:
 			if ii >= len(e.images) || r.imageStamp(op.Image) != e.images[ii] {
 				return false
@@ -197,8 +206,11 @@ func (e *layerEntry) record(r *Renderer, l *render.List, ops []render.Op) {
 		switch op.Kind {
 		case render.OpGlyphs:
 			e.glyphs = append(e.glyphs, l.Glyphs(op.Glyphs, op.GlyphCount)...)
-		case render.OpMaterial:
+		}
+		if op.Material != 0 {
 			e.mats = append(e.mats, l.Material(op.Material))
+		}
+		switch op.Kind {
 		case render.OpImage:
 			e.images = append(e.images, r.imageStamp(op.Image))
 		}

@@ -26,8 +26,9 @@ type Background interface {
 	background()
 }
 
-func (Color) background() {}
-func (Glass) background() {}
+func (Color) background()    {}
+func (Glass) background()    {}
+func (Gradient) background() {}
 
 // MaterialKind discriminates the materials of a [Material].
 //
@@ -43,12 +44,21 @@ const (
 	// MaterialGlass is the experimental glass material of the project plan,
 	// section 8. See [Glass].
 	MaterialGlass
+	// MaterialGradient is not a backdrop material and is never the material
+	// of an [OpMaterial]. It rides on a fill: an [OpFillRect],
+	// [OpFillRoundRect] or [OpStrokeRoundRect] whose Material names one is
+	// drawn with a vertical gradient from its Color at the top of its bounds
+	// to [GradientParams.To] at the bottom. See [Gradient].
+	MaterialGradient
 )
 
 // String makes a failing test readable.
 func (k MaterialKind) String() string {
-	if k == MaterialGlass {
+	switch k {
+	case MaterialGlass:
 		return "glass"
+	case MaterialGradient:
+		return "gradient"
 	}
 	return "none"
 }
@@ -146,6 +156,35 @@ type Material struct {
 	Kind MaterialKind
 	// Glass are the parameters of a [MaterialGlass].
 	Glass GlassParams
+	// Gradient are the parameters of a [MaterialGradient].
+	Gradient GradientParams
+}
+
+// GradientParams are the numbers of a [MaterialGradient]: the colour at the
+// bottom of the fill's bounds. The colour at the top is the fill's own.
+type GradientParams struct {
+	To Color
+}
+
+// Gradient is a vertical linear gradient, a background like a [Color]: From
+// at the top of the shape, To at the bottom, in premultiplied alpha.
+//
+// It costs nothing a plain fill does not: the backend gives the corners of
+// the quad their own colour and the GPU interpolates, so a rounded button
+// with a sheen is still one quad in the same batch as every other shape, and
+// a fade from a colour to transparent is exact rather than a staircase of
+// bands.
+type Gradient struct {
+	From, To Color
+}
+
+// LinearGradient returns a vertical gradient from from at the top to to at
+// the bottom.
+func LinearGradient(from, to Color) Gradient { return Gradient{From: from, To: to} }
+
+// Material returns the side table entry a fill carries for g.
+func (g Gradient) Material() Material {
+	return Material{Kind: MaterialGradient, Gradient: GradientParams{To: g.To}}
 }
 
 // IsVisible reports whether the material would draw anything.

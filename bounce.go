@@ -7,7 +7,8 @@ import (
 	"github.com/worldiety/gift/internal/scene"
 )
 
-// The rubber band of iOS, for a container whose [ScrollConfig.Bounce] is set.
+// The rubber band of iOS, for every scroll container unless its
+// [ScrollConfig.HardStop] is set.
 //
 // Dragged past an end, the content follows the finger with growing
 // resistance – the curve UIKit uses, where the displacement approaches the

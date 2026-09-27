@@ -787,7 +787,14 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 		return
 	}
 
-	if op.Color.IsTransparent() {
+	var grad render.GradientParams
+	hasGrad := false
+	if op.Material != 0 && op.Kind != render.OpShadow {
+		if m := l.Material(op.Material); m.Kind == render.MaterialGradient {
+			grad, hasGrad = m.Gradient, true
+		}
+	}
+	if op.Color.IsTransparent() && (!hasGrad || grad.To.IsTransparent()) {
 		r.skipTransparent++
 		return
 	}
@@ -866,6 +873,9 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 		originY: b.Min.Y,
 		scaleX:  sx,
 		scaleY:  sy,
+	}
+	if hasGrad {
+		shape.to, shape.gradH = grad.To, b.Height()
 	}
 	if op.Kind == render.OpShadow {
 		// The shadow encoding: a negative stroke slot carrying sigma. A zero
@@ -1396,6 +1406,10 @@ func texturedVertex(dx, dy, u, v float32, c render.Color) eb.Vertex {
 // shader evaluates is measured in device pixels throughout.
 type shapeParams struct {
 	color            render.Color
+	// to and gradH are a vertical gradient: color at local y = 0, to at
+	// local y = gradH. A zero gradH is a flat fill.
+	to               render.Color
+	gradH            float32
 	halfW, halfH     float32
 	radius, stroke   float32
 	originX, originY float32
@@ -1654,15 +1668,25 @@ func intersectEdge(a, b clipVertex, e edge, v float32) clipVertex {
 // so is everything Ebitengine consumes, so there is no conversion here and in
 // particular none in the frame path. See the project plan, section 8.
 func vertex(dx, dy, lx, ly float32, sh shapeParams) eb.Vertex {
+	c := sh.color
+	if sh.gradH > 0 {
+		// The corner's own colour; the GPU interpolates between corners,
+		// which for a quad split at any height is exactly linear in y.
+		t := min(max(ly/sh.gradH, 0), 1)
+		c = render.Color{
+			R: c.R + (sh.to.R-c.R)*t, G: c.G + (sh.to.G-c.G)*t,
+			B: c.B + (sh.to.B-c.B)*t, A: c.A + (sh.to.A-c.A)*t,
+		}
+	}
 	return eb.Vertex{
 		DstX:    dx,
 		DstY:    dy,
 		SrcX:    lx * sh.scaleX,
 		SrcY:    ly * sh.scaleY,
-		ColorR:  sh.color.R,
-		ColorG:  sh.color.G,
-		ColorB:  sh.color.B,
-		ColorA:  sh.color.A,
+		ColorR:  c.R,
+		ColorG:  c.G,
+		ColorB:  c.B,
+		ColorA:  c.A,
 		Custom0: sh.halfW,
 		Custom1: sh.halfH,
 		Custom2: sh.radius,

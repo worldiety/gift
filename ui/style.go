@@ -50,7 +50,11 @@ type styleSpec struct {
 	// be a second, invisible way of tinting it, and it would make the
 	// backdrop of the glass contain the node's own background.
 	material render.Material
-	border   Border
+	// gradTo, when visible, turns background into the top of a vertical
+	// gradient that ends in gradTo at the bottom; see [Gradient].
+	gradTo Color
+	grad   bool
+	border Border
 	shadow   Shadow
 	radius   float32
 	clip     bool
@@ -93,6 +97,7 @@ func (s styleSpec) isSet(b styleBits) bool { return s.set&b == b }
 // below ui ever sees a semantic value.
 func (s styleSpec) resolved() styleSpec {
 	s.background = ResolveColor(s.background)
+	s.gradTo = ResolveColor(s.gradTo)
 	s.material = resolveMaterial(s.material)
 	s.border = resolveBorder(s.border)
 	s.shadow = resolveShadow(s.shadow)
@@ -106,7 +111,7 @@ func (s styleSpec) resolved() styleSpec {
 // node. Allocating a painter that only forwards to its children would cost an
 // interface call and a heap object per structural container.
 func (s styleSpec) needsPainter() bool {
-	return !s.background.IsTransparent() || s.material.IsVisible() ||
+	return !s.background.IsTransparent() || s.grad || s.material.IsVisible() ||
 		s.border.IsVisible() || s.shadow.IsVisible() || s.clip
 }
 
@@ -311,7 +316,7 @@ func checkFlex(v float32) float32 {
 // view obeys. Build is the moment gift asks for the appearance, so it is the
 // moment the theme is read.
 func (b *base) setBackground(v Color) {
-	b.style.background, b.style.material = v, render.Material{}
+	b.style.background, b.style.material, b.style.gradTo, b.style.grad = v, render.Material{}, Color{}, false
 	b.style.set |= bitBackground
 }
 
@@ -328,7 +333,10 @@ func (b *base) setBackgroundSpec(v Background) {
 	case Color:
 		b.setBackground(t)
 	case GlassMaterial:
-		b.style.background, b.style.material = Color{}, t.Material()
+		b.style.background, b.style.material, b.style.gradTo, b.style.grad = Color{}, t.Material(), Color{}, false
+		b.style.set |= bitBackground
+	case Gradient:
+		b.style.background, b.style.material, b.style.gradTo, b.style.grad = t.From, render.Material{}, t.To, true
 		b.style.set |= bitBackground
 	default:
 		// Unreachable: render.Background has an unexported method and
@@ -432,11 +440,14 @@ func paintBackground(ctx *gift.PaintContext, st styleSpec, b geom.Rect) {
 		})
 	}
 
-	if !st.background.IsTransparent() {
+	if !st.background.IsTransparent() || st.grad && !st.gradTo.IsTransparent() {
 		op := render.Op{Kind: render.OpFillRect, Bounds: b, Color: st.background}
 		if st.radius > 0 {
 			op.Kind = render.OpFillRoundRect
 			op.CornerRadius = st.radius
+		}
+		if st.grad {
+			op.Material = ctx.AddMaterial(render.LinearGradient(st.background, st.gradTo).Material())
 		}
 		ctx.Add(op)
 	}

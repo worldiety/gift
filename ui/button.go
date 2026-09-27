@@ -58,6 +58,10 @@ type ButtonStyle struct {
 	// Background fills the button's bounds. The zero value means the themed
 	// face of the state this style belongs to; use [ColorClear] for none.
 	Background Color
+	// BackgroundTo, when set, makes the face a vertical gradient from
+	// Background at the top to BackgroundTo at the bottom – the sheen of a
+	// tinted button. See [Gradient].
+	BackgroundTo Color
 	// Border strokes the inside of the bounds. A width without a colour is
 	// stroked in [ColorSeparator].
 	Border Border
@@ -87,6 +91,7 @@ func (s ButtonStyle) withThemedDefaults(face Color) ButtonStyle {
 func (s ButtonStyle) resolved(face Color) ButtonStyle {
 	s = s.withThemedDefaults(face)
 	s.Background = ResolveColor(s.Background)
+	s.BackgroundTo = ResolveColor(s.BackgroundTo)
 	s.Border = resolveBorder(s.Border)
 	return s
 }
@@ -457,7 +462,8 @@ func (n *buttonNode) styleFor(ia gift.Interaction) styleSpec {
 }
 
 func styleOf(s ButtonStyle) styleSpec {
-	return styleSpec{background: s.Background, border: s.Border, radius: s.CornerRadius}
+	return styleSpec{background: s.Background, gradTo: s.BackgroundTo, grad: s.BackgroundTo != (Color{}),
+		border: s.Border, radius: s.CornerRadius}
 }
 
 // HandleEvent implements gift.Interactor.

@@ -157,9 +157,10 @@ func (s ScrollView) Friction(v float32) ScrollView { s.cfg.Friction = v; return 
 // replacing [gift.DefaultScrollWheelStep].
 func (s ScrollView) WheelStep(v float32) ScrollView { s.cfg.WheelStep = v; return s }
 
-// Bounce lets the content be pulled past its ends and spring back, and
-// makes a fling bounce off an end; see [gift.ScrollConfig.Bounce].
-func (s ScrollView) Bounce(v bool) ScrollView { s.cfg.Bounce = v; return s }
+// Bounce turns the rubber band off with false: the content then stops dead
+// at its ends instead of being pulled past them and springing back. It is
+// on by default; see [gift.ScrollConfig.HardStop].
+func (s ScrollView) Bounce(v bool) ScrollView { s.cfg.HardStop = !v; return s }
 
 // FlingVelocity sets the release speed, in logical pixels per second, below
 // which a drag ends in a stop rather than a fling.

@@ -121,11 +121,12 @@ type ScrollConfig struct {
 	MaxVelocity float32
 	// WheelStep is the distance one unit of wheel delta scrolls.
 	WheelStep float32
-	// Bounce lets the content be pulled past either end with growing
-	// resistance and spring back when it is let go, and makes a fling that
-	// reaches an end bounce off it: the rubber band of iOS. The default is
-	// the hard stop gift always had. See bounce.go.
-	Bounce bool
+	// HardStop turns off the rubber band. By default the content can be
+	// pulled past either end with growing resistance and springs back when
+	// it is let go, and a fling that reaches an end bounces off it, as on
+	// iOS; see bounce.go. With HardStop it stops dead at the ends, as gift
+	// did before.
+	HardStop bool
 }
 
 func (c ScrollConfig) withDefaults() ScrollConfig {
@@ -510,7 +511,7 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 		}
 		d := s.axis.of(e.Delta)
 		if !s.dragging {
-			if d == 0 || (!s.canMove(-float64(d)) && !s.cfg.Bounce) {
+			if d == 0 || (!s.canMove(-float64(d)) && s.cfg.HardStop) {
 				// Nothing to give: let an outer scroller take the drag.
 				// A bouncing container has something to give anyway: the
 				// pull past its end.
@@ -546,7 +547,7 @@ func (scrollHandler) HandleEvent(ctx *EventContext, e Event) bool {
 			s.resetTrack()
 		}
 		s.track(e.Time, s.axis.of(e.Pos))
-		if s.cfg.Bounce {
+		if !s.cfg.HardStop {
 			a.dragBounce(h, s, -float64(d))
 		} else {
 			a.setScroll(h, s, s.off-float64(d))
@@ -803,7 +804,7 @@ func (a *App) stepFling(h scene.Handle, s *scrollState, now time.Duration) bool 
 	s.vel *= decay
 
 	moved := a.setScroll(h, s, s.off+dist)
-	if !moved && s.cfg.Bounce && absf(s.vel) >= s.cfg.StopVelocity {
+	if !moved && !s.cfg.HardStop && absf(s.vel) >= s.cfg.StopVelocity {
 		// The end came up while the content still had speed: it bounces
 		// off it instead of stopping dead.
 		a.startBounce(h, s, 0, s.vel)

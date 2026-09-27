@@ -74,3 +74,13 @@ const (
 // backend's glass documentation for the measured numbers and for the one place
 // where the implementation had to depart from section 8.
 func Glass() GlassMaterial { return render.NewGlass() }
+
+// Gradient is a vertical gradient background; see [LinearGradient].
+type Gradient = render.Gradient
+
+// LinearGradient returns a background that runs from from at the top to to
+// at the bottom. It costs what a plain fill costs: the GPU interpolates the
+// colours of the corners. Both may be semantic colours.
+//
+//	ui.VStack(...).Background(ui.LinearGradient(ui.ColorSurface, ui.Fade(ui.ColorSurface, 0)))
+func LinearGradient(from, to Color) Gradient { return render.LinearGradient(from, to) }
