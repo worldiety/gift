@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"math"
+
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/render"
@@ -352,6 +354,16 @@ func (n *segmentedNode) Paint(ctx *gift.PaintContext) {
 		r := n.indicatorRect(b, p)
 		radius := tray - segmentedInset
 		if n.capsule {
+			// And it is soft: between two segments it stretches along its
+			// way and flattens a little, like the thumb of iOS 26 does, and
+			// is round again when it arrives. One sine per frame, and only
+			// while it moves.
+			if f := p - float32(math.Floor(float64(p))); f > 0 {
+				k := float32(math.Sin(math.Pi * float64(f)))
+				dx, dy := r.Width()*0.18*k, r.Height()*0.06*k
+				r = geom.Rc(r.Min.X-dx, r.Min.Y+dy, r.Max.X+dx, r.Max.Y-dy)
+				radius = r.Height() / 2
+			}
 			// A capsule's indicator floats: a soft shadow lifts it off the
 			// tray, as the thumb of iOS 26 does.
 			ctx.Add(render.Op{Kind: render.OpShadow, Bounds: r.Translate(geom.Pt(0, 1)), CornerRadius: radius,
