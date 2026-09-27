@@ -122,8 +122,10 @@ type GlassParams struct {
 	// the very edge of the shape. It falls off to zero towards the middle,
 	// which is what makes a pane look like it has thickness.
 	Refraction float32
-	// Highlight is the strength of the specular streak and of the Fresnel
-	// edge brightening, 0 to 1.
+	// Highlight is the strength of the edge, 0 to 1: a specular hairline just
+	// inside the rim, bright where it faces the light at the upper left, and
+	// a darker hairline outermost that sets the pane off its backdrop – the
+	// edge of iOS 26 and 27. It does not reach into the pane.
 	Highlight float32
 	// Grain is the strength of the high frequency noise, 0 to 1. It is used
 	// by [Full] only: on an unblurred backdrop it reads as dirt rather than
@@ -239,8 +241,8 @@ func (g Glass) Refraction(v float32) Glass {
 	return Glass{p: p, filled: true}
 }
 
-// Highlight sets the strength of the specular streak and the Fresnel edge,
-// 0 to 1.
+// Highlight sets the strength of the edge hairlines, 0 to 1; see
+// [GlassParams.Highlight].
 func (g Glass) Highlight(v float32) Glass {
 	p := g.Params()
 	p.Highlight = clampGlass(v, 0, 1)

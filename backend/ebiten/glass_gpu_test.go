@@ -70,8 +70,8 @@ func rgbaAt(img *eb.Image, x, y int) color.RGBA { return img.At(x, y).(color.RGB
 // It checks three separate claims rather than one image: the panel covers its
 // region, the backdrop is visible through it, and the rim is brighter than the
 // middle. The third is what distinguishes a glass material from a translucent
-// rectangle, and it is the one the project plan, section 8, calls
-// "Fresnel-artige Kantenaufhellung".
+// rectangle: section 8 calls it "Fresnel-artige Kantenaufhellung", and since
+// the iOS 26/27 comparison it is a hairline and not a glow.
 func TestGlassReducedRenders(t *testing.T) {
 	const w, h = 128, 128
 	region := geom.Rc(24, 24, 104, 104)
@@ -101,12 +101,23 @@ func TestGlassReducedRenders(t *testing.T) {
 		t.Errorf("the bar has bled %v pixels above its edge inside a Reduced panel; Reduced has no blur", got)
 	}
 
-	// The rim is brighter than the middle. Sampled on the plate, away from
-	// the bar, so the comparison is between two points of the same backdrop.
-	rim := rgbaAt(dst, 64, 27)
+	// The edge is two hairlines, as iOS 26 and 27 draw it: the outermost
+	// pixel darker than the middle, the one inside it brighter. Sampled on
+	// the top edge, which faces the light, and on the plate, away from the
+	// bar, so all three points share one backdrop.
+	outer := rgbaAt(dst, 64, 24)
+	rim := rgbaAt(dst, 64, 25)
 	mid := rgbaAt(dst, 64, 45)
-	if int(rim.R) <= int(mid.R) {
-		t.Errorf("the rim is %v and the middle %v; the edge is not brighter", rim, mid)
+	if int(rim.R) <= int(mid.R)+10 {
+		t.Errorf("the specular line is %v and the middle %v; the edge is not brighter", rim, mid)
+	}
+	if int(outer.R) >= int(mid.R) {
+		t.Errorf("the outermost pixel is %v and the middle %v; there is no dark hairline", outer, mid)
+	}
+	// And the brightening does not reach into the pane, which is what made
+	// the old broad rim look like a lens.
+	if in := rgbaAt(dst, 64, 30); int(in.R) > int(mid.R)+2 {
+		t.Errorf("six pixels in the pane is %v, brighter than the middle %v; the edge glows inwards", in, mid)
 	}
 }
 
