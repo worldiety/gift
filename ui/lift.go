@@ -20,8 +20,9 @@ import (
 // only asked for while it moves.
 
 const (
-	// liftScale is how much a pressed control grows: six percent.
-	liftScale = 0.06
+	// liftGrow is how many points a pressed control grows along its long
+	// side, and six tenths of it across.
+	liftGrow = 12
 	// liftIn is how long the growth on touch takes, and liftOut the settle on
 	// release, which is longer because it overshoots.
 	liftIn  = 140 * time.Millisecond
@@ -97,19 +98,38 @@ func spring(t float32) float32 {
 	return 1 - float32(math.Exp(-5.5*float64(t))*math.Cos(7.5*float64(t)))
 }
 
-// paintLiftGlow draws the light under the finger: a soft white spot at at,
-// relative to the top left of b, as bright as the lift is far along. It is
-// clipped to the button, so it never spills onto its neighbours.
-func paintLiftGlow(ctx *gift.PaintContext, b geom.Rect, at geom.Point, lift float32) {
-	r := min(b.Width(), b.Height()) * 0.55
-	c := geom.Pt(b.Min.X+at.X, b.Min.Y+at.Y)
+// paintLiftGlow is the light of a touch, as Apple describes it: "the
+// material illuminates from within … starting right under your fingertips,
+// the glow spreads throughout the element". A bright core under the finger,
+// and around it a wash that grows from the touch point until it fills the
+// whole shape while the press settles – two soft blobs through the shadow
+// shader, clipped to the button.
+func paintLiftGlow(ctx *gift.PaintContext, b geom.Rect, st gift.ControlState, lift float32) {
+	k := min(max(lift, 0), 1)
+	c := geom.Pt(b.Min.X+st.At.X, b.Min.Y+st.At.Y)
 	ctx.PushClip(ctx.DeviceBounds())
+
+	// The wash: from the finger outwards, as far as the farthest corner.
+	far := max(abs32(c.X-b.Min.X), abs32(c.X-b.Max.X)) + max(abs32(c.Y-b.Min.Y), abs32(c.Y-b.Max.Y))
+	w := far * (0.35 + 0.9*k)
 	ctx.Add(render.Op{
-		Kind:         render.OpShadow,
-		Bounds:       geom.Rc(c.X-r/2, c.Y-r/2, c.X+r/2, c.Y+r/2),
-		CornerRadius: r / 2,
-		Blur:         r,
-		Color:        render.RGBA(255, 255, 255, uint8(70*min(lift, 1))),
+		Kind: render.OpShadow, Bounds: geom.Rc(c.X-w/2, c.Y-w/2, c.X+w/2, c.Y+w/2),
+		CornerRadius: w / 2, Blur: w * 0.9,
+		Color: render.RGBA(255, 255, 255, uint8(46*k)),
+	})
+	// The core under the finger.
+	r := min(b.Width(), b.Height()) * 0.7
+	ctx.Add(render.Op{
+		Kind: render.OpShadow, Bounds: geom.Rc(c.X-r/2, c.Y-r/2, c.X+r/2, c.Y+r/2),
+		CornerRadius: r / 2, Blur: r * 0.8,
+		Color: render.RGBA(255, 255, 255, uint8(60*k)),
 	})
 	ctx.PopClip()
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

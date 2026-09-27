@@ -424,15 +424,19 @@ func (n *buttonNode) Paint(ctx *gift.PaintContext) {
 	if n.lift {
 		lift = liftPhase(ctx.ControlState(), ctx.Now())
 		if lift != 0 {
+			// Gel-like: it gives more along its long side than across it,
+			// by the same few points on both, so a wide button does not
+			// balloon and a small one still visibly moves.
 			c := geom.Pt((b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2)
-			s := 1 + liftScale*lift
-			ctx.PushTransform(geom.Translate(geom.Pt(-c.X, -c.Y)).Mul(geom.Scale(s, s)).Mul(geom.Translate(c)))
+			grow := liftGrow * lift
+			sx, sy := 1+grow/max(b.Width(), 1), 1+grow*0.6/max(b.Height(), 1)
+			ctx.PushTransform(geom.Translate(geom.Pt(-c.X, -c.Y)).Mul(geom.Scale(sx, sy)).Mul(geom.Translate(c)))
 			defer ctx.PopTransform()
 		}
 	}
 	paintBackground(ctx, st, b)
 	if lift > 0 {
-		paintLiftGlow(ctx, b, ctx.ControlState().At, lift)
+		paintLiftGlow(ctx, b, ctx.ControlState(), lift)
 	}
 	ctx.PaintChildren()
 	paintBorder(ctx, st, b)
