@@ -207,6 +207,7 @@ type ButtonView struct {
 	hasFocusRing                           bool
 	disabled                               bool
 	hasPadding                             bool
+	lift                                   bool
 }
 
 // Button returns a button showing label and calling action when it is
@@ -237,6 +238,7 @@ func (b ButtonView) Build(*gift.BuildContext) gift.Element {
 		align:    geom.Alignment{X: 0.5, Y: 0.5},
 		action:   b.action,
 		disabled: b.disabled,
+		lift:     b.lift,
 	}
 	if b.align != (geom.Alignment{}) {
 		n.align = b.align
@@ -352,6 +354,8 @@ type buttonNode struct {
 
 	action   func()
 	disabled bool
+	// lift is [ButtonView.Lift].
+	lift bool
 
 	// kids is the one element children slice. It is a array inside this
 	// struct rather than a slice literal, so a build allocates the node and
@@ -411,7 +415,20 @@ func (n *buttonNode) Paint(ctx *gift.PaintContext) {
 	ia := ctx.Interaction()
 	st := n.styleFor(ia)
 	b := ctx.Bounds()
+	var lift float32
+	if n.lift {
+		lift = liftPhase(ctx.ControlState(), ctx.Now())
+		if lift != 0 {
+			c := geom.Pt((b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2)
+			s := 1 + liftScale*lift
+			ctx.PushTransform(geom.Translate(geom.Pt(-c.X, -c.Y)).Mul(geom.Scale(s, s)).Mul(geom.Translate(c)))
+			defer ctx.PopTransform()
+		}
+	}
 	paintBackground(ctx, st, b)
+	if lift > 0 {
+		paintLiftGlow(ctx, b, ctx.ControlState().At, lift)
+	}
 	ctx.PaintChildren()
 	paintBorder(ctx, st, b)
 	if ia.FocusVisible && !ia.Disabled && n.focusRing.IsVisible() {
@@ -472,12 +489,23 @@ func (n *buttonNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	switch e.Kind {
 	case gift.EventPointerDown:
 		ctx.RequestFocus()
+		n.liftTo(ctx, e, 1)
 		return true
+	case gift.EventPointerMove:
+		if n.lift && ctx.Interaction().Pressed {
+			st := ctx.ControlState()
+			st.At = e.Pos.Sub(ctx.Bounds().Min)
+			ctx.SetControlState(st)
+		}
+		return false
 	case gift.EventPointerUp:
+		n.liftTo(ctx, e, 0)
 		if e.Inside && !e.Dragged {
 			n.activate()
 		}
 		return true
+	case gift.EventPointerCancel:
+		n.liftTo(ctx, e, 0)
 	case gift.EventKeyDown:
 		if e.Key == gift.KeySpace || e.Key == gift.KeyEnter {
 			n.activate()

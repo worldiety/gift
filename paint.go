@@ -41,6 +41,9 @@ type PaintContext struct {
 	// unbalanced painter is caught at its own boundary instead of corrupting
 	// the clips of its siblings.
 	clipDepth int
+	// xformStack holds the transforms the current painter replaced with
+	// [PaintContext.PushTransform], innermost last.
+	xformStack []uint32
 	// xform is the index of the active transform in the display list. It is
 	// 0, the identity, outside any transformed subtree; a scroll container
 	// pushes its translation here on the way into its children. See
@@ -124,6 +127,29 @@ func (p *PaintContext) PopClip() {
 	}
 	p.list.PopClip()
 	p.clipDepth--
+}
+
+// PushTransform applies m to everything this painter adds from now on and to
+// the children it paints, until the matching [PaintContext.PopTransform]. m
+// maps the node's local space onto itself: a scale about the centre of
+// [PaintContext.Bounds] makes a pressed button grow in place.
+//
+// It moves the picture and not the node: hit testing, layout and the bounds
+// a painter reads are unchanged, as they are for a transition.
+func (p *PaintContext) PushTransform(m geom.Affine2D) {
+	p.xformStack = append(p.xformStack, p.xform)
+	p.xform = p.list.PushXform(m.Mul(p.list.Xform(p.xform)))
+}
+
+// PopTransform ends the innermost [PaintContext.PushTransform] of this
+// painter. Every push must be popped before the painter returns.
+func (p *PaintContext) PopTransform() {
+	n := len(p.xformStack)
+	if n == 0 {
+		panic("gift: PaintContext.PopTransform without a matching PushTransform")
+	}
+	p.xform = p.xformStack[n-1]
+	p.xformStack = p.xformStack[:n-1]
 }
 
 // PaintChildren paints all children of the current node, in order.
@@ -408,6 +434,7 @@ func (a *App) paintNode(h scene.Handle) {
 
 	p := &a.pctx
 	prevHandle, prevData, prevDepth := p.cur, p.nd, p.clipDepth
+	prevStack := len(p.xformStack)
 	p.cur, p.nd, p.clipDepth = h, nd, 0
 	a.paintDepth++
 	defer func() {
@@ -419,6 +446,9 @@ func (a *App) paintNode(h scene.Handle) {
 
 	if p.clipDepth != 0 {
 		panic("gift: painter returned with an unbalanced clip stack")
+	}
+	if len(p.xformStack) != prevStack {
+		panic("gift: painter returned with an unbalanced transform stack")
 	}
 	a.diag.PaintedNodes++
 }

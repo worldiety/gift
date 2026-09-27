@@ -1,6 +1,10 @@
 package gift
 
-import "time"
+import (
+	"time"
+
+	"github.com/worldiety/gift/geom"
+)
 
 // ControlState is the retained presentation state of one control: the gesture
 // it is in the middle of, and the animation it is in the middle of.
@@ -60,6 +64,12 @@ type ControlState struct {
 	From  float32
 	Start time.Duration
 
+	// At is where the pointer touches the control, relative to the top left
+	// of its bounds, in the space of [Event.Pos]. A control that lights up
+	// under the finger, as a pressed button does, reads it; see
+	// ui.ButtonView.Lift.
+	At geom.Point
+
 	// Armed reports whether Target has ever been written.
 	//
 	// It separates "the control is at zero" from "the control has not been
@@ -67,6 +77,10 @@ type ControlState struct {
 	// animate from off to on in the first frames of the application.
 	Armed bool
 }
+
+// Now returns the timestamp of the event being dispatched, on the clock
+// [App.BeginInput] is given: the clock a control's animation is started on.
+func (c *EventContext) Now() time.Duration { return c.app.in.now }
 
 // ControlState returns the control state of the node receiving the event.
 func (c *EventContext) ControlState() ControlState { return c.nd.control }
