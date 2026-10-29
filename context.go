@@ -77,12 +77,18 @@ func (c *Context) Read[T comparable](s *State[T]) T {
 
 // Key returns the key this component instance was mounted under. It is meant
 // for diagnostics, not for building identity on top of it.
-func (c *Context) Key() string { return c.scope.key }
+func (c *Context) Key() string {
+	c.assertBuilding("Context.Key")
+	return c.scope.key
+}
 
 // Path returns the slash separated path of component keys from the root to
 // this component instance. It is meant for diagnostics and appears in the
 // panic messages of this package.
-func (c *Context) Path() string { return c.scope.path }
+func (c *Context) Path() string {
+	c.assertBuilding("Context.Path")
+	return c.scope.path
+}
 
 func (c *Context) assertBuilding(what string) {
 	if c.app.building != c.scope {

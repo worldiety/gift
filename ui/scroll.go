@@ -207,7 +207,7 @@ func (s ScrollView) Padding(v float32) ScrollView { s.setPadding(v); return s }
 // PaddingInsets sets the padding per edge, replacing any previous padding.
 func (s ScrollView) PaddingInsets(v geom.Insets) ScrollView { s.setPaddingInsets(v); return s }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free — but not for the scroll axis, which then has no viewport; see
 // [ScrollView].
 //

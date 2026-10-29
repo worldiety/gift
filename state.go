@@ -69,11 +69,15 @@ func (s *State[T]) Get() T {
 //
 // Calling Set during [App.Paint] is a contract violation and panics in every
 // build, because it would mean building during draw.
-func (s *State[T]) Set(v T) {
+func (s *State[T]) Set(v T) { s.set("State.Set", v) }
+
+// set is [State.Set] with the name a contract violation is reported under, so
+// that a panic raised through [Binding.Set] names the call the caller made.
+func (s *State[T]) set(what string, v T) {
 	a := s.base.app
-	a.assertUIGoroutine("State.Set")
+	a.assertUIGoroutine(what)
 	if a.painting {
-		panic(fmt.Sprintf("gift: State.Set on %q during Paint, which would build during draw", s.base.path()))
+		panic(fmt.Sprintf("gift: %s on %q during Paint, which would build during draw", what, s.base.path()))
 	}
 	if s.v == v {
 		return
@@ -118,7 +122,7 @@ func (b Binding[T]) Set(v T) {
 	if b.s == nil {
 		panic("gift: Set on the zero Binding")
 	}
-	b.s.Set(v)
+	b.s.set("Binding.Set", v)
 }
 
 // IsZero reports whether the binding is the unusable zero value.

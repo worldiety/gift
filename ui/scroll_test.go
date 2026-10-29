@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -260,6 +261,27 @@ func TestWheelScrollsTheNearestScroller(t *testing.T) {
 	s.AssertScrollOffset(2 * float64(gift.DefaultScrollWheelStep))
 	h.Wheel(geom.Pt(150, 100), geom.Pt(0, 2))
 	s.AssertScrollOffset(0)
+}
+
+// TestNonFiniteScrollConfigTakesTheDefault pins the promise of
+// [ui.ScrollView.Friction] that a non finite value selects the default. An
+// infinite wheel step used to slip past the "> 0" test and throw the content
+// to its end on a single notch.
+func TestNonFiniteScrollConfigTakesTheDefault(t *testing.T) {
+	inf := float32(math.Inf(1))
+	rows := make([]gift.View, 0, scrollRows)
+	for i := range scrollRows {
+		rows = append(rows, ui.Box().Frame(scrollViewportW, scrollRowH).Key(scrollRowKey(i)))
+	}
+	h := gifttest.New(t, gifttest.Options{View: ui.VStack(
+		ui.VScroll(rows...).
+			WheelStep(inf).
+			Friction(inf).
+			Frame(scrollViewportW, scrollViewportH).
+			Key("scroller"),
+	)})
+	h.Wheel(geom.Pt(150, 100), geom.Pt(0, -1))
+	scroller(h).AssertScrollOffset(float64(gift.DefaultScrollWheelStep))
 }
 
 // TestWheelChainsToTheOuterScrollerAtTheLimit is the overscroll rule: the

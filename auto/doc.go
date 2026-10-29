@@ -61,10 +61,13 @@
 //     Motion is a run of non zero counts; the end of a movement is the run of
 //     zeroes after it.
 //
-//   - /diag and the answer to /input both carry "animating" and "animations"
-//     from [gift.Diagnostics]: whether anything has asked to be repainted at
-//     all. It is the one fact "the picture stopped changing" could never
-//     establish, and a driver can wait on it instead of counting frames.
+//   - /diag and the answer to /input both carry the animation state of
+//     [gift.Diagnostics]: whether anything has asked to be repainted at
+//     all. /input names the fields "animating" and "animations"; /diag
+//     embeds the struct as it is and spells them "Animating" and
+//     "Animations". It is the one fact "the picture stopped changing" could
+//     never establish, and a driver can wait on it instead of counting
+//     frames.
 //
 //     curl -s -XPOST localhost:7391/input -d '{"steps":[
 //     {"op":"capture","frames":16,"png":true},

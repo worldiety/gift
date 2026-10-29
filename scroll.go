@@ -108,7 +108,8 @@ var (
 const maxFlingStep = 100 * time.Millisecond
 
 // ScrollConfig tunes the gesture behaviour of one scroll container. A zero
-// field takes the corresponding package default.
+// field takes the corresponding package default, and so does a negative or
+// non finite one.
 type ScrollConfig struct {
 	// Friction is the exponential decay rate of a fling in 1/s; see the
 	// documentation of [DefaultScrollFriction].
@@ -130,23 +131,30 @@ type ScrollConfig struct {
 }
 
 func (c ScrollConfig) withDefaults() ScrollConfig {
-	if !(c.Friction > 0) {
+	if !usableScrollValue(c.Friction) {
 		c.Friction = DefaultScrollFriction
 	}
-	if !(c.FlingVelocity > 0) {
+	if !usableScrollValue(c.FlingVelocity) {
 		c.FlingVelocity = DefaultScrollFlingVelocity
 	}
-	if !(c.StopVelocity > 0) {
+	if !usableScrollValue(c.StopVelocity) {
 		c.StopVelocity = DefaultScrollStopVelocity
 	}
-	if !(c.MaxVelocity > 0) {
+	if !usableScrollValue(c.MaxVelocity) {
 		c.MaxVelocity = DefaultScrollMaxVelocity
 	}
-	if !(c.WheelStep > 0) {
+	if !usableScrollValue(c.WheelStep) {
 		c.WheelStep = DefaultScrollWheelStep
 	}
 	return c
 }
+
+// usableScrollValue reports whether v can stand for itself in a
+// [ScrollConfig]: positive and finite. Zero is "not set", and a negative, NaN
+// or infinite value has no meaning as a rate, a speed or a distance — an
+// infinite wheel step would throw the content to its end on one notch — so
+// all of them take the package default rather than reaching the physics.
+func usableScrollValue(v float32) bool { return v > 0 && v <= math.MaxFloat32 }
 
 // ScrollSpec declares a node to be a scroll viewport. It is [Element.Scroll].
 type ScrollSpec struct {

@@ -42,7 +42,10 @@ type Step struct {
 	X *float32 `json:"x,omitempty"`
 	Y *float32 `json:"y,omitempty"`
 
-	// DX and DY are the wheel delta in notches, positive down and right.
+	// DX and DY are the wheel delta in notches, with the sign of
+	// [gift.Event.Delta]: positive is the wheel pushed away from the user,
+	// which scrolls towards the beginning of the document — up, or left for
+	// DX. A "dy":-1 therefore advances a list by one step, towards its end.
 	DX float32 `json:"dx,omitempty"`
 	DY float32 `json:"dy,omitempty"`
 

@@ -109,8 +109,6 @@ import (
 // target. A transition must never make the machine feel slower than the cut
 // it replaced.
 //
-// # Interrupting it
-//
 // # Two ends and a memory
 //
 // Parked is where the node goes when it is hidden. Entry is where it comes

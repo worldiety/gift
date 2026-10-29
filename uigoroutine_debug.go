@@ -30,8 +30,9 @@ func (g *uiGuard) capture() {
 // assertUIGoroutine rejects state access from outside the UI executor.
 //
 // The check is a goroutine id comparison, nothing more: the id of the UI
-// executor is captured once in [New] and every access compares against the
-// cached value. There is no stack parsing on an accepted access.
+// executor is captured once in [New] and every access compares the id of the
+// calling goroutine against the cached value. Only the owner's id is cached;
+// the caller's has to be read afresh each time, see the first limit below.
 //
 // Known limits, stated honestly:
 //

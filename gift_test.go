@@ -682,6 +682,61 @@ func TestBuildDuringPaintPanics(t *testing.T) {
 	t.Fatal("want panic")
 }
 
+// TestBindingSetDuringPaintNamesBinding pins that a contract violation raised
+// through a binding names the call the caller actually made, as Binding.Get
+// already does, rather than the State.Set it delegates to.
+func TestBindingSetDuringPaintNamesBinding(t *testing.T) {
+	var b gift.Binding[int]
+	root := func(ctx *gift.Context) gift.View {
+		b = ctx.State("v", 0).Binding()
+		return callback{fn: func() { b.Set(1) }}
+	}
+	a := gift.New(gift.Options{Root: root})
+	mustUpdate(t, a)
+
+	defer func() {
+		r := recover()
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "Binding.Set") || !strings.Contains(msg, "during Paint") {
+			t.Fatalf("panic = %v, want a paint contract diagnosis naming Binding.Set", r)
+		}
+	}()
+	a.Paint()
+	t.Fatal("want panic")
+}
+
+// TestKeptContextIsRejectedByKeyAndPath covers the promise of the Context
+// documentation that a Context kept past its build is rejected, for the two
+// diagnostic accessors as much as for State and Read.
+func TestKeptContextIsRejectedByKeyAndPath(t *testing.T) {
+	var kept *gift.Context
+	root := func(ctx *gift.Context) gift.View {
+		kept = ctx
+		if ctx.Key() == "" && ctx.Path() == "" {
+			t.Error("Key and Path are both empty during the build")
+		}
+		return box{w: 1, h: 1}
+	}
+	a := gift.New(gift.Options{Root: root})
+	mustUpdate(t, a)
+
+	for name, call := range map[string]func(){
+		"Context.Key":  func() { kept.Key() },
+		"Context.Path": func() { kept.Path() },
+	} {
+		func() {
+			defer func() {
+				r := recover()
+				msg, _ := r.(string)
+				if !strings.Contains(msg, name) || !strings.Contains(msg, "outside the build") {
+					t.Errorf("%s on a kept Context: panic = %v, want a diagnosis", name, r)
+				}
+			}()
+			call()
+		}()
+	}
+}
+
 func TestIdleUpdateDoesNothing(t *testing.T) {
 	root := func(ctx *gift.Context) gift.View {
 		return stack{children: []gift.View{box{w: 1, h: 1}, box{w: 2, h: 2}}}

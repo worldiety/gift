@@ -167,9 +167,10 @@ func (c *memoCell[P]) build(ctx *Context) View { return c.fn(ctx, c.props) }
 //
 //	gift.Memo("row", rowProps{ID: id, Selected: sel}, renderRow)
 //
-// Do not put a slice, a map or a freshly allocated closure in P. A slice is
-// not comparable and will not compile; a func field is comparable only
-// against nil and will panic at runtime. Both are the signal that the value
+// Do not put a slice, a map or a freshly allocated closure in P. A slice, a
+// map or a func field makes P not comparable, and the call will not compile;
+// the same values behind an interface typed field do compile, and the
+// comparison then panics at runtime. Both are the signal that the value
 // belongs in state or behind a stable pointer instead.
 //
 // The key has the same meaning as in [Component]. Changing the props type
