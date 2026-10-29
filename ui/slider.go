@@ -135,9 +135,10 @@ type SliderView struct {
 // which is what a division by a total that turned out to be zero produces. The
 // diagnosis is here, during the build, and not three layers down where it
 // would arrive as a NaN vertex position and empty the window; [SliderView.Range]
-// says the same about the ends of the range. See [checkFraction].
+// says the same about the ends of the range. A negative value is fine: it is a
+// number in the application's units, not a fraction. See [checkFinite].
 func Slider(value float64, onChange func(float64)) SliderView {
-	return SliderView{value: checkFraction("Slider", value), max: 1, onChange: onChange}
+	return SliderView{value: checkFinite("Slider", value), max: 1, onChange: onChange}
 }
 
 // ViewType implements gift.View.
@@ -253,14 +254,17 @@ func (g sliderGeom) fraction(x float32) float32 {
 // knobRect is the knob at fraction f, centred in the control's own bounds and
 // never leaving them.
 //
-// The clamp is [centeredRect] and it is not decoration. [ControlHitTarget]
-// promises that a control "draws its visible parts centred inside" its bounds,
-// precisely so that nothing of it is visible where it cannot be touched, and a
-// slider given a short [SliderView.Frame] — .Frame(200, 10) is the honest
-// case, a bar-thin slider in a dense row — would otherwise paint a 28 pixel
-// knob nine pixels above and below a ten pixel hit area. [ToggleView] has gone
-// through centeredRect since it was written; this is the same rule applied to
-// the one control in the package that was missing it.
+// The clamp is [centeredRect] and it is a second line of defence.
+// [ControlHitTarget] promises that a control "draws its visible parts centred
+// inside" its bounds, precisely so that nothing of it is visible where it
+// cannot be touched, and a slider given a short [SliderView.Frame] —
+// .Frame(200, 10) is the honest case, a bar-thin slider in a dense row — once
+// painted a 28 pixel knob nine pixels above and below a ten pixel hit area.
+// That frame no longer reaches the painter as ten pixels: [sliderNode.Layout]
+// floors the height at the knob through [controlSize], so in a laid out tree
+// the vertical clamp has nothing to do. It stays because the geometry is a
+// pure function of whatever bounds it is handed, and [ToggleView] has gone
+// through centeredRect since it was written.
 //
 // Horizontally there is nothing to clamp: x0 and x1 are already inset by the
 // knob radius, so the knob touches each end exactly.
@@ -491,11 +495,12 @@ func (n *sliderNode) keyStep() float64 {
 // what a range of one value means, and it is a state a bound model can pass
 // through while it is loading.
 //
-// Both ends must be finite. An infinite one turns every fraction into a NaN
-// and the window goes empty three layers below the mistake.
+// Both ends must be finite, and either may be negative. An infinite one turns
+// every fraction into a NaN and the window goes empty three layers below the
+// mistake.
 func (s SliderView) Range(min, max float64) SliderView {
-	s.min = checkFraction("Range", min)
-	s.max = checkFraction("Range", max)
+	s.min = checkFinite("Slider.Range", min)
+	s.max = checkFinite("Slider.Range", max)
 	return s
 }
 
@@ -526,13 +531,14 @@ func (s SliderView) Label(v string) SliderView { s.name = v; return s }
 // receives no events and draws in its disabled colours.
 func (s SliderView) Disabled(v bool) SliderView { s.disabled = v; return s }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free; see [frameSpec].
 //
-// A height below the natural one is honoured and shrinks the *drawing*: the
-// knob is centred in the bounds and clamped to them, so a slider in a
-// deliberately thin row stays entirely inside its own hit area rather than
-// spilling nine pixels above and below it. See [sliderGeom.knobRect] and
+// A height below the natural one is honoured down to the height of the knob,
+// 28 logical pixels, and the knob stays centred inside it. Below that — a
+// .Frame(200, 10) for a bar-thin slider — the slider keeps the knob's height
+// and reports the shortfall as an overflow rather than draw a knob a finger
+// cannot reach or no knob at all. See [controlSize], [sliderGeom.knobRect] and
 // [ControlHitTarget].
 func (s SliderView) Frame(w, h float32) SliderView { s.setFrame(w, h); return s }
 

@@ -35,6 +35,14 @@ import (
 //
 // It is a floor and not a size. A control given a [ToggleView.Frame] larger
 // than this keeps the larger bounds, and the whole of those bounds is live.
+//
+// It is also the floor a control asks for, not one it insists on. An explicit
+// [ToggleView.Frame] or a tight constraint from the parent below forty-four
+// wins, down to the size at which the control can still draw what it is — the
+// track of a switch, the knob of a slider, the tray and labels of a segmented
+// control — and only below *that* does the control keep that size and report
+// the shortfall as an overflow; see [controlSize]. A dense layout that frames
+// a control smaller has made that trade on purpose.
 const ControlHitTarget = float32(44)
 
 // ControlAnimation is how long a control takes to move from one state to the
@@ -314,14 +322,27 @@ func clamp01(v float32) float32 {
 // So it panics, in the same call and for the same reason NaN does, and the
 // message names the modifier the caller was reaching for.
 func checkFraction(what string, v float64) float64 {
-	if v != v || v > 1e38 || v < -1e38 {
-		panic(fmt.Sprintf("gift/ui: %s(%v) must be a finite number", what, v))
-	}
+	checkFinite(what, v)
 	if v < 0 {
 		panic(fmt.Sprintf("gift/ui: %s(%v): a fraction is never negative. "+
 			"A value above 1 is clamped, because a download can overshoot its "+
 			"declared size; a negative one is a mistake. If you meant \"no idea how "+
 			"far along this is\", that is ui.ProgressBar(0).Indeterminate()", what, v))
+	}
+	return v
+}
+
+// checkFinite rejects a number that is not finite: a NaN or an infinity.
+//
+// It is the half of [checkFraction] that is not about fractions, and it is
+// what [Slider] and [SliderView.Range] use on their own. A slider's value is a
+// number in the application's units, and those are as often negative as not —
+// a temperature offset, a balance, Range(-10, 10) — so the negative rule of a
+// progress bar would be a wrong answer there, and its message would send the
+// caller to a ProgressBar modifier they were never reaching for.
+func checkFinite(what string, v float64) float64 {
+	if v != v || v > 1e38 || v < -1e38 {
+		panic(fmt.Sprintf("gift/ui: %s(%v) must be a finite number", what, v))
 	}
 	return v
 }

@@ -60,7 +60,7 @@ var (
 // immediately rather than on an "apply" button. It is created by [Toggle]; the
 // zero value is not useful.
 //
-//	ui.Toggle(dark.Get(), func(on bool) { dark.Set(on) }).Label("Dark mode")
+//	ui.Toggle(ctx.Read(dark), func(on bool) { dark.Set(on) }).Label("Dark mode")
 //
 // # What it is
 //
@@ -341,7 +341,7 @@ func (t ToggleView) Label(v string) ToggleView { t.name = v; return t }
 func (t ToggleView) Disabled(v bool) ToggleView { t.disabled = v; return t }
 
 // Frame fixes both axes of the *hit area*, not of the drawing: the track keeps
-// its size and stays centred. Pass [geom.Unbounded] for an axis that should
+// its size and stays centred. Pass [geom.Unbounded]() for an axis that should
 // stay free. See [ControlHitTarget].
 func (t ToggleView) Frame(w, h float32) ToggleView { t.setFrame(w, h); return t }
 

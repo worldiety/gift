@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/worldiety/gift"
@@ -22,10 +23,10 @@ const (
 	segmentedPadV = float32(7)
 	// segmentedRadius is the corner of the tray. The indicator is rounded by
 	// the same amount less the inset, so the two curves are concentric.
-	segmentedRadius   = float32(9)
+	segmentedRadius = float32(9)
 	// segmentedLens is the magnification of the labels under a travelling
 	// capsule thumb.
-	segmentedLens = float32(1.15)
+	segmentedLens     = float32(1.15)
 	segmentedFocusGap = float32(3)
 )
 
@@ -238,8 +239,9 @@ type segmentedNode struct {
 	sizes []geom.Size
 }
 
-// target is the phase the indicator should come to rest at: the selected index
-// as a number, or the phase it already has when there is no valid selection.
+// hasSelection reports whether the selected index names one of the segments.
+// When it does not, the indicator stays at the phase it already has and no
+// segment is drawn selected.
 func (n *segmentedNode) hasSelection() bool { return n.selected >= 0 && n.selected < n.count }
 
 // Layout divides the width into equal columns and centres each label in one.
@@ -303,7 +305,7 @@ func (n *segmentedNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom
 	return size
 }
 
-// columns is the width of one segment over bounds.
+// column is the width of one segment over bounds.
 func (n *segmentedNode) column(b geom.Rect) float32 {
 	if n.count <= 0 {
 		return 0
@@ -527,8 +529,13 @@ func (s SegmentedControlView) Font(v Font) SegmentedControlView {
 	return s
 }
 
-// FontSize sets the point size of every label.
+// FontSize sets the em size of every label in pixels, as [TextView.FontSize]
+// does. A value that is not positive and finite panics here, at the call,
+// rather than later inside the build of the first label.
 func (s SegmentedControlView) FontSize(v float32) SegmentedControlView {
+	if !isFinite(v) || v <= 0 {
+		panic(fmt.Sprintf("gift/ui: SegmentedControl.FontSize(%v) must be a finite number greater than zero", v))
+	}
 	s.fontSize, s.hasSize = v, true
 	return s
 }
@@ -547,7 +554,7 @@ func (s SegmentedControlView) Label(v string) SegmentedControlView { s.name = v;
 // receives no events and draws in its disabled colours.
 func (s SegmentedControlView) Disabled(v bool) SegmentedControlView { s.disabled = v; return s }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free; see [frameSpec].
 func (s SegmentedControlView) Frame(w, h float32) SegmentedControlView {
 	s.setFrame(w, h)

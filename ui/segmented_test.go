@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/worldiety/gift"
@@ -501,5 +502,22 @@ func TestTheVerticalArrowsWalkASegmentedControlTheWayAnOrdinaryListDoes(t *testi
 	h.Key(gift.KeyUp)
 	if len(got) != n {
 		t.Fatalf("up at the first segment reported %v; it must stop rather than wrap", got)
+	}
+}
+
+// TestASegmentedControlRejectsAFontSizeThatIsNotPositiveAndFinite. Every
+// other FontSize in the package panics at the call on such a value; this one
+// used to accept it and hand it to the first label's TextView.FontSize during
+// the build, which panicked there with a message naming the wrong view.
+func TestASegmentedControlRejectsAFontSizeThatIsNotPositiveAndFinite(t *testing.T) {
+	for _, v := range []float32{0, -1, float32(math.Inf(1)), float32(math.NaN())} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("SegmentedControl.FontSize(%v) was accepted", v)
+				}
+			}()
+			ui.SegmentedControl(0, segmentLabels, nil).FontSize(v)
+		}()
 	}
 }

@@ -714,3 +714,56 @@ func TestASliderRejectsAValueThatIsNotAFiniteNumber(t *testing.T) {
 		}()
 	}
 }
+
+// TestASliderAcceptsNegativeValuesAndRangeEnds. A slider's value is a number
+// in the application's units, and Range(-10, 10) is an ordinary balance or
+// offset control. Both used to go through the progress bar's fraction check,
+// which panics on any negative number with a message about
+// ui.ProgressBar(0).Indeterminate(), so a slider could not show a value below
+// zero at all although its godoc only promised a panic on non-finite numbers.
+func TestASliderAcceptsNegativeValuesAndRangeEnds(t *testing.T) {
+	f := newSlider(t, func(v float64, set func(float64)) ui.SliderView {
+		return ui.Slider(v, set).Range(-10, 10)
+	})
+	b := f.node().Bounds()
+	if mid, x := (b.Min.X+b.Max.X)/2, f.knobX(t); math.Abs(float64(x-mid)) > 0.5 {
+		t.Fatalf("zero on a slider over -10 to 10 drew its knob at %v; it belongs in the "+
+			"middle at %v", x, mid)
+	}
+	f.h.Tab()
+	f.h.Key(gift.KeyHome)
+	if v := *f.value; v != -10 {
+		t.Fatalf("home on a slider over -10 to 10 moved it to %v, want -10", v)
+	}
+
+	// A negative value and a descending range with a negative end are
+	// accepted at the call, which is where the panic used to be.
+	for _, build := range []func() ui.SliderView{
+		func() ui.SliderView { return ui.Slider(-3, nil).Range(-10, 10) },
+		func() ui.SliderView { return ui.Slider(-5, nil).Range(0, -5) },
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("a slider with a negative value or range end panicked: %v", r)
+				}
+			}()
+			build()
+		}()
+	}
+}
+
+// TestASliderRangeRejectsEndsThatAreNotFiniteNumbers is the other half: the
+// finite rule still holds for the ends of the range.
+func TestASliderRangeRejectsEndsThatAreNotFiniteNumbers(t *testing.T) {
+	for _, v := range []float64{math.Inf(1), math.Inf(-1), math.NaN()} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Range(0, %v) was accepted", v)
+				}
+			}()
+			ui.Slider(0, nil).Range(0, v)
+		}()
+	}
+}

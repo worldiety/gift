@@ -121,13 +121,16 @@ const (
 //
 // # Disabled
 //
-// [RowView.Disabled] takes the row out of input and draws its title in
-// [ColorSecondaryLabel]. The title colour is the row's to change because the
-// row builds the label; a [ButtonView] handed an arbitrary label view cannot
-// do the same, for the reason its documentation gives. The accessory is *not*
-// disabled with it: it is a view the caller passed in, and reaching into it
-// would mean this type deciding what "disabled" means for something it has
-// never seen. Disable the accessory at the call site as well.
+// [RowView.Disabled] takes the row out of input and steps back the label
+// group and the icon: the title is drawn in [ColorSecondaryLabel], the
+// subtitle in a fainter shade of it, and the leading icon in
+// ColorSecondaryLabel rather than [ColorAccent]. The value and the chevron are
+// secondary already and keep their colours. Those colours are the row's to
+// change because the row builds those views; a [ButtonView] handed an
+// arbitrary label view cannot do the same, for the reason its documentation
+// gives. The accessory is *not* disabled with it: it is a view the caller
+// passed in, and reaching into it would mean this type deciding what
+// "disabled" means for something it has never seen. Disable the accessory at the call site as well.
 type RowView struct {
 	base
 	title     string
@@ -442,11 +445,11 @@ func (v RowView) Accessory(a gift.View) RowView { v.accessory = a; return v }
 // fn, the default, is an inert row.
 func (v RowView) OnTap(fn func()) RowView { v.onTap = fn; return v }
 
-// Disabled takes the row out of input and draws its labels in
-// [ColorSecondaryLabel]. It has no effect on a row without an
-// [RowView.OnTap] — an inert row is already out of input — beyond the label
-// colour, which is the honest way to show "this setting is unavailable" on a
-// row that only reports a value.
+// Disabled takes the row out of input and draws its title and leading icon in
+// [ColorSecondaryLabel] and its subtitle fainter still; see [RowView]. It has
+// no effect on a row without an [RowView.OnTap] — an inert row is already out
+// of input — beyond those colours, which is the honest way to show "this
+// setting is unavailable" on a row that only reports a value.
 func (v RowView) Disabled(b bool) RowView { v.disabled = b; return v }
 
 // Label sets the accessible name of the row's command, replacing the title.

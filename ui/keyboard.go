@@ -100,8 +100,14 @@ func SetOnScreenKeyboard(app *gift.App, on bool) {
 func OnScreenKeyboardEnabled() bool { return onScreenKeyboard.Load() }
 
 // OnScreenKeyboardHeight is how tall [OnScreenKeyboard] makes itself, in
-// logical pixels. It is a constant of the metrics and does not depend on the
-// window.
+// logical pixels, with its default padding and no [KeyboardView.Frame]. It is
+// a constant of the metrics and does not depend on the window.
+//
+// It does not see the modifiers of any particular keyboard: one given its own
+// [KeyboardView.Padding], [KeyboardView.PaddingInsets] or a fixed height with
+// [KeyboardView.Frame] is a different height, and a form that reserves this
+// number under it is off by the difference. The overlay's own avoidance has
+// no such gap, because it uses the height the keyboard actually measured.
 //
 // A form inside a [Window] or [ZStack] that holds the keyboard does not need
 // it: the overlay takes this much height away from the content by itself; see
@@ -316,13 +322,14 @@ func init() { kbState.reset() }
 // # What it is
 //
 // A German layout with umlauts and ß, a digit row, a symbol page, shift, space,
-// backspace and enter. It is one node: forty seven keys are forty seven
-// rectangles this view draws and hit tests itself, not forty seven child
-// views. That is a deliberate departure from how the rest of this package
-// composes, and the reason is in the numbers — see [keyboardNode] — but the
-// short version is that a keyboard is a grid of identical cells with no
-// independent state, which is the one shape where a subtree per cell buys
-// nothing and costs a build, a layout and a paint per cell.
+// backspace, enter and a key that puts the keyboard away. It is one node:
+// forty eight keys are forty eight rectangles this view draws and hit tests
+// itself, not forty eight child views. That is a deliberate departure from how
+// the rest of this package composes, and the reason is in the numbers — see
+// [keyboardNode] — but the short version is that a keyboard is a grid of
+// identical cells with no independent state, which is the one shape where a
+// subtree per cell buys nothing and costs a build, a layout and a paint per
+// cell.
 //
 // It draws nothing, occupies nothing and allocates nothing unless the kiosk
 // switch is on *and* a field has asked for it; see [SetOnScreenKeyboard] and
@@ -529,13 +536,13 @@ func (kbHidden) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 //
 // # Why the keys are not child views
 //
-// Because forty seven of them are. The composed spelling — a VStack of HStacks
+// Because forty eight of them are. The composed spelling — a VStack of HStacks
 // of Buttons — is five rows times up to eleven buttons, each of which is a
 // scene node with a node payload, a layouter, a painter, an interactor, an
 // element and a label view under it; call it a hundred and forty scene nodes
 // and a hundred and forty heap objects per build, five nested layout passes
 // over them, and a paint that walks the same tree. Against that, this object
-// is one allocation, one layout that fills a fixed array of forty seven
+// is one allocation, one layout that fills a fixed array of forty eight
 // rectangles, and a paint that emits its operations in one loop.
 //
 // It is worth being clear about what is given up. A key cannot be styled
@@ -634,7 +641,7 @@ func (n *keyboardNode) Paint(ctx *gift.PaintContext) {
 	paintBorder(ctx, n.st, b)
 }
 
-// paintKeys draws the forty seven key faces and their labels.
+// paintKeys draws the forty eight key faces and their labels.
 //
 // The four assertions are the first four statements, in front of every
 // visibility gate below them, for the reason [assertResolved] gives and for
@@ -939,7 +946,7 @@ func (v KeyboardView) Padding(f float32) KeyboardView { v.setPadding(f); return 
 // PaddingInsets sets the padding per edge, replacing any previous padding.
 func (v KeyboardView) PaddingInsets(i geom.Insets) KeyboardView { v.setPaddingInsets(i); return v }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free; the width then falls back to [kbDefaultWidth] and the height to five
 // rows of keys.
 //

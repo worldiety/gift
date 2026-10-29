@@ -122,13 +122,17 @@ type ProgressBarView struct {
 	hasTint bool
 }
 
-// ProgressBar returns a determinate progress bar at the given fraction, which
-// is clamped to the range 0 to 1 for drawing.
+// ProgressBar returns a determinate progress bar at the given fraction. A
+// fraction above 1 is clamped to 1 for drawing.
 //
 // The clamp is for drawing only and there is no diagnosis, because a fraction
 // slightly above one is the normal arithmetic of a download whose declared
 // size was a little short, and a bar that panicked on it would turn a cosmetic
 // inaccuracy into a crash.
+//
+// A negative fraction is not clamped and *panics*: it is a subtraction that
+// went the wrong way or a -1 meant as "no idea how far along", which is
+// [ProgressBarView.Indeterminate]; [checkFraction] argues the asymmetry.
 //
 // A fraction that is not a finite number is another matter and *panics*: a NaN
 // or an infinity — which is what done/total produces when total turned out to
@@ -258,7 +262,7 @@ func (p ProgressBarView) Tint(v Color) ProgressBarView { p.tint, p.hasTint = v, 
 func (p ProgressBarView) Label(v string) ProgressBarView { p.name = v; return p }
 
 // Frame fixes both axes, which is how a bar is made thicker. Pass
-// [geom.Unbounded] for an axis that should stay free; see [frameSpec].
+// [geom.Unbounded]() for an axis that should stay free; see [frameSpec].
 func (p ProgressBarView) Frame(w, h float32) ProgressBarView { p.setFrame(w, h); return p }
 
 // MinWidth raises the minimum width of the bar; see [frameSpec].
