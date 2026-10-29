@@ -489,8 +489,11 @@ func (r *Renderer) PinGlassQuality(q render.GlassQuality) {
 	}
 }
 
-// GlassLevel returns the level the last drawn frame actually used. It is never
-// [render.Adaptive].
+// GlassLevel returns the policy's current effective level. It is never
+// [render.Adaptive]. That is the level the last drawn frame used unless
+// [Renderer.PinGlassQuality] has changed it since: a pin shows here at once,
+// before any frame is drawn with it. The next frame decides its own level
+// again in BeginFrame.
 func (r *Renderer) GlassLevel() render.GlassQuality {
 	if r.policy == nil {
 		return render.Reduced

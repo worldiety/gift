@@ -60,8 +60,8 @@ type Options struct {
 //
 // An App belongs to exactly one goroutine, the UI executor: the goroutine that
 // called [New]. In a windowed application that is the goroutine Ebitengine
-// drives; in tests it is the test goroutine. The only method that may be
-// called from anywhere is [App.Diagnostics].
+// drives; in tests it is the test goroutine. The only methods that may be
+// called from anywhere are [App.Post] and [App.Diagnostics].
 type App struct {
 	log   *slog.Logger
 	store *store

@@ -13,8 +13,11 @@
 // Ebitengine's Draw, and nothing crosses over. Several updates may run before
 // a frame is drawn and under load none may, so build and layout live on one
 // side of that line and the display list on the other. The whole visible list
-// is redrawn every frame; there is no dirty rectangle path and none is
-// planned. The project plan, section 6, explains why.
+// is redrawn every drawn frame; there is no dirty rectangle path and none is
+// planned. The project plan, section 6, explains why. What a drawn frame is
+// can be narrowed: [Config.DrawOnDemand] skips the refreshes in which nothing
+// changed and leaves the previous frame standing, and [Config.DirectToScreen]
+// draws into the final screen instead of Ebitengine's offscreen.
 //
 // # Drawing
 //

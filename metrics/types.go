@@ -349,13 +349,6 @@ type ShaperStats struct {
 	Bytes   uint64
 }
 
-// Options configures a [Recorder].
-//
-// Everything in here is supplied by the backend, which knows the display and
-// owns the renderer. Whether a report is produced at all, how often and
-// where it goes is not in here: that is read from the environment, because a
-// library must not take command line flags away from its host program. See
-// the package documentation.
 // CoreStats is the runtime half of a report. It mirrors gift.Diagnostics
 // field for field; the consumer converts, because this package deliberately
 // imports nothing from the framework it measures.
@@ -374,6 +367,13 @@ type CoreStats struct {
 	InputEvents    uint64
 }
 
+// Options configures a [Recorder].
+//
+// Everything in here is supplied by the backend, which knows the display and
+// owns the renderer. Whether a report is produced at all, how often and
+// where it goes is not in here: that is read from the environment, because a
+// library must not take command line flags away from its host program. See
+// the package documentation.
 type Options struct {
 	// Timer configures the frame timer.
 	Timer FrameTimerOptions

@@ -8,7 +8,10 @@
 // # Frame model
 //
 // Ebitengine decouples Update from Draw: several updates may run before a
-// frame is drawn, and the whole screen is cleared and redrawn every frame.
+// frame is drawn, and the whole screen is cleared and redrawn every drawn
+// frame. The backend may skip a refresh in which nothing asked for a paint
+// ([App.NeedsPaint]) and leave the previous frame standing; a frame that is
+// drawn is still drawn whole.
 // gift therefore does all of its CPU work in [App.Update] and only produces
 // the display list in [App.Paint]. Build and layout in Paint are a contract
 // violation and panic. See the project plan, section 6.
@@ -74,9 +77,10 @@
 // release build does not check, because the check cannot be made cheap enough
 // for the event handler path, and the race detector covers the same ground.
 //
-// Exactly two methods may be called from any goroutine. [App.Post] hands a
-// closure to the UI executor, which runs it at the beginning of the next
+// Exactly two App methods may be called from any goroutine. [App.Post] hands
+// a closure to the UI executor, which runs it at the beginning of the next
 // update; that is how a worker result reaches the interface, and [Token] is
-// how a result that has since gone stale is rejected. [App.Diagnostics]
-// returns a synchronised snapshot of the frame counters.
+// how a result that has since gone stale is rejected — [Token.Post] is safe
+// from any goroutine too. [App.Diagnostics] returns a synchronised snapshot
+// of the frame counters.
 package gift

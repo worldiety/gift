@@ -70,9 +70,11 @@ const (
 //
 // [Reduced] is one region copy and one composite pass over the material
 // region. [Full] adds a dual-Kawase down and up chain, also confined to the
-// region. Neither is free and neither touches the whole screen; see the
-// backend's glass documentation for the measured numbers and for the one place
-// where the implementation had to depart from section 8.
+// region. Neither is free, and neither pass touches the whole screen. The
+// frame around them does: while a material is visible the backend renders the
+// frame into a screen sized offscreen and composites it, which is one screen
+// sized clear and one blit. See the backend's glass documentation for the
+// measured numbers and for that departure from section 8.
 func Glass() GlassMaterial { return render.NewGlass() }
 
 // Gradient is a vertical gradient background; see [LinearGradient].

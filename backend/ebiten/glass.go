@@ -200,8 +200,10 @@ type GlassPolicy struct {
 // Full is the optimistic start on purpose: the policy can only observe a cost
 // it is paying, so it has to pay it once to find out. A Raspberry Pi 4 that
 // cannot afford it drops to Reduced within a window plus a dwell, that is
-// about two and a half seconds, and logs nothing — the effective level is a
-// counter, as the project plan, section 15, requires.
+// about two and a half seconds. The policy itself logs nothing — the
+// effective level is a counter, as the project plan, section 15, requires —
+// but it keeps the change for [GlassPolicy.TakeLevelChange], and [Run] logs it
+// at Warn, or at Info for a recovery, when [Config.Logger] is set.
 func NewGlassPolicy(cfg GlassPolicyConfig) *GlassPolicy {
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultGlassWindow

@@ -58,13 +58,13 @@ type Config struct {
 	// # Why this exists
 	//
 	// Without change and without animation Ebitengine still ticks and draws
-	// sixty times per second, because that is its model; gift has no on
-	// demand rendering and the project plan, section 6, rules it out. On a
-	// Raspberry Pi that constant load is heat, and heat is thermal
-	// throttling, which then shows up as missed frame intervals in a
-	// measurement that has nothing to do with the scene. Lowering the tick
-	// rate while nothing happens is the sanctioned countermeasure — an
-	// application policy, not a second presentation path.
+	// sixty times per second, because that is its model, and skipping the
+	// draw is a separate decision, [Config.DrawOnDemand]. On a Raspberry Pi
+	// that constant load is heat, and heat is thermal throttling, which then
+	// shows up as missed frame intervals in a measurement that has nothing to
+	// do with the scene. Lowering the tick rate while nothing happens is the
+	// sanctioned countermeasure — an application policy, not a second
+	// presentation path.
 	//
 	// It is off by default because it changes what is being measured. A
 	// benchmark must state whether it was on.
@@ -112,9 +112,13 @@ type Config struct {
 	// something else repaints; that is a bug in the painter, and with this
 	// flag it becomes visible instead of being papered over at sixty hertz.
 	//
-	// It is off by default because it changes what a frame interval
-	// measurement means: a benchmark of a still scene would record only the
-	// frames that were drawn. Kiosks and appliances want it on.
+	// It is off by default because it changes what a frame measurement
+	// means. The frame interval is still taken once per display refresh,
+	// drawn or skipped, so a still scene reports the refresh rate and not
+	// the rate of drawn frames. The draw time leaves a skipped refresh out,
+	// except under [Config.DirectToScreen], where it is recorded as a draw
+	// that took almost no time. A benchmark must state whether it was on;
+	// kiosks and appliances want it on.
 	DrawOnDemand bool
 
 	// DirectToScreen draws the frame straight into Ebitengine's final
@@ -219,9 +223,7 @@ type Config struct {
 	// counters are unreachable in a running program, which is exactly the
 	// cold versus warm evidence section 12 step 4 names as its deliverable.
 	//
-	//	cfg.AssetStats = func() metrics.AssetStats {
-	//	    return metrics.AssetStatsOf(ui.ImagePipeline().Stats())
-	//	}
+	//	cfg.AssetStats = ui.ImagePipelineStats
 	AssetStats func() metrics.AssetStats
 
 	// GlassQuality pins the glass material's quality level for the whole run.
@@ -259,7 +261,10 @@ var Terminate = eb.Termination
 //     drawn and, under load, not at all between two frames.
 //   - [gift.App.Paint] — the display list — runs in Ebitengine's Draw, once
 //     per drawn frame, and the whole visible list is redrawn every time.
-//     There is no partial screen repaint and no dirty rectangle.
+//     There is no partial screen repaint and no dirty rectangle. Under
+//     [Config.DrawOnDemand] a refresh with nothing new to show is not a
+//     drawn frame: Paint is not called and the previous frame stays on the
+//     screen.
 //
 // The core rejects the two crossings with a panic, and this function does not
 // work around that: anything budgeted per drawn frame is counted in Draw, and
