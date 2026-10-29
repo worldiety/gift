@@ -271,9 +271,8 @@ func (n *textNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size
 	ctx.ReportOverflow(geom.Sz(
 		max(sizeOverflow(size.W, out.W), p.Hidden.W),
 		sizeOverflow(size.H, out.H)+p.Hidden.H))
-	// The first baseline of the paragraph, offset by the top padding. Nothing
-	// reads it yet; see gift.LayoutContext.ReportBaseline for why the channel
-	// exists before a consumer does.
+	// The first baseline of the paragraph, offset by the top padding. A
+	// Stack.AlignBaseline reads it; see gift.LayoutContext.ReportBaseline.
 	ctx.ReportBaseline(n.pad.Top + m.FirstBaseline)
 	return out
 }
@@ -505,7 +504,7 @@ func (t TextView) Padding(v float32) TextView { t.setPadding(v); return t }
 // PaddingInsets sets the padding per edge, replacing any previous padding.
 func (t TextView) PaddingInsets(v geom.Insets) TextView { t.setPaddingInsets(v); return t }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free. Fixing the width is also how a label is given a wrapping width
 // independently of its parent.
 //
@@ -535,7 +534,9 @@ func (t TextView) Background(v Background) TextView { t.setBackgroundSpec(v); re
 // not change the layout.
 func (t TextView) Border(v Border) TextView { t.setBorder(v); return t }
 
-// Shadow draws a blurred copy of the background shape behind the view.
+// Shadow draws a blurred copy of the view's shape — its bounds, rounded by the
+// corner radius — behind the view. It is drawn from the shape and not from the
+// fill, so a view without a background casts one too.
 //
 // It extends the paint bounds but not the layout size and not the hit area, so
 // a shadow never moves a sibling and never makes a gap clickable; the project

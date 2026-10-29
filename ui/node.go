@@ -122,7 +122,7 @@ func (n *node) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 		// axis that is not.
 		//
 		// This is what makes the obvious spelling work. A ZStack hands its
-		// children loose but bounded constraints, so
+		// children loose constraints, bounded wherever its own are, so
 		//
 		//	ui.ZStack(ui.Box().Background(c), content)
 		//
@@ -307,13 +307,15 @@ func (n *node) layoutScroll(ctx *gift.LayoutContext, cc geom.Constraints, k int)
 func (n *node) layoutLayer(ctx *gift.LayoutContext, cc geom.Constraints, k int) layout.Result {
 	if !cc.HasBoundedWidth() || !cc.HasBoundedHeight() {
 		panic("gift/ui: a navigation container was measured with an unbounded " +
-			"axis. ui.TabBar, ui.NavigationStack and ui.Modal are screens: they " +
-			"fill the area they are given, and there is nothing to fill here. " +
+			"axis. ui.TabBar, ui.NavigationStack, ui.Modal and ui.Sheet are " +
+			"screens: they fill the area they are given, and there is nothing " +
+			"to fill here. " +
 			"The two ways to get here are putting one inside a scroll container, " +
 			"which is not a place a screen belongs, and making it an inflexible " +
 			"child of a stack, where the stack measures it with an unbounded main " +
 			"axis — ui.VStack(nav) rather than ui.VStack(nav.Flex(1)). Give it a " +
-			"Flex, or a Frame with a finite size on both axes. This is a panic " +
+			"Flex, or wrap it in a view with a Frame that is finite on both axes, " +
+			"such as ui.ZStack(nav).Frame(w, h). This is a panic " +
 			"and not a silently smaller screen because the scrim of a ui.Modal " +
 			"would measure zero on the unbounded axis while the alert above it " +
 			"drew normally, and every tap would go through a dialog that is on " +

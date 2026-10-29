@@ -84,7 +84,9 @@ func (s Stack) Align(v geom.Alignment) Stack {
 }
 
 // AlignBaseline lines the children up on their first text baseline instead of
-// on an edge or the centre. It replaces any previous [Stack.Align].
+// on an edge or the centre. It replaces the alignment mode, not the alignment
+// value: the value set by [Stack.Align] still places every child that reports
+// no baseline, and a later Align switches back to ordinary alignment.
 //
 // Two labels of different font sizes placed next to each other sit on a common
 // line, which is what "next to each other" means for text and what centring
@@ -112,7 +114,7 @@ func (s Stack) AlignBaseline() Stack {
 	return s
 }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free.
 //
 // Precedence: Frame is applied first, then Max, then Min, and the call order
@@ -146,7 +148,9 @@ func (s Stack) Background(v Background) Stack { s.setBackgroundSpec(v); return s
 // does not change the layout.
 func (s Stack) Border(v Border) Stack { s.setBorder(v); return s }
 
-// Shadow draws a blurred copy of the background shape behind the view.
+// Shadow draws a blurred copy of the view's shape — its bounds, rounded by the
+// corner radius — behind the view. It is drawn from the shape and not from the
+// fill, so a view without a background casts one too.
 //
 // It extends the paint bounds but not the layout size and not the hit area, so
 // a shadow never moves a sibling and never makes a gap clickable; the project
@@ -156,8 +160,9 @@ func (s Stack) Shadow(v Shadow) Stack { s.setShadow(v); return s }
 // CornerRadius rounds the background and the border.
 func (s Stack) CornerRadius(v float32) Stack { s.setCornerRadius(v); return s }
 
-// Clip confines the children to the padded bounds. The clip is rectangular
-// even with a corner radius; see paintStyle.
+// Clip confines the children to the full bounds, not to the padded bounds; see
+// [gift.Element.Clip]. The clip is rectangular even with a corner radius; see
+// paintBorder.
 func (s Stack) Clip(v bool) Stack { s.setClip(v); return s }
 
 // Key sets the reconciliation key of this view among its siblings.

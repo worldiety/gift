@@ -94,8 +94,9 @@ type Element struct {
 
 	// Flex is the flexibility of this element along the main axis of an
 	// enclosing stack. Zero, the default, means inflexible: the element is
-	// measured against the space that is left. A positive value means the
-	// element takes a share of the remaining space proportional to it.
+	// measured with an unbounded main axis and takes what it asks for, before
+	// any space is shared out. A positive value means the element takes a
+	// share of the space the inflexible siblings left, proportional to it.
 	//
 	// It is a plain field rather than an interface or a type assertion in
 	// the layout path on purpose: a stack recognises a [ui.Spacer] by
@@ -378,9 +379,9 @@ type Element struct {
 // BuildContext is passed to [View.Build].
 //
 // It is owned and reused by the App and is valid only for the duration of the
-// call. Keeping it is a bug. It currently exposes no methods; it exists so
-// that build time services such as theming or text metrics can be added later
-// without changing the view contract.
+// call. Keeping it is a bug. It exists so that build time services can be
+// added without changing the view contract; the one it exposes so far is
+// [BuildContext.SoftKeyboardRequested].
 type BuildContext struct {
 	app *App
 }

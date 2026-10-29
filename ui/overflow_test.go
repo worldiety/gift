@@ -225,6 +225,11 @@ func TestGapAndPaddingReject(t *testing.T) {
 		{"negative padding", func() { ui.VStack().Padding(-4) }},
 		{"negative padding insets", func() { ui.ZStack().PaddingInsets(geom.Insets{Top: -1}) }},
 		{"infinite box padding", func() { ui.Box().Padding(geom.Unbounded()) }},
+		{"infinite spacer flex", func() { ui.Spacer().Flex(geom.Unbounded()) }},
+		{"NaN spacer flex", func() { ui.Spacer().Flex(nan()) }},
+		{"infinite spacer length", func() { ui.Spacer().MinLength(geom.Unbounded()) }},
+		{"NaN spacer length", func() { ui.Spacer().MinLength(nan()) }},
+		{"negative spacer length", func() { ui.Spacer().MinLength(-1) }},
 	}
 	for _, tc := range panics {
 		t.Run(tc.name, func(t *testing.T) {

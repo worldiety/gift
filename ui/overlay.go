@@ -28,8 +28,11 @@ type Overlay struct {
 // ZStack draws its children on top of each other, first child at the bottom.
 // The ownership rule of [VStack] applies unchanged.
 //
-// Every child is measured with the same loose but bounded constraints, so a
-// greedy child such as an unframed [Box] fills the whole box on both axes.
+// Every child is measured with the same loose constraints, bounded wherever
+// the ZStack's own are, so a greedy child such as an unframed [Box] fills the
+// whole box on both axes. An axis the ZStack itself was given unbounded — the
+// main axis of an inflexible child of a stack, say — stays unbounded for the
+// children, and the Box collapses on it; give the ZStack a Frame or a Flex.
 // A child's Flex is ignored; see [Overlay.Flex] for why.
 //
 // The one exception is a direct child that is an [OnScreenKeyboard]: while it
@@ -150,7 +153,7 @@ func (o Overlay) PaddingInsets(v geom.Insets) Overlay { o.setPaddingInsets(v); r
 // both components are used, because neither axis is a stacking axis.
 func (o Overlay) Align(v geom.Alignment) Overlay { o.setAlign(v); return o }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free.
 //
 // Precedence: Frame is applied first, then Max, then Min, and the call order
@@ -181,7 +184,9 @@ func (o Overlay) Background(v Background) Overlay { o.setBackgroundSpec(v); retu
 // Border strokes the inside of the bounds after the children were drawn.
 func (o Overlay) Border(v Border) Overlay { o.setBorder(v); return o }
 
-// Shadow draws a blurred copy of the background shape behind the view.
+// Shadow draws a blurred copy of the view's shape — its bounds, rounded by the
+// corner radius — behind the view. It is drawn from the shape and not from the
+// fill, so a view without a background casts one too.
 //
 // It extends the paint bounds but not the layout size and not the hit area, so
 // a shadow never moves a sibling and never makes a gap clickable; the project
@@ -191,7 +196,8 @@ func (o Overlay) Shadow(v Shadow) Overlay { o.setShadow(v); return o }
 // CornerRadius rounds the background and the border.
 func (o Overlay) CornerRadius(v float32) Overlay { o.setCornerRadius(v); return o }
 
-// Clip confines the children to the padded bounds.
+// Clip confines the children to the full bounds, not to the padded bounds; see
+// [gift.Element.Clip].
 func (o Overlay) Clip(v bool) Overlay { o.setClip(v); return o }
 
 // Key sets the reconciliation key of this view among its siblings.

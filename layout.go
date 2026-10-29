@@ -175,21 +175,22 @@ func (l *LayoutContext) check(child int) {
 // ReportBaseline records the distance from the top of this node to the
 // baseline its content sits on, in logical pixels.
 //
-// # This is a seam, and it is honest about being one
+// # The channel, its writers and its reader
 //
 // The project plan, section 7, makes baselines part of the shared layout
 // contract, and this is the channel they travel through: a text node reports
 // the first baseline of its paragraph, and a container that wants to align
 // siblings on it reads [LayoutContext.ChildBaseline].
 //
-// As of WU-G exactly one thing writes it, [ui.Text], and nothing reads it: no
-// stack aligns on baselines yet, because cross sibling baseline alignment
-// needs a second measuring pass over the row — measure every child, take the
-// largest baseline, then place each child shifted by the difference — and that
-// is a change to the stack algorithm in internal/layout, not to a text view.
-// Adding the channel now and the algorithm later is the cheap order; inventing
-// the algorithm now for a toolkit whose only baseline bearing view is a label
-// would be building against a single caller.
+// The writers are the views that carry text: [ui.Text] reports the first
+// baseline of its paragraph, ui.TextField the baseline of its line, and
+// ui.Button passes on the baseline of its label. The reader is the stack
+// algorithm in internal/layout, which a horizontal ui.Stack asks for with
+// ui.Stack.AlignBaseline: it measures every child, takes the largest
+// baseline, then places each child shifted by the difference. The channel was
+// added before that algorithm existed, while a label was the only view with a
+// baseline, so that the algorithm could later be added to the stack without
+// changing any text view.
 //
 // A layouter that never calls it reports no baseline, which is the right
 // answer for a box: a rectangle has no baseline, and a container that guesses

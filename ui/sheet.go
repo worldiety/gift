@@ -62,11 +62,12 @@ const (
 //
 // # The on-screen keyboard
 //
-// [Window] lays its content out above gift's on-screen keyboard while that is
-// showing, so a sheet inside a Window sits on the keyboard rather than under
-// it, and a text field at the bottom of the sheet stays in sight. The sheet
-// gets shorter by the keyboard's height while it is up, because its height is
-// a fraction of the space it is given.
+// A [Window] with an [OnScreenKeyboard] among its content lays the rest of
+// that content out above the keyboard while it is showing, so a sheet inside
+// such a Window sits on the keyboard rather than under it, and a text field at
+// the bottom of the sheet stays in sight. The sheet gets shorter by the
+// keyboard's height while it is up, because its height is a fraction of the
+// space it is given.
 type SheetView struct {
 	base
 	content      gift.View

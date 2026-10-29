@@ -191,12 +191,13 @@ func (v SectionHeaderView) Flex(f float32) SectionHeaderView { v.setFlex(f); ret
 //
 // # Separators
 //
-// A separator is drawn between two consecutive items *only when both of them
-// are rows*. That single rule gives the three properties a grouped list needs:
-// there is none after the last item, none between a row and a following
-// [SectionHeaderView], and none between a header and the row under it — so a
-// section boundary is one visual break and never two stacked on top of each
-// other.
+// A separator is drawn between two consecutive items *only when neither of
+// them is a [SectionHeaderView]*; any other item counts as a row here, a
+// [TextView] or a [ToggleView] as much as a [RowView]. That single rule gives
+// the three properties a grouped list needs: there is none after the last
+// item, none between a row and a following [SectionHeaderView], and none
+// between a header and the row under it — so a section boundary is one visual
+// break and never two stacked on top of each other.
 //
 // A separator is a real part of the layout: it takes its thickness out of the
 // vertical run, so rows do not overlap it and the height of a list is the sum
@@ -378,7 +379,7 @@ func (v ListView) Padding(f float32) ListView { v.setPadding(f); return v }
 // PaddingInsets sets the inset per edge, replacing any previous padding.
 func (v ListView) PaddingInsets(i geom.Insets) ListView { v.setPaddingInsets(i); return v }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free; see [frameSpec] for the precedence.
 func (v ListView) Frame(w, h float32) ListView { v.setFrame(w, h); return v }
 
@@ -404,7 +405,9 @@ func (v ListView) Background(b Background) ListView { v.setBackgroundSpec(b); re
 // Border strokes the inside of the bounds after the rows were drawn.
 func (v ListView) Border(b Border) ListView { v.setBorder(b); return v }
 
-// Shadow draws a blurred copy of the background shape behind the list.
+// Shadow draws a blurred copy of the list's shape — its bounds, rounded by the
+// corner radius — behind the list. It is drawn from the shape and not from the
+// fill, so a list without a background casts one too.
 func (v ListView) Shadow(s Shadow) ListView { v.setShadow(s); return v }
 
 // CornerRadius rounds the background and the border.

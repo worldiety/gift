@@ -177,11 +177,40 @@ func TestSpacer(t *testing.T) {
 				geom.RcXYWH(0, 40, 10, 20),
 			},
 		},
+		{
+			name: "MinLength holds for an inflexible spacer",
+			// Flex(0) makes the stack measure the spacer with an unbounded
+			// main axis instead of a tight one; the minimum still applies to
+			// the main axis.
+			view: ui.VStack(ui.Spacer().Flex(0).MinLength(30), probe(10, 20)).Frame(50, 100),
+			want: []geom.Rect{geom.RcXYWH(0, 30, 10, 20)},
+		},
+		{
+			name: "MinLength of an inflexible spacer in a horizontal stack",
+			view: ui.HStack(ui.Spacer().Flex(0).MinLength(30), probe(10, 20)).Frame(100, 50),
+			want: []geom.Rect{geom.RcXYWH(30, 0, 10, 20)},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			wantBounds(t, run(t, tc.view, geom.Sz(200, 200)), tc.want...)
 		})
+	}
+}
+
+// TestInflexibleSpacerInAZeroWideStack pins the main axis recognition of a
+// spacer where the cross axis is the tight one. A VStack with no width
+// measures an inflexible child with a cross axis of 0..0 and a main axis of
+// 0..unbounded; reading the tight axis as the main one put the minimum length
+// on the width, and the box under the spacer moved up by thirty pixels.
+func TestInflexibleSpacerInAZeroWideStack(t *testing.T) {
+	v := ui.VStack(ui.Spacer().Flex(0).MinLength(30), probe(10, 20)).Frame(0, 100)
+	ops := run(t, v, geom.Sz(200, 200)).Ops()
+	if len(ops) != 1 {
+		t.Fatalf("painted %d ops, want 1: %v", len(ops), boundsOf(ops))
+	}
+	if got := ops[0].Bounds.Min.Y; got != 30 {
+		t.Fatalf("the box under the spacer starts at y = %v, want 30; bounds %v", got, ops[0].Bounds)
 	}
 }
 

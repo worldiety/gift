@@ -45,10 +45,13 @@ import (
 //
 // A greedy [Box] filled with [ColorBackground], with content on top of it in
 // the order given, in a [ZStack]. The Box is the documented idiom of
-// [BoxView]: a ZStack hands every child loose but bounded constraints, so an
-// unframed Box takes the whole viewport whatever the content does. Painting
-// the ZStack's own background instead would only cover the union of the
-// children, which is the bug again for any tree that does not fill the window.
+// [BoxView]: a ZStack hands every child loose constraints, bounded wherever
+// its own are, so an unframed Box takes the whole viewport whatever the
+// content does. That holds as long as the Window itself is given bounded
+// constraints, which it always is as the root of the tree; nested in an
+// unbounded axis, the Box collapses on that axis like any other. Painting the
+// ZStack's own background instead would only cover the union of the children,
+// which is the bug again for any tree that does not fill the window.
 //
 // The result is an ordinary [Overlay], so the alignment and the modifiers of
 // that type are available:
