@@ -33,7 +33,7 @@ const (
 	// modalRise is how far below its place a modal waits while it is not
 	// presented, as a fraction of its own height; see [gift.TransitionSpec].
 	//
-	// A third of the card and not a whole window: an alert comes up from
+	// About a third of the card and not a whole window: an alert comes up from
 	// under its own footprint rather than travelling across the screen, which
 	// is what every phone platform does and what keeps the movement short
 	// enough to be over in [ControlAnimation] without looking hurried. The
@@ -336,9 +336,12 @@ type scrimInteractor struct{ onTap func() }
 func (s scrimInteractor) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	switch e.Kind {
 	case gift.EventPointerDown:
-		// The focus goes nowhere. gift clears the focus on a press that
-		// nothing claimed; claiming the press and not asking for the focus
-		// leaves it where it was, which for a modal is inside the modal.
+		// The focus goes nowhere, and whatever held it inside the modal
+		// loses it: gift blurs before delivering a press whose node is
+		// neither focusable nor [gift.Element.PreservesFocus], and the scrim
+		// is neither. That is the same as a tap on empty space anywhere
+		// else, and it cannot reach outside the modal, because the trap
+		// still bounds where tab goes next.
 		return true
 	case gift.EventPointerUp:
 		if e.Inside && !e.Dragged && s.onTap != nil {
@@ -409,11 +412,8 @@ func AlertDestructive(title string, fn func()) AlertButton {
 // is a card on the screen that anything can be tapped around, and that is the
 // honest consequence of keeping the two apart rather than a trap: the
 // presentation is a separate decision from the content, and [Modal] takes any
-// view at all, so a bottom sheet is
-//
-//	ui.Modal(screen, ui.VStack(rows...).Background(ui.ColorSurface)).Scrim(ui.ColorClear)
-//
-// and needs no type of its own.
+// view at all and centres it. A panel anchored to the bottom edge is a
+// different presentation rather than different content, and is [Sheet].
 //
 // # The buttons are a row and stay a row
 //

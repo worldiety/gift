@@ -77,16 +77,18 @@ var roleNames = [numColorRoles]string{
 //
 // # Why the set stops here
 //
-// These eleven are the vocabulary the widgets in this package actually need,
-// plus the two that a caller cannot express without help. Text needs a primary
-// and a subordinate colour; a window needs a backdrop and something raised on
-// it; a hairline needs a colour that is neither; a control needs a face in
-// four interaction states, which is not a design opinion but the state set
-// [ButtonView] already has; and an accent needs a companion that is legible
-// *on* it, or the accent cannot be used as a fill at all.
+// These twelve, [ColorClear] aside, are the vocabulary the widgets in this
+// package actually need, plus the two that a caller cannot express without
+// help. Text needs a primary and a subordinate colour; a window needs a
+// backdrop and something raised on it; a hairline needs a colour that is
+// neither; a control needs a face in four interaction states, which is not a
+// design opinion but the state set [ButtonView] already has; an accent needs
+// a companion that is legible *on* it, or the accent cannot be used as a fill
+// at all; and a destructive choice needs [ColorDanger], which arrived with
+// the alert that draws one.
 //
-// There is no success, warning or danger colour, no elevation ladder and no
-// per widget token, because no widget in this package expresses any of those
+// There is no success or warning colour, no elevation ladder and no per
+// widget token, because no widget in this package expresses any of those
 // today. A token nobody resolves is a name to keep in sync for nothing; they
 // arrive with the widget that needs them.
 //

@@ -45,8 +45,10 @@ type ScreenSpec struct {
 // for the same reason: a stack that is popped and pushed again has to be able
 // to say which screen is which, and the index is exactly the thing that
 // changes. Two screens of one stack with the same title need
-// [ScreenSpec.Key] — gift rejects duplicate sibling keys rather than resolving
-// them.
+// [ScreenSpec.Key]. A build with -tags giftdebug rejects duplicate sibling
+// keys; a release build does not check, and matches the duplicates by their
+// position among themselves, which is the identity the key was meant to
+// replace.
 func Screen(title string, content gift.View) ScreenSpec {
 	if content == nil {
 		panic("gift/ui: Screen with a nil content view")
@@ -122,12 +124,20 @@ func (s ScreenSpec) identity(i int) string {
 // root is impossible rather than merely discouraged: no affordance offers it
 // and the escape key below refuses it.
 //
-// Escape pops as well, and it is honestly a secondary path: gift delivers keys
-// to the focused node and bubbles them upwards, so escape reaches the stack
-// only when the focus is *inside* the stack. On a touch panel with no keyboard
-// attached nothing is ever focused and escape never arrives, which is exactly
-// the case this widget is built for; the key is there for a desk and for a
-// test. There is deliberately no edge swipe: a horizontal drag near the edge
+// Escape pops as well, and it is honestly a secondary path. gift delivers keys
+// to the focused node and bubbles them upwards, so a focused escape reaches the
+// stack when the focus is *inside* it; with nothing focused at all — a touch
+// panel with a keyboard plugged in, where nothing was ever focused — the stack
+// declares [gift.Element.KeyFallback] and the unfocused escape is delivered to
+// it. Two limits follow from the fallback's rule. While a [Modal] or a
+// [Sheet] is open its focus trap bounds the search, so an escape cannot pop
+// the screen behind it. And a stack placed *inside* a sheet is the last
+// fallback in document order, so it takes escape before the sheet does and
+// consumes it even on its root screen: the sheet's [SheetView.OnDismiss] never
+// sees escape, and such a sheet is closed by a tap on the scrim or by the
+// application.
+//
+// There is deliberately no edge swipe: a horizontal drag near the edge
 // of the screen is the gesture a horizontally scrolling gallery already owns,
 // and gift's pointer arbitration is "whoever steals the pointer last wins"
 // rather than an arena — see [gift.EventContext.StealPointer] — so the two

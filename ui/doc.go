@@ -146,8 +146,9 @@
 // [TextField] is the single line text field of the project plan, section 19.
 // It edits a [TextEditor], which the application holds — that is where the
 // text, the caret and the selection live, and it is what makes them survive
-// the rebuild that every keystroke causes. Click to place the caret, drag to
-// select, double click for a word; the arrows with shift and with
+// the rebuilds around the field, including the one a keystroke causes when
+// the field is bound or its OnChange writes state. Click to place the caret,
+// drag to select, double click for a word; the arrows with shift and with
 // [gift.WordModifier]; backspace and delete with gift's own key repeat; and
 // select all, copy, cut and paste on [gift.ShortcutModifier].
 //
@@ -260,7 +261,7 @@
 // view — over the lot with a scrim and a focus trap under it.
 //
 //	ui.Modal(
-//		ui.TabBar(sel.Get(), sel.Set,
+//		ui.TabBar(ctx.Read(sel), sel.Set,
 //			ui.Tab("Home", outline.Home, home).SelectedIcon(solid.Home),
 //			ui.Tab("Settings", outline.Cog, settings),
 //		),

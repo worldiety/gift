@@ -61,8 +61,10 @@ type TabSpec struct {
 // one removed keeps the third tab's scroll offset, because the third tab is
 // still the tab with that key and not "the child at index two". Use
 // [TabSpec.Key] when two tabs share a title, which is the only case the
-// default gets wrong — and which gift reports as a duplicate key rather than
-// resolving silently.
+// default gets wrong. A build with -tags giftdebug reports it as a duplicate
+// key; a release build does not check, and the two tabs are then matched by
+// their position among the duplicates, which is exactly the identity the key
+// was meant to replace.
 func Tab(title string, sym Symbol, content gift.View) TabSpec {
 	if content == nil {
 		panic("gift/ui: Tab with a nil content view")
@@ -104,7 +106,7 @@ func (t TabSpec) identity(i int) string {
 // items along the bottom of the window, one screen above them. It is created
 // by [TabBar]; the zero value is not useful.
 //
-//	ui.TabBar(sel.Get(), sel.Set,
+//	ui.TabBar(ctx.Read(sel), sel.Set,
 //		ui.Tab("Home", outline.Home, homeScreen).SelectedIcon(solid.Home),
 //		ui.Tab("Settings", outline.Cog, settingsScreen),
 //	)
@@ -194,7 +196,7 @@ type TabBarView struct {
 // TabBar returns a tab bar showing the content of tabs[selected] and calling
 // onSelect with the index of the tab the user asked for.
 //
-// selected is clamped into range: a bar built with an index that is out of
+// selected is not clamped but reset: a bar built with an index that is out of
 // bounds shows the first tab rather than panicking, because the index is
 // application state and an application that has just deleted a tab will have
 // one for a frame. A bar with no tabs at all is a programming error and

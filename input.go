@@ -67,10 +67,13 @@ const (
 	// EventPointerUp is a release. It is delivered to the capturing node,
 	// inside or not.
 	EventPointerUp
-	// EventPointerCancel says the pointer went away without a release: the
-	// window lost focus, or the platform took the gesture over. A node that
-	// treats it like an up would activate on something the user never
-	// completed.
+	// EventPointerCancel says the pointer went away without a release. gift
+	// sends it itself when another node takes the pointer with
+	// [EventContext.StealPointer] and when the node holding the press is
+	// hidden; a backend adds its own causes — the window lost focus, the
+	// platform took the gesture over — by calling [App.PointerCancel], which
+	// the Ebitengine backend does not do today. A node that treats it like an
+	// up would activate on something the user never completed.
 	//
 	// A node that is unmounted while it holds a press does *not* receive one,
 	// and cannot: by the time gift knows, the node is gone and there is
@@ -151,10 +154,13 @@ const (
 //     outside the United States, and that is why the alphabet is not here in
 //     full.
 //
-// Everything else a backend sees is reported as [KeyOther], which nothing in
-// gift acts on but an application may. The cost of widening the enum is a
-// larger table in every backend and one more poll per tick per entry, so it
-// is widened for a named need and not for completeness.
+// Everything else is [KeyOther], which nothing in gift acts on. A backend may
+// report a key it has no name for as KeyOther, and an application may then
+// act on it, but the Ebitengine backend polls only the named keys and never
+// reports it, so on that backend an application cannot observe it. The cost
+// of widening the enum is a larger table in every backend and one more poll
+// per tick per entry, so it is widened for a named need and not for
+// completeness.
 type Key uint8
 
 const (
@@ -322,9 +328,11 @@ type Event struct {
 	Pointer PointerID
 	Device  PointerKind
 
-	// Pos is the position of a pointer event in device space, the same space
-	// the bounds of a node and the clip rectangles of the display list live
-	// in; see the project plan, section 7.
+	// Pos is the position of a pointer event in device space, the space the
+	// clip rectangles of the display list and [EventContext.DeviceBounds] live
+	// in; see the project plan, section 7. It is not the local space of
+	// [EventContext.Bounds]: the two agree until something above the node
+	// scrolls, and then differ by that offset.
 	Pos geom.Point
 
 	// Delta is the movement since the previous event for a move, and the
@@ -443,6 +451,14 @@ type Interaction struct {
 	FocusVisible bool
 	// Disabled mirrors [Element.Disabled]. It is here so that a painter
 	// needs to consult one value rather than two.
+	//
+	// It does not clear Hover or Pressed. A disabled node is still a hit
+	// target that captures the press it swallows, and gift tracks hover and
+	// press on it exactly as on an enabled one; a painter that draws the
+	// disabled look gives Disabled precedence, which is what every painter in
+	// package ui does. The consequence for a test is that
+	// [App.NodeInteraction] can report a disabled control as hovered or
+	// pressed: assert Disabled, not the absence of the other two.
 	Disabled bool
 }
 
@@ -1473,13 +1489,25 @@ func (a *App) deliverKey(e Event) bool {
 
 // keyFallbackNode is the node an unfocused key event is delivered to: the last
 // node in document order that declared [Element.KeyFallback], skipping hidden
-// subtrees, or the zero handle when nothing did.
+// subtrees, or the zero handle when nothing did. The search runs inside
+// [App.focusRoot], not the whole tree, so a candidate outside an active
+// [Element.FocusTrap] is never chosen.
 //
 // "Last in pre order" is [App.focusRoot]'s rule, deliberately the same one, and
 // it gives the same answers for the same reasons: a navigation stack nested
 // inside another one wins over the outer one, a screen that is covered is
 // hidden and therefore not a candidate, and a modal presented later is later
 // in the tree.
+//
+// The trap is the half "later in the tree" cannot supply. A modal that
+// declares no fallback of its own — an alert has no escape key to handle — is
+// later in the tree and still not a candidate, so without the trap the
+// fallback would be the navigation stack *underneath* the alert, and escape
+// would pop the screen the user cannot see past the scrim. Rooting the walk at
+// the trap makes an unfocused key reach the modal's own handler or nobody,
+// which is what the trap already means for the focus order. A key still
+// bubbles out of the trap along the tree from whichever node it reached; see
+// [Element.FocusTrap].
 //
 // It costs one pre order walk per unfocused key press. The recursion does not
 // even start in an application where nothing ever declared the flag, because
@@ -1489,7 +1517,7 @@ func (a *App) keyFallbackNode() scene.Handle {
 		return scene.Handle{}
 	}
 	found := scene.Handle{}
-	a.findKeyFallback(a.root.node, 0, &found)
+	a.findKeyFallback(a.focusRoot(), 0, &found)
 	return found
 }
 

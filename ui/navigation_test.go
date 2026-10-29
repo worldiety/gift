@@ -733,9 +733,9 @@ func TestPoppingTheLastScreenLeavesTheRootInPlace(t *testing.T) {
 	// There is no affordance at all on the root screen.
 	h.AssertNone(gifttest.ByKey("back"))
 
-	// And the key that would pop does nothing. The focus has to be inside the
-	// stack for the key to arrive there, which is the documented limitation
-	// of the escape path and is set up here on purpose.
+	// And the key that would pop does nothing. The focus is put inside the
+	// stack on purpose, so this is the focused path; the unfocused one is
+	// TestEscapeWithNothingFocusedStopsAtTheRootScreen.
 	h.Find(gifttest.ByKey("target")).Tap()
 	h.Settle()
 	h.Key(gift.KeyEscape)
@@ -858,6 +858,49 @@ func TestTabDoesNotLeaveAnOpenAlert(t *testing.T) {
 				h.At(center(h.App().NodeDeviceBounds(f))).Text())
 		}
 	}
+}
+
+// TestEscapeDoesNotReachTheStackUnderAnOpenAlert is the key fallback half of
+// the trap. Opening the alert takes the focus away, so escape is an unfocused
+// key; the alert declares no fallback of its own, and the navigation stack
+// underneath does. Without the trap bounding the search the stack would take
+// the key and pop the screen behind the scrim, which the user cannot see past.
+func TestEscapeDoesNotReachTheStackUnderAnOpenAlert(t *testing.T) {
+	pops := 0
+	h := gifttest.New(t, gifttest.Options{
+		Theme: ui.LightTheme(),
+		Font:  loadTestFont(t),
+		Size:  geom.Sz(640, 480),
+		Root: func(ctx *gift.Context) gift.View {
+			depth := ctx.State("depth", 2)
+			open := ctx.State("open", false)
+			screens := []ui.ScreenSpec{ui.Screen("Root", ui.Text("root").Key("root"))}
+			if ctx.Read(depth) > 1 {
+				screens = append(screens, ui.Screen("Deeper", ui.VStack(
+					ui.Text("deep").Key("deep"),
+					ui.Button(ui.Text("open"), func() { open.Set(true) }).Key("open"),
+				)))
+			}
+			var modal gift.View
+			if ctx.Read(open) {
+				modal = ui.Alert("Careful", "Really?",
+					ui.AlertCancel("Cancel", func() { open.Set(false) }))
+			}
+			return ui.Modal(ui.NavigationStack(func() { pops++; depth.Set(1) }, screens...), modal)
+		},
+	})
+	h.Find(gifttest.ByKey("open")).Tap()
+	h.Settle()
+	h.AssertExists(gifttest.ByType("ui.Alert"))
+	h.AssertNoFocus()
+
+	h.Key(gift.KeyEscape)
+	h.Settle()
+
+	if pops != 0 {
+		t.Fatalf("escape over an open alert popped the screen behind it %d time(s)", pops)
+	}
+	h.AssertExists(gifttest.ByKey("deep"))
 }
 
 // TestOpeningAnAlertTakesTheFocusOffTheFieldBehindIt: the trap excludes the
