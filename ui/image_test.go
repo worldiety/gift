@@ -662,6 +662,45 @@ func TestImageViewMeasuresFromTheAspectRatio(t *testing.T) {
 	}
 }
 
+// sizedSource is a source that declares its dimensions in its metadata, which
+// a file does not: [asset.File] learns them only when the pipeline probes it,
+// and a layout test without a pipeline never gets that far.
+type sizedSource struct{ m asset.Metadata }
+
+func (s sizedSource) Metadata() asset.Metadata { return s.m }
+
+func (s sizedSource) Open(context.Context) (io.ReadCloser, error) { return nil, os.ErrNotExist }
+
+// TestUnframedImageInAStackFollowsItsAspectRatio pins the measurement along a
+// free axis. A stack offers its main axis unbounded, and the image used to
+// fall back to the minimum there, which is zero: an unframed picture in a
+// VStack had no height at all and never appeared, whether or not its source
+// knew its dimensions.
+func TestUnframedImageInAStackFollowsItsAspectRatio(t *testing.T) {
+	ui.ResetImageService()
+	defer ui.ResetImageService()
+
+	wide := sizedSource{asset.Metadata{ID: "wide", Width: 400, Height: 200}}
+	unknown := sizedSource{asset.Metadata{ID: "unknown"}}
+	for _, tc := range []struct {
+		name string
+		view gift.View
+		want geom.Size
+	}{
+		{"known ratio in a VStack", ui.VStack(ui.Image(wide).Key("pic")).Frame(300, 300), geom.Sz(300, 150)},
+		{"known ratio in an HStack", ui.HStack(ui.Image(wide).Key("pic")).Frame(300, 100), geom.Sz(200, 100)},
+		{"unknown ratio in a VStack", ui.VStack(ui.Image(unknown).Key("pic")).Frame(300, 300), geom.Sz(300, 300)},
+		{"known ratio framed to a width", ui.Image(wide).Key("pic").Frame(300, geom.Unbounded()), geom.Sz(300, 150)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := gifttest.New(t, gifttest.Options{View: tc.view, Size: geom.Sz(300, 300)})
+			if got := h.Find(gifttest.ByKey("pic")).Bounds().Size(); got != tc.want {
+				t.Errorf("the image measured %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestImageWithoutAPipelineDrawsItsPlaceholder pins the headless behaviour:
 // no service, no panic, no blank.
 func TestImageWithoutAPipelineDrawsItsPlaceholder(t *testing.T) {

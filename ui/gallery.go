@@ -1211,8 +1211,15 @@ func (s TileStyle) resolved() TileStyle {
 // measurement that asks for it.
 func (v GalleryView) Overscan(px float32) GalleryView { v.overscan = px; return v }
 
-// OnSelect is called with the stable ID of the entry the user selected, by
-// clicking it or by pressing space on the keyboard cursor.
+// OnSelect is called with the stable ID of the entry the user selected or
+// acted on: on every click on a tile, whatever its modifiers — a Control
+// click that takes the entry out of the selection reports it too — on every
+// plain arrow, Page, Home or End key that moves the cursor and with it the
+// selection, and on space when it adds the entry under the keyboard cursor.
+// A key with Shift extends the selection and one with Control or Meta moves
+// only the cursor, and neither calls it, so the callback is a notification
+// and not a mirror of the selection:
+// [Gallery.Selection] is what is selected now.
 //
 // It receives an [asset.ID] and never a tile, a slot or an index, which is the
 // API level statement of the rule in the project plan, section 10: selection
@@ -1220,8 +1227,9 @@ func (v GalleryView) Overscan(px float32) GalleryView { v.overscan = px; return 
 // Speicherplatz einer Kachel".
 func (v GalleryView) OnSelect(fn func(asset.ID)) GalleryView { v.onSelect = fn; return v }
 
-// OnActivate is called when the user activates an entry: a double click, or
-// enter on the keyboard cursor. It is what opens a detail view.
+// OnActivate is called when the user activates an entry: enter on the
+// keyboard cursor. It is what opens a detail view. A double click is not an
+// activation; every click selects, see [GalleryView.OnSelect].
 func (v GalleryView) OnActivate(fn func(asset.ID)) GalleryView { v.onActivate = fn; return v }
 
 // Label sets the accessible name of the gallery; see [gift.Element.Label].
@@ -1250,7 +1258,7 @@ func (v GalleryView) Padding(f float32) GalleryView { v.setPadding(f); return v 
 // PaddingInsets sets the padding per edge.
 func (v GalleryView) PaddingInsets(i geom.Insets) GalleryView { v.setPaddingInsets(i); return v }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free — but not for the height, which then has no viewport; see [GalleryView].
 func (v GalleryView) Frame(w, h float32) GalleryView { v.setFrame(w, h); return v }
 

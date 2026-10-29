@@ -44,8 +44,14 @@ var pickerType = gift.RegisterType("filepicker.Picker")
 // error is logged to [PickerView.Logger]. A listing is a snapshot: the picker
 // does not watch the directory.
 //
-// The settings are read on every build, except [PickerView.Start], which is
-// where the picker opens and applies when it is mounted.
+// The settings are read on every build, with three exceptions.
+// [PickerView.Start], which is where the picker opens, and
+// [PickerView.SuggestedName], which fills the name field, apply when it is
+// mounted. What [PickerView.Mode], [PickerView.Extensions],
+// [PickerView.Filter] and [PickerView.ShowHidden] decide about the listing —
+// which entries are listed, and which can be picked — is applied when a
+// directory is read: changing them reaches the next directory opened, not the
+// one on screen.
 //
 // # Paths
 //

@@ -38,8 +38,16 @@ var imageType = gift.RegisterType("ui.Image")
 // The application owns the pipeline's lifetime and closes it:
 //
 //	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post, Disk: ...})
-//	defer pipe.Close()
+//	defer func() {
+//	    pipe.Close()
+//	    app.DrainPosts() // see [gift.App.DrainPosts]
+//	}()
 //	ui.SetImagePipeline(pipe)
+//
+// A picture that has arrived stays: the service asks the pipeline once per
+// picture and size and does not ask again, so a file that is overwritten in
+// place keeps its old pixels until the application says it changed, with
+// [asset.Pipeline.Invalidate] and [ForgetImage].
 func SetImagePipeline(p *asset.Pipeline) { images.setPipeline(p) }
 
 // ImagePipeline returns the pipeline installed by [SetImagePipeline], or nil.
@@ -326,9 +334,18 @@ func (s *imageService) request(src asset.Source, size int, pass uint64, prio ass
 //
 // It is the counterpart of [asset.Pipeline.Invalidate] and [asset.Pipeline.Forget]
 // on this side of the boundary, and an application that knows a picture
-// changed or that a failure is worth another attempt calls all three. The
-// textures are *not* deallocated here: releasing a texture requires the frame
-// the backend is drawing, and this is called from an event handler. They
+// changed or that a failure is worth another attempt calls all three.
+//
+// It marks nothing for layout. The new request is issued by the next layout
+// pass of each [ImageView] that shows the picture, so a call from an event
+// handler belongs next to the state change that records the edit — any
+// change that lays those views out again. Without one nothing asks for the
+// picture again, and the next paint of those views finds neither a texture
+// here nor, once the pipeline has forgotten it, a picture there, and draws
+// the placeholder.
+//
+// The textures are *not* deallocated here: releasing a texture requires the
+// frame the backend is drawing, and this is called from an event handler. They
 // become unreferenced instead and the next age sweep collects them, which is
 // the one place this package accepts a delayed release.
 func ForgetImage(id asset.ID) {
@@ -443,11 +460,18 @@ var OpaqueWhite = RGB(255, 255, 255)
 // # Size
 //
 // An image measures itself from the oriented dimensions of its source, scaled
-// to fit the constraints, so a picture in a stack takes the space its aspect
-// ratio asks for. A source that does not know its dimensions yet measures as a
-// square, and the picture reflows once the pipeline has probed it — which is
-// the same provisional-then-corrected behaviour the gallery has, for the same
-// reason. Give it a [ImageView.Frame] to take the question away entirely.
+// to fit the constraints. Offered a bounded box, it takes the largest
+// rectangle of its aspect ratio that fits; offered one bounded axis, as a
+// stack or a scroll view offers along its main axis, it takes the bounded
+// axis whole and derives the other from the aspect ratio, so a picture in a
+// stack takes the space its aspect ratio asks for. Offered no bounded axis at
+// all, it takes the minimum it is given, which is usually nothing.
+//
+// A source that does not know its dimensions yet fills a bounded box, and
+// along a free axis measures as a square of the bounded one; the picture
+// reflows once the pipeline has probed it — which is the same
+// provisional-then-corrected behaviour the gallery has, for the same reason.
+// Give it a [ImageView.Frame] to take the question away entirely.
 type ImageView struct {
 	base
 	src         asset.Source
@@ -539,7 +563,7 @@ func (v ImageView) Padding(f float32) ImageView { v.setPadding(f); return v }
 // PaddingInsets sets the padding per edge.
 func (v ImageView) PaddingInsets(i geom.Insets) ImageView { v.setPaddingInsets(i); return v }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should follow
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should follow
 // the aspect ratio of the picture.
 func (v ImageView) Frame(w, h float32) ImageView { v.setFrame(w, h); return v }
 
@@ -583,7 +607,7 @@ func (v ImageView) CornerRadius(f float32) ImageView { v.setCornerRadius(f); ret
 // takes the same shape, so a view does not change its outline when its
 // picture arrives. [FitCover] crops to the bounds regardless, because a crop
 // is part of the fit and not a clip.
-func (v ImageView) Clip(b bool) ImageView { v.style.clip = b; return v }
+func (v ImageView) Clip(b bool) ImageView { v.setClip(b); return v }
 
 // Flex makes the image take a share of the remaining main axis space.
 func (v ImageView) Flex(f float32) ImageView { v.setFlex(f); return v }
@@ -674,15 +698,35 @@ func (n *imageNode) natural() (uint32, uint32) {
 // aspectSize is the largest size with the given aspect ratio that the
 // constraints allow. An unknown ratio falls back to the box itself, which for
 // a bounded axis is the greedy answer a [Box] gives.
+//
+// An unbounded axis is derived from the bounded one, from the ratio or, while
+// the ratio is unknown, as a square. It used to fall back to the minimum like
+// an unknown ratio does, which is zero in every stack: an unframed picture in
+// a VStack measured no height at all and was never seen, whatever its source
+// knew about itself.
 func aspectSize(c geom.Constraints, w, h uint32) geom.Size {
+	fw, fh := c.HasBoundedWidth(), c.HasBoundedHeight()
 	bw, bh := c.Max.W, c.Max.H
-	if !c.HasBoundedWidth() {
+	if !fw {
 		bw = c.Min.W
 	}
-	if !c.HasBoundedHeight() {
+	if !fh {
 		bh = c.Min.H
 	}
-	if w == 0 || h == 0 || bw <= 0 || bh <= 0 {
+	known := w > 0 && h > 0
+	switch {
+	case fw && !fh && bw > 0:
+		if !known {
+			return geom.Sz(bw, bw)
+		}
+		return geom.Sz(bw, bw*float32(h)/float32(w))
+	case fh && !fw && bh > 0:
+		if !known {
+			return geom.Sz(bh, bh)
+		}
+		return geom.Sz(bh*float32(w)/float32(h), bh)
+	}
+	if !known || bw <= 0 || bh <= 0 {
 		return geom.Sz(bw, bh)
 	}
 	s := min(bw/float32(w), bh/float32(h))

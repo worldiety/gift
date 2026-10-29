@@ -61,8 +61,9 @@ type ProbeResult struct {
 	Revision string
 	// Size is the encoded size in bytes, or zero when it is unknown. The
 	// pipeline reserves its input budget from this number, so a source that
-	// knows it should say so: an unknown size costs a reservation of the
-	// whole configured input limit.
+	// knows it should say so: an unknown size reserves a small token until
+	// the fetch reports a length, and one the fetch does not report either
+	// costs a reservation of the whole configured input limit.
 	Size int64
 	// MIMEType is the media type, or empty when unknown.
 	MIMEType string
@@ -333,9 +334,9 @@ func (s *HTTPSource) WithClient(c *http.Client) *HTTPSource { s.client = c; retu
 // WithHeader adds a request header.
 //
 // A header whose name is a well known credential carrier — Authorization,
-// Proxy-Authorization, Cookie — additionally contributes to the cache
-// namespace, so two sources that differ only in their token do not share cache
-// entries. The value itself is never stored; only a hash of it reaches the key.
+// Proxy-Authorization, Cookie, X-Api-Key — additionally contributes to the
+// cache namespace, so two sources that differ only in their token do not share
+// cache entries. The value itself is never stored; only a hash of it reaches the key.
 func (s *HTTPSource) WithHeader(name, value string) *HTTPSource {
 	if s.header == nil {
 		s.header = make(http.Header, 4)

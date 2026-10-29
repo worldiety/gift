@@ -189,7 +189,7 @@ func (s *ListState) PoolSize() int { return len(s.slots) }
 // a settings screen and wrong for a directory with ten thousand files: its
 // documentation measures the cliff at about 280 rows on a Raspberry Pi 4. A
 // VirtualList has nodes for the visible rows only — about a screenful, plus
-// [vlistPoolSlack] — whatever the item count, and it is what [Gallery] is for
+// four — whatever the item count, and it is what [Gallery] is for
 // pictures: a container that declares [gift.ScrollSpec.Virtual] and binds its
 // pool to items during layout.
 //
@@ -220,6 +220,13 @@ func (s *ListState) PoolSize() int { return len(s.slots) }
 // visible ones again, so a change to the application's data reaches the screen
 // the way any other state change does: write the state the enclosing component
 // reads, and the rebuild rebinds.
+//
+// The read has to be in the build. The row function runs during layout, where
+// nothing subscribes, so a row that computes [ListRow.Selected] from
+// [gift.State.Get] inside it does not change when that state does: a tap that
+// writes the selection rebuilds nothing on that read's account, and the old
+// mark stays. Read the state with [gift.Context.Read] in the build that
+// declares the list and let the row function close over the value.
 type VirtualListView struct {
 	base
 	s        *ListState
@@ -241,8 +248,9 @@ type VirtualListView struct {
 //		return ui.ListRow{Icon: outline.File, Title: files[i].Name}
 //	}).OnTap(open).Flex(1)
 //
-// row is called during layout and must not block, and must not write state:
-// it is a lookup into data the application already has.
+// row is called during layout, and again for the one item a tap or Enter
+// activates, to see whether it is [ListRow.Disabled]. It must not block, and
+// must not write state: it is a lookup into data the application already has.
 func VirtualList(s *ListState, count int, row func(i int) ListRow) VirtualListView {
 	if s == nil {
 		panic("gift/ui: VirtualList with a nil ListState; create one with ui.NewListState")

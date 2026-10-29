@@ -62,13 +62,16 @@
 //
 // The seam is one function field. An application writes:
 //
-//	app := gift.NewApp(...)
+//	app := gift.New(gift.Options{...})
 //	pipe := asset.NewPipeline(asset.Config{
 //	    Deliver: app.Post,
 //	    Disk:    asset.DiskCacheConfig{Dir: cacheDir},
 //	    Logger:  logger,
 //	})
-//	defer pipe.Close()
+//	defer func() {
+//	    pipe.Close()
+//	    app.DrainPosts() // see [Config.Deliver]
+//	}()
 //
 // and then, from the gallery's layout or paint pass, for every visible tile:
 //
