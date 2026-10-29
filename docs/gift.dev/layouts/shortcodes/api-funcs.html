@@ -1,0 +1,37 @@
+{{- /*
+  Lists package level functions from data/api.json, which docs/apigen generates from the source.
+
+  {{< api-funcs pkg="ui" names="SetTheme,CurrentTheme" >}}
+  {{< api-funcs pkg="ui" >}}      every package level function that is not a constructor
+*/ -}}
+{{- $pkgName := .Get "pkg" | default "ui" -}}
+{{- $pkg := index hugo.Data.api $pkgName -}}
+{{- if not $pkg -}}
+  {{- errorf "api-funcs: package %q not in data/api.json (%s)" $pkgName .Position -}}
+{{- end -}}
+{{- $names := slice -}}
+{{- with .Get "names" }}{{ $names = split (replace . " " "") "," }}{{ end -}}
+{{- $rows := slice -}}
+{{- range $pkg.funcs -}}
+  {{- if or (not $names) (in $names .name) -}}
+    {{- $rows = $rows | append . -}}
+  {{- end -}}
+{{- end -}}
+{{- range $names -}}
+  {{- $n := . -}}
+  {{- $found := false -}}
+  {{- range $rows }}{{ if eq .name $n }}{{ $found = true }}{{ end }}{{ end -}}
+  {{- if not $found -}}
+    {{- errorf "api-funcs: %s.%s not in data/api.json (%s)" $pkgName $n $.Position -}}
+  {{- end -}}
+{{- end -}}
+<div class="gift-api">
+<table>
+  <thead><tr><th>Function</th><th>Description</th></tr></thead>
+  <tbody>
+  {{- range $rows }}
+    <tr><td><code>func {{ .signature }}</code></td><td>{{ .synopsis | markdownify }}</td></tr>
+  {{- end }}
+  </tbody>
+</table>
+</div>

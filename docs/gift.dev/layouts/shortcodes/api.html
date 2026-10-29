@@ -1,0 +1,68 @@
+{{- /*
+  Lists the constructors and methods of a type from data/api.json, which docs/apigen generates from the source.
+
+  {{< api "ButtonView" >}}                 type of package ui
+  {{< api pkg="gift" type="Context" >}}
+  {{< api type="ButtonStyle" decl="true" >}}  also show the type declaration, useful for style structs
+  {{< api type="Stack" common="true" >}}      list the common modifiers in the table instead of one line
+
+  The common modifiers of styled views (Frame, Padding, Background, ...) are collapsed into one line after the
+  table, because every view has them and they are explained on the concepts page about modifiers. The methods
+  Build and ViewType are left out by apigen, the runtime calls them.
+*/ -}}
+{{- $pkgName := .Get "pkg" | default "ui" -}}
+{{- $typeName := .Get "type" | default (.Get 0) -}}
+{{- $pkg := index hugo.Data.api $pkgName -}}
+{{- if not $pkg -}}
+  {{- errorf "api: package %q not in data/api.json (%s)" $pkgName .Position -}}
+{{- end -}}
+{{- $t := index $pkg.types $typeName -}}
+{{- if not $t -}}
+  {{- errorf "api: type %s.%s not in data/api.json, run go run ./docs/apigen (%s)" $pkgName $typeName .Position -}}
+{{- end -}}
+{{- $commonNames := slice "Align" "Background" "Border" "Clip" "CornerRadius" "Flex" "Frame" "Key" "MaxHeight" "MaxWidth" "MinHeight" "MinWidth" "Padding" "PaddingInsets" "Shadow" -}}
+{{- $listCommon := eq (.Get "common") "true" -}}
+{{- $own := slice -}}
+{{- $common := slice -}}
+{{- range $t.methods -}}
+  {{- /* an Align that takes something else than geom.Alignment, like TextView.Align, is not the common one */ -}}
+  {{- $isCommon := and (in $commonNames .name) (or (ne .name "Align") (strings.Contains .signature "geom.Alignment")) -}}
+  {{- if and $isCommon (not $listCommon) -}}
+    {{- $common = $common | append .name -}}
+  {{- else -}}
+    {{- $own = $own | append . -}}
+  {{- end -}}
+{{- end -}}
+<div class="gift-api">
+{{- if eq (.Get "decl") "true" }}
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+{{ highlight $t.decl "go" }}
+</div>
+{{- end }}
+{{- with $t.constructors }}
+<h3>Constructors</h3>
+<table>
+  <thead><tr><th>Constructor</th><th>Description</th></tr></thead>
+  <tbody>
+  {{- range . }}
+    <tr><td><code>func {{ .signature }}</code></td><td>{{ .synopsis | markdownify }}</td></tr>
+  {{- end }}
+  </tbody>
+</table>
+{{- end }}
+{{- with $own }}
+<h3>Methods</h3>
+<table>
+  <thead><tr><th>Method</th><th>Description</th></tr></thead>
+  <tbody>
+  {{- range . }}
+    <tr><td><code>{{ .signature }}</code></td><td>{{ .synopsis | markdownify }}</td></tr>
+  {{- end }}
+  </tbody>
+</table>
+{{- end }}
+{{- with $common }}
+<p class="gift-common">Common modifiers: {{ range $i, $n := . }}{{ if $i }}, {{ end }}<code>{{ $n }}</code>{{ end }}. See <a href="{{ relref $.Page "/docs/concepts/modifiers" }}">Modifiers</a>.</p>
+{{- end }}
+<p class="gift-common"><a href="https://pkg.go.dev/{{ $pkg.importPath }}#{{ $typeName }}" target="_blank" rel="noopener">{{ $pkgName }}.{{ $typeName }} on pkg.go.dev ↗</a></p>
+</div>

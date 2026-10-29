@@ -1,0 +1,21 @@
+{{- /*
+  Shows the screenshots of the page bundle, rendered by docs/capture: screenshot-light.png in the light theme and
+  screenshot-dark.png in the dark theme. Both are taken at density 2 and shown at half their pixel size.
+
+  {{< gallery-shot >}}
+  {{< gallery-shot alt="Three buttons" >}}
+  {{< gallery-shot prefix="other" >}}   other-light.png and other-dark.png
+*/ -}}
+{{- $prefix := .Get "prefix" | default "screenshot" -}}
+{{- $alt := .Get "alt" | default .Page.Title -}}
+{{- $light := .Page.Resources.Get (printf "%s-light.png" $prefix) -}}
+{{- $dark := .Page.Resources.Get (printf "%s-dark.png" $prefix) -}}
+{{- if not $light -}}
+  {{- errorf "gallery-shot: %s-light.png missing in %s, run go run ./docs/capture (%s)" $prefix .Page.File.Dir .Position -}}
+{{- end -}}
+<figure class="gift-shot">
+  <img class="gift-shot-light" src="{{ $light.RelPermalink }}" width="{{ div $light.Width 2 }}" height="{{ div $light.Height 2 }}" alt="{{ $alt }}" loading="lazy">
+  {{- with $dark }}
+  <img class="gift-shot-dark" src="{{ .RelPermalink }}" width="{{ div .Width 2 }}" height="{{ div .Height 2 }}" alt="{{ $alt }}" loading="lazy">
+  {{- end }}
+</figure>

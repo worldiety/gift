@@ -1,0 +1,108 @@
+baseURL = "/"
+locale = "en"
+title = "Gift Docs"
+defaultContentLanguage = "en"
+enableGitInfo = false
+
+[module]
+  [[module.imports]]
+    path = "github.com/imfing/hextra"
+
+  # declaring a mount replaces the defaults, so they are repeated here
+  [[module.mounts]]
+    source = "content"
+    target = "content"
+  [[module.mounts]]
+    source = "static"
+    target = "static"
+  [[module.mounts]]
+    source = "layouts"
+    target = "layouts"
+  [[module.mounts]]
+    source = "assets"
+    target = "assets"
+  [[module.mounts]]
+    source = "data"
+    target = "data"
+  [[module.mounts]]
+    source = "i18n"
+    target = "i18n"
+  # the component demos which draw the screenshots, see the gallery-code shortcode
+  [[module.mounts]]
+    source = "../gallery"
+    target = "assets/gallery"
+    files = ["**/*.go"]
+  # the example programs, shown as they are in the repository, see the example-code shortcode
+  [[module.mounts]]
+    source = "../../cmd"
+    target = "assets/examples"
+    files = ["**/*.go"]
+
+[menu]
+ [[menu.main]]
+   name = "Documentation"
+   pageRef = "/docs/getting-started"
+   weight = 1
+
+ [[menu.main]]
+   name = "Components"
+   pageRef = "/docs/components"
+   weight = 2
+
+ [[menu.main]]
+   name = "Search"
+   weight = 3
+   [menu.main.params]
+     type = "search"
+
+ [[menu.main]]
+   name = "GitHub"
+   url = "https://github.com/worldiety/gift"
+   weight = 4
+   [menu.main.params]
+     icon = "github"
+
+ [[menu.sidebar]]
+   name = "More"
+   weight = 1
+   [menu.sidebar.params]
+     type = "separator"
+
+ [[menu.sidebar]]
+   name = "API reference ↗"
+   url = "https://pkg.go.dev/github.com/worldiety/gift"
+   weight = 2
+
+ [[menu.sidebar]]
+   name = "worldiety GmbH ↗"
+   url = "https://www.worldiety.de"
+   weight = 3
+
+[params]
+  description = "Documentation for Gift, the declarative desktop and kiosk UI toolkit for Go"
+  navbarTitle = "Gift Docs"
+  favicon = "favicon.svg"
+
+  [params.navbar]
+    displayTitle = true
+    displayLogo = true
+    [params.navbar.logo]
+      path = "images/gift_logo.svg"
+      dark = "images/gift_logo_white.svg"
+      width = "32"
+
+  [params.theme]
+    default = "system"
+
+  [params.footer]
+    displayCopyright = true
+    displayPoweredBy = false
+    height = "auto"
+
+  [params.page]
+    width = "wide"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true

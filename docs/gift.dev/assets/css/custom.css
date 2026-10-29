@@ -1,0 +1,39 @@
+/* Screenshots are taken in both themes; the one matching the page is shown. */
+.gift-shot {
+  margin-top: 1.5rem;
+}
+.gift-shot img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.gift-shot .gift-shot-dark {
+  display: none;
+}
+html.dark .gift-shot .gift-shot-light {
+  display: none;
+}
+html.dark .gift-shot .gift-shot-dark {
+  display: block;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* API tables: signatures wrap instead of widening the page. */
+.gift-api table {
+  width: 100%;
+}
+.gift-api th {
+  text-align: left;
+}
+.gift-api td:first-child {
+  width: 45%;
+}
+.gift-api td:first-child code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.gift-api .gift-common {
+  font-size: 0.875rem;
+  opacity: 0.8;
+}

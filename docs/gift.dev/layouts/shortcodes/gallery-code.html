@@ -1,0 +1,27 @@
+{{- /*
+  Shows the code of a component demo in docs/gallery: the lines between "// snippet:begin" and "// snippet:end" of
+  the file named like the demo. It is the code which drew the screenshot of the page.
+
+  {{< gallery-code >}}                     the demo named like the page bundle
+  {{< gallery-code "progress-bar" >}}      the demo progress-bar in docs/gallery/progress_bar.go
+
+  Demo names keep their dashes, the Go files use underscores instead.
+*/ -}}
+{{- $name := .Get 0 | default (path.Base .Page.File.Dir) | replaceRE "_" "-" -}}
+{{- $fileName := printf "%s.go" (replaceRE "-" "_" $name) -}}
+{{- $file := resources.Get (printf "gallery/%s" $fileName) -}}
+{{- if not $file -}}
+  {{- errorf "gallery-code: docs/gallery/%s not found (%s)" $fileName .Position -}}
+{{- end -}}
+{{- $m := findRESubmatch `(?s)\n[ \t]*// snippet:begin\n(.*?)\n[ \t]*// snippet:end` $file.Content 1 -}}
+{{- if not $m -}}
+  {{- errorf "gallery-code: no snippet markers in docs/gallery/%s (%s)" $fileName .Position -}}
+{{- end -}}
+{{- $code := index (index $m 0) 1 | replaceRE `(?m)^\t` "" -}}
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+{{ highlight $code "go" }}
+</div>
+<p class="hx:mt-2 hx:text-sm">
+  <a href="https://github.com/worldiety/gift/tree/main/docs/gallery/{{ $fileName }}" target="_blank" rel="noopener">Full demo on GitHub ↗</a>
+  · run it with <code>go run ./docs/gallery -demo {{ $name }}</code>
+</p>

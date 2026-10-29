@@ -1,0 +1,37 @@
+{{- /*
+  Shows the Go sources of an example program in cmd, straight from the repository.
+
+  {{< example-code >}}                                    all files of the example named like the page bundle
+  {{< example-code "example-counter" >}}                  all files of the given example
+  {{< example-code name="example-kitchensink" file="main.go" >}}
+
+  The package documentation at the top of each file is kept, because in gift it explains the example. Test files
+  are left out. When a page uses the shortcode more than once, set footer="false" on all but one of them.
+*/ -}}
+{{- $name := .Get "name" | default (.Get 0) | default (path.Base .Page.File.Dir) -}}
+{{- $file := .Get "file" | default "*.go" -}}
+{{- $footer := ne (.Get "footer") "false" -}}
+{{- $files := slice -}}
+{{- range resources.Match (printf "examples/%s/%s" $name $file) -}}
+  {{- if not (strings.HasSuffix .Name "_test.go") -}}
+    {{- $files = $files | append . -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $files -}}
+  {{- errorf "example-code: no sources found for example %q (%s)" $name .Position -}}
+{{- end -}}
+{{- $multi := gt (len $files) 1 -}}
+{{- range $files -}}
+  {{- if $multi }}
+<p class="hx:mt-6 hx:font-mono hx:text-sm hx:text-gray-500 hx:dark:text-gray-400">{{ path.Base .Name }}</p>
+  {{- end }}
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+{{ highlight .Content "go" }}
+</div>
+{{- end -}}
+{{- if $footer }}
+<p class="hx:mt-4 hx:text-sm">
+  <a href="https://github.com/worldiety/gift/tree/main/cmd/{{ $name }}" target="_blank" rel="noopener">View on GitHub ↗</a>
+  · run it from the repository root with <code>go run ./cmd/{{ $name }}</code>
+</p>
+{{- end }}
