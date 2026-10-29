@@ -502,6 +502,37 @@ func TestAnIconIsSquareAndCentredInANonSquareFrame(t *testing.T) {
 	}
 }
 
+// TestAFrameLargerThanAnIconDoesNotMagnifyIt pins the other half of
+// [ui.IconView.Frame]: a frame or a minimum larger than the icon adds room
+// around it. The mask is rasterised for Size, so drawing it into the whole
+// shorter side of the frame would magnify it and blur the artwork.
+func TestAFrameLargerThanAnIconDoesNotMagnifyIt(t *testing.T) {
+	for name, v := range map[string]ui.IconView{
+		"frame":   ui.Icon(outline.User).Key("i").Size(20).Frame(80, 40),
+		"minimum": ui.Icon(outline.User).Key("i").Size(20).MinWidth(60).MinHeight(60),
+	} {
+		h, _ := iconHarness(t, v, 2)
+		var op render.Op
+		for _, o := range h.Ops() {
+			if o.Kind == render.OpImage {
+				op = o
+			}
+		}
+		if op.Kind != render.OpImage {
+			t.Fatalf("%s: no image operation", name)
+		}
+		if w, hh := op.Bounds.Width(), op.Bounds.Height(); math.Abs(float64(w-20)) > 0.01 || math.Abs(float64(hh-20)) > 0.01 {
+			t.Errorf("%s: a 20 pixel icon is drawn into %v by %v", name, w, hh)
+		}
+		b := h.Find(gifttest.ByKey("i")).Bounds()
+		cx, cy := (b.Min.X+b.Max.X)/2, (b.Min.Y+b.Max.Y)/2
+		ox, oy := (op.Bounds.Min.X+op.Bounds.Max.X)/2, (op.Bounds.Min.Y+op.Bounds.Max.Y)/2
+		if math.Abs(float64(cx-ox)) > 0.01 || math.Abs(float64(cy-oy)) > 0.01 {
+			t.Errorf("%s: the icon is centred on (%v,%v) and its frame on (%v,%v)", name, ox, oy, cx, cy)
+		}
+	}
+}
+
 // TestAnIconFollowsTheTheme is the semantic colour contract of the project
 // plan, section 20, applied to icons: the default foreground is a role, so a
 // theme switch moves it without the call site saying anything.

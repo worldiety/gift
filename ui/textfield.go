@@ -121,8 +121,9 @@ var (
 //	ui.TextField(name).Placeholder("Your name").OnChange(func(s string) { ... })
 //
 // A field edits a [TextEditor], which is where the text, the caret and the
-// selection live and which is what makes them survive the rebuild that every
-// keystroke causes; see [TextEditor]. The view is the declaration around it:
+// selection live and which is what makes them survive the rebuild a keystroke
+// causes whenever the field is bound or its OnChange writes state; see
+// [TextEditor]. The view is the declaration around it:
 // the look, the placeholder, the callbacks and the disabled state.
 //
 // It handles what a single line field has to handle. Click to place the caret,
@@ -1261,7 +1262,7 @@ func (v TextFieldView) PaddingInsets(i geom.Insets) TextFieldView {
 	return v
 }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free; the width then falls back to [defaultFieldWidth] and the height to one
 // line of the font. A height taller than one line centres the line in it; see
 // [textFieldNode.Layout].

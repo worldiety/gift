@@ -35,10 +35,12 @@
 // approximates them from the nearest registered weight rather than refusing.
 //
 // Italics are not embedded. They would double the size for a style that a
-// control-heavy interface uses rarely, and gift has no italic text API to
-// reach them with yet. If you need them, load Inter-Italic.ttf yourself and
+// control-heavy interface uses rarely, and nothing in gift asks for one on its
+// own: a text is italic only where the application names an italic face, with
+// ui.Text(s).Font(ui.MustFont(ui.FontQuery{Family: Family, Style:
+// ui.StyleItalic})). If you need them, load Inter-Italic.ttf yourself and
 // register it under this same family with [ui.RegisterFont]; that is what the
-// register is for.
+// register is for, and the query above then finds it.
 //
 // # Why the static instances and not the variable font
 //
@@ -72,8 +74,9 @@
 // Inter-Bold.ttf from extras/ttf of the upstream release v4.1
 // (https://github.com/rsms/inter/releases/tag/v4.1), copied unmodified on
 // 2026-09-15. They are licensed under the SIL Open Font License 1.1; the full
-// text is in LICENSE.txt next to them, and it travels with any binary that
-// links this package.
+// text is in LICENSE.txt next to them. It is not embedded: it travels with the
+// module source and not with a binary, so an application that distributes one
+// ships the notice itself, as the licence asks.
 //
 // The bytes carry their own version, so the claim above is checkable rather
 // than remembered. Both files say "Version 4.001;git-9221beed3" in name ID 5

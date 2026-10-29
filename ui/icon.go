@@ -241,7 +241,10 @@ func (s *iconService) resolve(im render.Images, sym Symbol, px int) (render.Imag
 // rising at frame rate means something is asking for a new size every frame,
 // which is the one way this cache can be defeated.
 type IconStats struct {
-	// Entries is the number of resident masks.
+	// Entries is the number of masks the cache holds a handle for. It is an
+	// upper bound on what is resident: a mask the backend evicted between two
+	// frames is still counted until its symbol and size are asked for again,
+	// which is when the stale handle is noticed and dropped.
 	Entries int
 	// Rasterised is the number of masks produced on the CPU since the process
 	// started, and Uploads the number handed to the backend. They differ only
@@ -306,7 +309,7 @@ type IconView struct {
 // Icon returns a view of s at [DefaultIconSize].
 //
 //	ui.Icon(outline.User)
-//	ui.Icon(solid.Check).Size(16).Foreground(ui.ColorAccent)
+//	ui.Icon(solid.CheckCircle).Size(16).Foreground(ui.ColorAccent)
 //
 // A zero [Symbol] is accepted and draws nothing; see [Symbol].
 func Icon(s Symbol) IconView {
@@ -467,8 +470,11 @@ func (n *iconNode) Paint(ctx *gift.PaintContext) {
 		// Square and centred: the mask is square, so drawing it into a
 		// non square inner box would stretch the artwork. A Frame that is not
 		// square therefore letterboxes, which is what [FitContain] does for a
-		// picture and the only answer that does not distort.
-		e := min(inner.Width(), inner.Height())
+		// picture and the only answer that does not distort. The edge is
+		// capped at Size as well, exactly as Layout capped the mask: a Frame or
+		// a minimum larger than the icon adds room around it, it does not
+		// magnify a mask rasterised for the smaller edge.
+		e := min(inner.Width(), inner.Height(), n.size)
 		cx, cy := (inner.Min.X+inner.Max.X)*0.5, (inner.Min.Y+inner.Max.Y)*0.5
 		dst := geom.Rc(cx-e*0.5, cy-e*0.5, cx+e*0.5, cy+e*0.5)
 		if id, ok := icons.resolve(ctx.Images(), n.sym, n.px); ok {

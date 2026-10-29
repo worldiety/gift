@@ -90,6 +90,9 @@ func Parse(name, src string) (Doc, error) {
 			"internal/icon.Mask is square and the mapping would be ambiguous", name, vb)
 	}
 	d.ViewBox = w
+	if err := checkAttrs("svg", root); err != nil {
+		return d, fmt.Errorf("%s: %w", name, err)
+	}
 
 	rootFill, rootStroke := attr(root, "fill"), attr(root, "stroke")
 
@@ -116,6 +119,11 @@ func Parse(name, src string) (Doc, error) {
 // element turns one <path> or <rect> into a Figure, or returns nil for an
 // element that paints nothing.
 func element(kind, tag, rootFill, rootStroke string) (*Figure, error) {
+	if _, ok := knownAttrs[kind]; ok {
+		if err := checkAttrs(kind, tag); err != nil {
+			return nil, err
+		}
+	}
 	var ops []Op
 	switch kind {
 	case "path":
@@ -185,6 +193,11 @@ func element(kind, tag, rootFill, rootStroke string) (*Figure, error) {
 			return nil, errBothFillAndStroke
 		}
 	case fill != "" && fill != "none":
+		if strings.HasPrefix(fill, "url(") {
+			// A paint server — a gradient or a pattern. Treating it as the
+			// literal colour below would turn a shaded area into a hole.
+			return nil, fmt.Errorf("fill=%q; an icon is monochrome and a paint server cannot be tinted", fill)
+		}
 		if fill != "currentColor" {
 			f.Erase = true
 		}
@@ -241,6 +254,14 @@ func parseSplit(name, src string) (Doc, error) {
 			break
 		}
 		rest = tail
+		// The halves below swallow the errors of element, because one of the
+		// two is expected to be refused; an attribute the subset does not
+		// know is an error of the whole element and is reported before that.
+		if _, known := knownAttrs[kind]; known {
+			if err := checkAttrs(kind, tag); err != nil {
+				return d, fmt.Errorf("%s: %w", name, err)
+			}
+		}
 		// The fill half: the same tag with the stroke removed.
 		noStroke := stripAttrs(tag, "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin")
 		if f, err := element(kind, noStroke, rootFill, ""); err == nil && f != nil {
@@ -258,6 +279,70 @@ func parseSplit(name, src string) (Doc, error) {
 }
 
 // --- the tag reader ----------------------------------------------------------
+
+// knownAttrs are the attributes each element of the subset may carry, which is
+// the set the surveyed corpus uses and not one more. An attribute outside it —
+// a transform, an opacity, a class — changes what the element looks like in a
+// browser, and reading past it would emit the icon without that change.
+//
+// Some are accepted and deliberately not read: width, height and xmlns of the
+// <svg> say nothing a square viewBox does not, and clip-rule has an effect
+// only on the children of a <clipPath>, which the subset does not have.
+var knownAttrs = map[string]map[string]bool{
+	"svg": {"xmlns": true, "width": true, "height": true, "viewBox": true, "fill": true, "stroke": true},
+	"path": {"d": true, "fill": true, "fill-rule": true, "clip-rule": true,
+		"stroke": true, "stroke-width": true, "stroke-linecap": true, "stroke-linejoin": true},
+	"rect": {"x": true, "y": true, "width": true, "height": true, "rx": true, "ry": true,
+		"fill": true, "fill-rule": true, "stroke": true, "stroke-width": true,
+		"stroke-linecap": true, "stroke-linejoin": true},
+}
+
+// checkAttrs refuses an attribute of tag that [knownAttrs] does not list for
+// kind, and an attribute it cannot read at all.
+func checkAttrs(kind, tag string) error {
+	known := knownAttrs[kind]
+	// Past the element name, which tag starts with, with or without its "<".
+	i := strings.IndexFunc(tag, func(r rune) bool { return r < 0x80 && isSpaceByte(byte(r)) })
+	if i < 0 {
+		return nil
+	}
+	for i < len(tag) {
+		for i < len(tag) && (isSpaceByte(tag[i]) || tag[i] == '/') {
+			i++
+		}
+		if i >= len(tag) {
+			break
+		}
+		j := i
+		for j < len(tag) && tag[j] != '=' && !isSpaceByte(tag[j]) && tag[j] != '/' {
+			j++
+		}
+		n := tag[i:j]
+		if !known[n] {
+			return fmt.Errorf("unsupported attribute %s on <%s>; the surveyed corpus does not use it "+
+				"and ignoring it would draw the element without it", n, kind)
+		}
+		for j < len(tag) && isSpaceByte(tag[j]) {
+			j++
+		}
+		if j >= len(tag) || tag[j] != '=' {
+			return fmt.Errorf("attribute %s on <%s> has no value", n, kind)
+		}
+		j++
+		for j < len(tag) && isSpaceByte(tag[j]) {
+			j++
+		}
+		if j >= len(tag) || tag[j] != '"' {
+			return fmt.Errorf("attribute %s on <%s> is not double quoted", n, kind)
+		}
+		k := strings.IndexByte(tag[j+1:], '"')
+		if k < 0 {
+			return fmt.Errorf("attribute %s on <%s> is unterminated", n, kind)
+		}
+		i = j + 1 + k + 1
+	}
+	return nil
+}
 
 func firstTag(src, want string) (tag, rest string, err error) {
 	i := strings.Index(src, "<"+want)

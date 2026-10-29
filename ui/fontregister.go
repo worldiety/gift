@@ -173,9 +173,13 @@ type familyKey struct {
 // replace a face resolves it and passes it explicitly.
 //
 // It is process wide and mutable state, with the caveat the project plan,
-// section 13, records about such state: registering from init is safe because
-// init runs before any test does, but a test that calls RegisterFont while
-// another goroutine resolves is a data race that `go test -race` will report.
+// section 13, records about such state. The register itself is guarded by a
+// mutex, so a test that calls RegisterFont while another goroutine resolves is
+// not a data race; it is an ordering problem instead. What the other goroutine
+// resolves depends on which call came first, and the face stays registered for
+// every later test of the process, because nothing unregisters it.
+// Registering from init has neither problem, because init runs before any test
+// does.
 func RegisterFont(family string, weight FontWeight, style FontStyle, f Font) {
 	if strings.TrimSpace(family) == "" {
 		panic("gift/ui: RegisterFont needs a family name")

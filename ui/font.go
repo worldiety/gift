@@ -29,7 +29,9 @@ type Font struct{ f *text.Font }
 // IsZero reports whether f is the zero Font, that is no font at all.
 func (f Font) IsZero() bool { return f.f == nil }
 
-// LoadFont parses a TrueType or OpenType font.
+// LoadFont parses a TrueType or OpenType font, bare or wrapped in WOFF 1.
+// WOFF2 is not understood; see font/ibmplexmono for why the one works and the
+// other does not.
 //
 // The data is not copied and must not be modified afterwards: the parser reads
 // glyph outlines from it lazily, and so does the glyph rasteriser in the
@@ -66,7 +68,7 @@ var defaultFont Font
 // two packages writing this slot from init would overwrite each other in an
 // order the language does not fix. Together the two calls read:
 //
-//	import _ "github.com/worldiety/gift/font/inter"
+//	import "github.com/worldiety/gift/font/inter"
 //	...
 //	ui.SetDefaultFont(ui.MustFont(ui.FontQuery{Family: inter.Family}))
 //
@@ -123,7 +125,7 @@ func resolveFont(f Font) *text.Font {
 			"gift links no font unless the application asks for one.\n" +
 			"The quickest way is one of the bundled typefaces:\n" +
 			"\n" +
-			"\timport _ \"github.com/worldiety/gift/font/inter\"\n" +
+			"\timport \"github.com/worldiety/gift/font/inter\"\n" +
 			"\t...\n" +
 			"\tui.SetDefaultFont(ui.MustFont(ui.FontQuery{Family: inter.Family}))\n" +
 			"\n" +

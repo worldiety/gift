@@ -248,3 +248,31 @@ func dAttrs(s string) []string {
 }
 
 func isPathCmd(c byte) bool { return strings.IndexByte("MmLlHhVvCcSsQqTtAaZz", c) >= 0 }
+
+// TestAnAttributeOutsideTheSubsetIsRefused holds [iconsvg.Parse] to its
+// promise that what it does not know is an error. Each of these files draws
+// something different in a browser from what the subset would emit if it read
+// past the attribute or the paint: a transform that moves the path, an
+// opacity, a gradient that is neither the tint nor a hole.
+func TestAnAttributeOutsideTheSubsetIsRefused(t *testing.T) {
+	const head = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">`
+	for name, src := range map[string]string{
+		"transform":    head + `<path transform="rotate(45)" fill="currentColor" d="M0 0h4v4z"/></svg>`,
+		"opacity":      head + `<rect opacity="0.5" x="1" y="1" width="4" height="4" fill="currentColor"/></svg>`,
+		"root class":   `<svg class="x" viewBox="0 0 24 24" fill="currentColor"><path d="M0 0h4v4z"/></svg>`,
+		"single quote": head + `<path fill='currentColor' d="M0 0h4v4z"/></svg>`,
+		"gradient":     head + `<path fill="url(#g)" d="M0 0h4v4z"/></svg>`,
+	} {
+		if _, err := iconsvg.ParseFile(name+".svg", src); err == nil {
+			t.Errorf("%s: parsed without an error", name)
+		} else if !strings.HasPrefix(err.Error(), name+".svg: ") {
+			t.Errorf("%s: the error %q does not name the file", name, err)
+		}
+	}
+	// And the same attribute behind the one exception ParseFile resolves, so
+	// that the split does not become a way around the check.
+	split := head + `<path fill="currentColor" stroke="currentColor" transform="scale(2)" d="M0 0h4v4z"/></svg>`
+	if _, err := iconsvg.ParseFile("split.svg", split); err == nil {
+		t.Error("an element that is filled, stroked and transformed parsed without an error")
+	}
+}

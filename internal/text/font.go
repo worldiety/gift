@@ -49,7 +49,9 @@ type Font struct {
 	ascent, descent, gap float32
 }
 
-// ParseFont parses a single TrueType or OpenType font from data.
+// ParseFont parses a single TrueType or OpenType font from data, bare or
+// wrapped in WOFF 1. WOFF2 is not understood: the loader recognises the wOFF
+// signature and not the wOF2 one.
 //
 // The data is not copied and must not be modified afterwards; the parser reads
 // glyph outlines from it lazily. A font collection (.ttc) is rejected rather

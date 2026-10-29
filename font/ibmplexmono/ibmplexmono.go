@@ -49,7 +49,9 @@
 // WOFF form, taken unmodified on 2026-09-15 from the vendored web font set of
 // the Nago project (web/vuejs/src/assets/fonts/ibm-plex-mono/complete/woff).
 // They are licensed under the SIL Open Font License 1.1; the full text is in
-// LICENSE.txt next to them and travels with any binary that links this package.
+// LICENSE.txt next to them. It is not embedded: it travels with the module
+// source and not with a binary, so an application that distributes one ships
+// the notice itself, as the licence asks.
 //
 // # The version, and what is still unknown about it
 //

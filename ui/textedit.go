@@ -18,11 +18,15 @@ import (
 //
 // # Why the state lives here and not in the view
 //
-// Because a view does not survive a rebuild and the caret has to. Typing one
-// character writes the application's state, the component rebuilds, and gift
-// installs a freshly built node — so every field of that node is new. A caret
-// kept there would return to zero after each keystroke, and a selection would
-// be impossible to make at all.
+// Because a view does not survive a rebuild and the caret has to. In the
+// normal case typing one character writes the application's state — through a
+// [TextFieldView.Bind] or an OnChange that stores the text — the component
+// rebuilds, and gift installs a freshly built node, so every field of that
+// node is new. A caret kept there would return to zero after each keystroke,
+// and a selection would be impossible to make at all. (A field that is neither
+// bound nor writes state from its callback only repaints on a keystroke; a
+// caret kept in the node would survive that, but not the next rebuild for any
+// other reason.)
 //
 // This is the same answer [Gallery] gives to the same question and it is the
 // idiom of this package for a widget with a long lived model: the object
@@ -34,8 +38,8 @@ import (
 // # One editor, one field
 //
 // A TextEditor is a mutable object with one caret. Two fields over one editor
-// would be two carets writing one position, so the second mount is rejected
-// with a diagnosis rather than supported; see [TextFieldView].
+// would be two carets writing one position, so mounting the second one panics
+// with a diagnosis rather than being supported; see [TextFieldView].
 //
 // # Offsets are byte offsets
 //

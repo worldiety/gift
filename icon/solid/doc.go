@@ -63,7 +63,9 @@
 // # Provenance and licence
 //
 // Flowbite Icons by Themesberg, MIT licensed; the full text is in LICENSE.txt
-// next to this file and it travels with any binary that links this package.
+// next to this file. It is not embedded: it travels with the module source and
+// not with a binary, so an application that distributes one ships the notice
+// itself, as the licence asks.
 //
 // The SVGs were copied on 2026-09-15 from presentation/icons/flowbite/solid of
 // the surveyed Nago tree (go.wdy.de/nago, commit f4a105b5), which is itself a
