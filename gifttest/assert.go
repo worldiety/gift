@@ -82,6 +82,10 @@ func (n Node) AssertSize(want geom.Size) Node {
 }
 
 // AssertEnabled fails when the node is disabled.
+//
+// This and the other state assertions below read the state of the nearest
+// interactive node, the node itself or an ancestor, so that a [ByText]
+// selector on a button's label asserts on the button.
 func (n Node) AssertEnabled() Node {
 	return n.assertFlag("enabled", func(i gift.Interaction) bool { return !i.Disabled })
 }
@@ -125,15 +129,42 @@ func (n Node) AssertNotPressed() Node {
 	return n.assertFlag("not pressed", func(i gift.Interaction) bool { return !i.Pressed })
 }
 
+// assertFlag is the body of the interaction state assertions.
+//
+// It asks the nearest interactive node, itself or an ancestor, and not
+// necessarily n. A [ByText] selector lands on the [ui.Text] inside a button,
+// and gift keeps hover, press, focus and disabled state only on the node that
+// declared the interactor, so asking the text would report a label that is
+// always enabled and never pressed: ByText("-").AssertDisabled() on a disabled
+// button would fail, and AssertEnabled would pass whatever the button said.
+// This is the climb the actions do in [Node.target], for the same reason, but
+// without its failure — a node with no interactive ancestor is asked itself,
+// and simply has no state to report. The failure names the climb.
 func (n Node) assertFlag(what string, ok func(gift.Interaction) bool) Node {
 	n.h.t.Helper()
 	n.check("Assert" + what)
-	ia := n.Interaction()
+	s := n.stateNode()
+	ia := s.Interaction()
 	if ok(ia) {
 		return n
 	}
+	desc := n.describe()
+	if s.ref != n.ref {
+		desc += "\n  state of its interactive ancestor " + s.describe()
+	}
 	n.h.t.Errorf("gifttest: %s\n  want %s, but hover=%v pressed=%v focused=%v disabled=%v",
-		n.describe(), what, ia.Hover, ia.Pressed, ia.Focused, ia.Disabled)
+		desc, what, ia.Hover, ia.Pressed, ia.Focused, ia.Disabled)
+	return n
+}
+
+// stateNode returns the nearest interactive node from n upwards, or n itself
+// when there is none; see [Node.assertFlag].
+func (n Node) stateNode() Node {
+	for cur := n.ref; !cur.IsZero(); cur = n.h.app.NodeParent(cur) {
+		if n.h.app.NodeInteractive(cur) {
+			return Node{h: n.h, ref: cur}
+		}
+	}
 	return n
 }
 
@@ -207,7 +238,8 @@ func (h *Harness) AssertNoOverflow() {
 	}
 	h.t.Errorf("gifttest: %d node(s) overflow by %g logical pixels in total.\n"+
 		"Content that does not fit keeps its honest size in gift and is not clipped; "+
-		"either give the container more room or set Clip(true) deliberately.\n%s",
+		"give the container more room or make the content need less. Clip(true) does not "+
+		"help: it hides the excess on screen, but the overflow is still reported.\n%s",
 		d.OverflowNodes, d.OverflowExtent, h.Dump())
 }
 

@@ -276,6 +276,13 @@ func writePNG(path string, img image.Image) error {
 
 // AssertPixel fails unless the pixel at p is want, within [GoldenTolerance].
 //
+// p is a pixel of the framebuffer, in *physical* pixels, and is the one
+// coordinate in this package that is. A pixel is a fact about the image, and
+// at [Options.Density] 2 one logical pixel is four of them that need not
+// agree — at the antialiased edge of a glyph they never do — so the
+// assertion names the pixel it means instead of choosing one for the test.
+// At density 1, the default, the two coordinate systems are the same.
+//
 // # Why there is an image assertion next to the goldens
 //
 // A golden answers "did this change" and needs a file to compare against; it
@@ -299,7 +306,8 @@ func (h *Harness) AssertPixel(p geom.Point, want render.Color) {
 	x, y := int(p.X), int(p.Y)
 	b := img.Bounds()
 	if x < b.Min.X || y < b.Min.Y || x >= b.Max.X || y >= b.Max.Y {
-		h.t.Errorf("gifttest: AssertPixel at (%g, %g) is outside the %dx%d viewport",
+		h.t.Errorf("gifttest: AssertPixel at (%g, %g) is outside the %dx%d framebuffer "+
+			"(physical pixels, the viewport times the density)",
 			p.X, p.Y, b.Dx(), b.Dy())
 		return
 	}

@@ -46,7 +46,8 @@ func (s Selector) String() string {
 // label is a different bug with its own assertion.
 //
 // A button whose label view is a [ui.Text] is found through that text node,
-// not through the button node. The actions cope with this; see [Node.Click].
+// not through the button node. The actions and the state assertions cope with
+// this; see [Node.Click] and [Node.AssertEnabled].
 func ByText(s string) Selector {
 	return Selector{
 		desc: "text==" + quote(s),

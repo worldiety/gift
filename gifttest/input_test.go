@@ -209,13 +209,14 @@ func TestAtOnNothingFails(t *testing.T) {
 
 // --- typing -----------------------------------------------------------------
 
-// fieldView is the stand in for the text field gift does not have yet. It
-// collects the characters it receives and handles the two editing keys, which
-// is the smallest thing that can show the harness driving both channels.
+// fieldView is a minimal text field written here rather than a ui.TextField.
+// It collects the characters it receives and handles the two editing keys,
+// which is the smallest thing that can show the harness driving both
+// channels, and every counter it keeps is one a test below reads.
 //
-// It is deliberately written here and not in gift: this work unit is the input
-// foundation only, and a ui.TextField is a later one. That the harness can
-// drive a view it has never heard of is the point of the package.
+// It is deliberately not gift's own field: ui.TextField is tested in ui with
+// this harness, and what these tests pin is that the harness can drive a view
+// it has never heard of. That is the point of the package.
 type fieldView struct {
 	key  string
 	text *string

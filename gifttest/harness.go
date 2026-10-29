@@ -112,9 +112,10 @@ type Options struct {
 	// reason this field exists.
 	//
 	// A consumer outside this module gets a deterministic golden by embedding
-	// its own typeface, or by importing one of the bundled ones:
+	// its own typeface, or by importing one of the bundled ones — by name,
+	// because the example below refers to it:
 	//
-	//	import _ "github.com/worldiety/gift/font/inter"
+	//	import "github.com/worldiety/gift/font/inter"
 	//
 	// The TestMain is not optional for a golden: without it
 	// AssertGolden panics from inside Ebitengine, because pixels

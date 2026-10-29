@@ -14,8 +14,18 @@
 //
 // # Actions verify where they landed
 //
-// An action on a [Node] computes a point, hit tests it, and fails unless the
-// hit test reaches the node the test named. That is not a nicety. Without it a
+// A pointer action on a [Node] computes a point, hit tests it, and fails
+// unless the hit test reaches the node the test named. Every action that puts
+// a pointer *down* on a node or moves one onto it does this — Click, Press,
+// Hover, Tap, LongPress, Fling, both ends of Drag and the start of DragTo and
+// Swipe. Two do not. [Node.Release] climbs to the interactive ancestor but
+// releases at its centre unchecked: the pointer is captured by whatever the
+// press reached, so the press is the step that had to be aimed. [Node.Wheel]
+// dispatches at the [Node.Center] of exactly the node it was given, with no
+// climb, no scroll into view and no hit test, because gift bubbles a wheel
+// event to a scroller of its own choosing anyway.
+//
+// For the aimed actions the check is not a nicety. Without it a
 // button covered by a transparent overlay, by a later sibling of a ZStack or
 // by a full bleed [ui.Box] activated the *covering* control and the harness
 // said nothing at all: the test failed later, on an assertion about a counter,
@@ -76,9 +86,10 @@
 // back afterwards, so the test itself sets no global.
 //
 // gift links no typeface into an application that does not ask for one, so a
-// consumer supplies its own or imports one of the bundled packages:
+// consumer supplies its own or imports one of the bundled packages, by name,
+// since the example below refers to it:
 //
-//	import _ "github.com/worldiety/gift/font/inter"
+//	import "github.com/worldiety/gift/font/inter"
 //
 // The TestMain below is not optional for a golden: without it AssertGolden
 // panics from inside Ebitengine, because pixels can only be read back on the
@@ -127,10 +138,6 @@
 //
 // # What it cannot do yet
 //
-//   - Test a text *field*. [Harness.TypeText] delivers characters and
-//     [Harness.Key] delivers the editing keys, so the input foundation is
-//     drivable; what does not exist yet is a view that consumes them. A test
-//     has to supply its own interactor until gift grows one.
 //   - Compose CJK. There is no IME, no preedit string and no candidate
 //     window, and the project plan, section 14, keeps it that way. Umlauts,
 //     accents, AltGr and dead keys are not that and do work: by the time the

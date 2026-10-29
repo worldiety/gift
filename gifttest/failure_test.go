@@ -182,3 +182,25 @@ func TestDumpShowsTheStateOfTheWorld(t *testing.T) {
 		`key="plus"`, `text="+"`, "bounds=", "interactive", "hover", "disabled")
 	t.Logf("Dump:\n%s", dump)
 }
+
+// TestStateAssertionsClimbFromALabel pins that a state assertion on a node
+// found by its label asks the button and not the label. ByText lands on the
+// ui.Text inside the button, which has no interaction state of its own; before
+// the climb, AssertDisabled on the label of a disabled button failed and
+// AssertEnabled passed, which is the one combination a state assertion must
+// never produce.
+func TestStateAssertionsClimbFromALabel(t *testing.T) {
+	h := gifttest.New(t, gifttest.Options{Root: counter})
+	h.Find(gifttest.ByText("-")).AssertDisabled()
+	h.Find(gifttest.ByText("+")).Click()
+	h.Find(gifttest.ByText("-")).AssertEnabled()
+
+	// The failure side: the wrong expectation fails and says whose state it
+	// read.
+	r := capture(func(tb gifttest.TB) {
+		h := gifttest.New(tb, gifttest.Options{Root: counter})
+		h.Find(gifttest.ByText("-")).AssertEnabled()
+	})
+	wantContains(t, "AssertEnabled on a disabled button's label", r.all(),
+		"want enabled", "disabled=true", "state of its interactive ancestor", `key="minus"`)
+}
