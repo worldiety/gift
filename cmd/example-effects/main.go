@@ -41,6 +41,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/asset"
@@ -72,6 +73,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	startQuality = q
 
 	// No image pipeline on purpose. The tiles draw their placeholder colours,
 	// which is a cheap, deterministic, endlessly scrollable backdrop — and
@@ -87,6 +89,7 @@ func run() error {
 	// would be invisible outside a giftmetrics build. Nothing is logged per
 	// frame: the level is a counter and only a *change* is a line.
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	go refresh(app)
 	return backend.Run(app, backend.Config{
 		Title: "gift effects", Width: 1280, Height: 800,
 		Logger:       log,
@@ -105,6 +108,42 @@ var (
 	gallery  *ui.Gallery
 	renderer *backend.Renderer
 )
+
+// startQuality is the level -quality pinned the renderer to, and so the level
+// the buttons have to show before anybody presses one. A state that started
+// at Adaptive regardless would light the Adaptive button and say "chosen by
+// measurement" over a renderer that is in fact pinned.
+var startQuality = ui.Adaptive
+
+// shownLevel is the effective level the panel's label last said, written by
+// [panel] and compared by [refresh], both on the UI goroutine.
+var shownLevel ui.GlassQuality
+
+// effectiveLevel is the level the renderer draws glass at, or Reduced before
+// the renderer exists, which is what [backend.Renderer.GlassLevel] reports
+// without a policy too.
+func effectiveLevel() ui.GlassQuality {
+	if renderer == nil {
+		return ui.Reduced
+	}
+	return renderer.GlassLevel()
+}
+
+// refresh keeps the "effective" label true. Under Adaptive the level is a
+// decision the backend takes between frames, and no state slot changes when
+// it does, so the root would otherwise go on showing the level it was built
+// with. Twice a second the closure compares on the UI goroutine, where the
+// renderer may be read, and rebuilds only when the level moved — which the
+// policy's hysteresis keeps rare.
+func refresh(app *gift.App) {
+	for range time.Tick(500 * time.Millisecond) {
+		app.Post(func() {
+			if effectiveLevel() != shownLevel {
+				app.Invalidate()
+			}
+		})
+	}
+}
 
 func parseQuality(s string) (render.GlassQuality, error) {
 	switch strings.ToLower(s) {
@@ -164,7 +203,7 @@ var (
 // — and it is also the only one that is affordable: one material region of a
 // few hundred thousand pixels, however many tiles happen to be under it.
 func root(ctx *gift.Context) gift.View {
-	pinned := ctx.State("pinned", ui.Adaptive)
+	pinned := ctx.State("pinned", startQuality)
 
 	return ui.ZStack(
 		// The window background, spelled the way ui.Window spells it but in
@@ -194,11 +233,8 @@ func root(ctx *gift.Context) gift.View {
 // spells it.
 func panel(ctx *gift.Context, pinned *gift.State[ui.GlassQuality]) ui.Stack {
 	want := ctx.Read(pinned)
-	effective := "reduced"
-	if renderer != nil {
-		effective = renderer.GlassLevel().String()
-	}
-	status := "effective: " + effective
+	shownLevel = effectiveLevel()
+	status := "effective: " + shownLevel.String()
 	if want == ui.Adaptive {
 		status += " · chosen by measurement"
 	} else {
@@ -257,12 +293,17 @@ func cards() ui.Stack {
 	).Gap(22)
 }
 
+// card centres its label with a Spacer on either side: Align on a stack sets
+// the cross axis only, so a VStack centres horizontally and leaves the label at
+// the top.
 func card(name string, sh ui.Shadow) ui.Stack {
 	return ui.VStack(
+		ui.Spacer(),
 		ui.Text(name).FontSize(13).Foreground(label),
+		ui.Spacer(),
 	).
 		Frame(170, 78).
-		Align(geom.Alignment{X: 0.5, Y: 0.5}).
+		Align(geom.Alignment{X: 0.5}).
 		Background(ui.RGBA(30, 34, 46, 235)).
 		Border(hair).
 		CornerRadius(14).

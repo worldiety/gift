@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"image/png"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -331,7 +333,7 @@ func toggleIsOn(t *testing.T, h *gifttest.Harness, key string) bool {
 // This measures an idle frame, and an idle frame is the one frame shape in
 // which a hidden tab costs nothing at all. It therefore says nothing about how
 // much a *rebuild* costs or about which scopes a write reaches;
-// TestATapOnASettingsRowDoesNotRebuildTheOtherThreeTabs below is that
+// TestATapOnASettingsRowRebuildsOnlyTheTabsThatShowIt below is that
 // measurement, and it exists because this one passed for a version of this
 // program in which every tap rebuilt all four tabs.
 func TestTheLongListStaysInsideTheLimitsItsOwnDocumentationStates(t *testing.T) {
@@ -746,7 +748,7 @@ func TestTheKeyboardLooksLikeAKeyboard(t *testing.T) {
 	h.AssertGolden("kitchensink-keyboard")
 }
 
-// TestATapOnASettingsRowDoesNotRebuildTheOtherThreeTabs is the scoping
+// TestATapOnASettingsRowRebuildsOnlyTheTabsThatShowIt is the scoping
 // property the root of this program is arranged around; see [Screen].
 //
 // # Why this is a rebuild measurement and not an idle one
@@ -765,7 +767,7 @@ func TestTheKeyboardLooksLikeAKeyboard(t *testing.T) {
 //
 //   - a full root rebuild, driven directly;
 //   - a tap on the Settings "Nudge it along" row, which writes one float that
-//     only the Settings tab shows;
+//     the Settings and Home tabs show and the other two do not;
 //   - a tap on the inert "Volume" row next to it, which writes nothing.
 //
 // The third is the subtraction, and it is not a fudge. A tap through the
@@ -791,7 +793,7 @@ func TestTheKeyboardLooksLikeAKeyboard(t *testing.T) {
 // Moving the six Read calls of the Settings tab back to the root scope — which
 // is exactly the regression this guards, and is what this file used to do —
 // makes the tap pay the root figure on top of the constant.
-func TestATapOnASettingsRowDoesNotRebuildTheOtherThreeTabs(t *testing.T) {
+func TestATapOnASettingsRowRebuildsOnlyTheTabsThatShowIt(t *testing.T) {
 	h := mount(t, geom.Sz(900, 760))
 	tabButton(h, "Settings").Click()
 	a := h.App()
@@ -845,7 +847,7 @@ func TestATapOnASettingsRowDoesNotRebuildTheOtherThreeTabs(t *testing.T) {
 	if rebuild*4 > root {
 		t.Errorf("a tap on the Settings Nudge row causes %.0f allocations of rebuild, against "+
 			"the %.0f of a full rebuild of all four tabs. That row writes one float that only "+
-			"the Settings tab shows, so it must not cost a rebuild of the whole window. Check "+
+			"the Settings and Home tabs show, so it must not cost a rebuild of the whole window. Check "+
 			"that the Read calls in state.tabComponent have not migrated back to the root "+
 			"scope in Screen.", rebuild, root)
 	}
@@ -963,4 +965,40 @@ func TestThePickerOpensInItsStartDirectoryAndCanGoAboveIt(t *testing.T) {
 	h.Find(gifttest.ByKey("up")).Click()
 	listed()
 	h.Find(gifttest.ByText("top.jpg")).AssertVisible()
+}
+
+// TestTheSamplePicturesAreSmoothGradients guards the arithmetic of
+// writeSample. Every channel is a byte, and the red ramp used to step by thirty
+// per picture, so from the fourth picture on it passed 255 part way across and
+// wrapped to black: a hard colour band in a picture meant to be a gradient.
+// Across a row red only ever rises and blue only ever falls; a wrap is the one
+// thing that makes either go the other way.
+func TestTheSamplePicturesAreSmoothGradients(t *testing.T) {
+	srcs, err := Samples(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, src := range srcs {
+		f, err := src.Open(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y += b.Dy() / 4 {
+			pr, _, pb, _ := img.At(b.Min.X, y).RGBA()
+			for x := b.Min.X + 1; x < b.Max.X; x++ {
+				r, _, bl, _ := img.At(x, y).RGBA()
+				if r < pr || bl > pb {
+					t.Fatalf("sample %d wraps at (%d,%d): red %d after %d, blue %d after %d",
+						i, x, y, r>>8, pr>>8, bl>>8, pb>>8)
+				}
+				pr, pb = r, bl
+			}
+		}
+	}
 }

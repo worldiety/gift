@@ -68,7 +68,7 @@ var (
 // "Nudge it along" row causes — it writes one float:
 //
 //	before   702 µs   6255 allocations   (a full root rebuild, all four tabs)
-//	after     70 µs    485 allocations   (the Settings tab only)
+//	after     70 µs    485 allocations   (Settings and Home, which both show it)
 //
 // On a Raspberry Pi 4 at this project's ×10 derate that is 7.0 ms against
 // 0.70 ms: 42 % of a 60 Hz frame against 4 %, for one tap. A slider drag pays
@@ -78,8 +78,11 @@ var (
 // So each tab is a [gift.Component] with a scope of its own, and each one
 // reads the slots it actually uses. The root reads two: the selected tab, and
 // whether the alert is up — the two things the root itself has to decide. A
-// write to any other slot now reaches exactly the tab that shows it.
-// TestATapOnASettingsRowDoesNotRebuildTheOtherThreeTabs next door is that
+// write to any other slot now reaches exactly the tabs that show it — for the
+// progress float that is Settings and Home, whose card carries the same bar,
+// and Home is rebuilt although it is hidden, because a hidden tab stays
+// mounted; see ui.TabBarView. The list and form tabs are left alone.
+// TestATapOnASettingsRowRebuildsOnlyTheTabsThatShowIt next door is that
 // property as a test.
 //
 // The alert is deliberately still a root dependency. The modal layer is
@@ -151,8 +154,10 @@ func Screen(ctx *gift.Context) gift.View {
 	// the cards are transparent black — which is what this demo shipped as,
 	// on thirty to forty per cent of its pixels, while every golden of it
 	// looked right because the harness cleared its own canvas. See ui.Window.
-	// The sheet is outside the modal host, so an alert opened from inside the
-	// sheet would come up over it rather than under it.
+	// The sheet is outside the modal host, so it is drawn over the alert and
+	// hit tested before it: an alert opened from inside the sheet would come
+	// up under it rather than over it, which is why nothing in the sheet
+	// opens one.
 	return ui.Window(
 		ui.Sheet(
 			ui.Modal(body, alert).
@@ -228,11 +233,13 @@ func (s state) tabComponent(which string) gift.View {
 
 // nameEditor is the retained text buffer of the form's field.
 //
-// It is a package variable and not a state slot, for the reason
-// ui.TextFieldView documents: an editor is the model, it is mutated in place
-// by typing, and a gift.State is comparable-valued and would therefore never
-// see a change. A program with several fields keeps several of these, or one
-// per record; a program with one window and one field keeps one here.
+// An editor is the model: it is mutated in place by typing, so whatever holds
+// it only has to hold the same pointer for as long as the field lives. Inside
+// a component that is ui.Editor, which keeps the pointer in a state slot of
+// that component. The form here is built by a method with no Context of its
+// own, so it is a package variable instead: a program with several fields
+// keeps several of these, or one per record; a program with one window and
+// one field keeps one here.
 var nameEditor = ui.NewTextEditor("")
 
 // --- tab one: navigation, cards, images ----------------------------------------
@@ -742,7 +749,9 @@ func writeSample(path string, i int) error {
 	for y := range h {
 		for x := range w {
 			img.Set(x, y, color.RGBA{
-				R: uint8(40 + (x*160)/w + i*30),
+				// At most 40+159+4*14 = 255; a larger step wraps the
+				// byte and puts a hard colour band in the picture.
+				R: uint8(40 + (x*160)/w + i*14),
 				G: uint8(70 + (y*140)/h),
 				B: uint8(200 - (x*90)/w - i*20),
 				A: 255,

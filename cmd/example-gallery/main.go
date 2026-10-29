@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/asset"
@@ -112,6 +113,7 @@ func run() error {
 	gallery = ui.NewGallery(asset.NewCollection(items))
 	gallery.SetSources(func(id asset.ID) asset.Source { return byID[id] })
 	stats = pipe.Stats
+	go refresh(app, gallery)
 
 	return backend.Run(app, backend.Config{
 		Title: "gift gallery", Width: 1280, Height: 800,
@@ -125,6 +127,45 @@ func run() error {
 // stats is how the toolbar reaches the pipeline counters without every view
 // function taking a pipeline argument.
 var stats = func() asset.Stats { return asset.Stats{} }
+
+// shown is what the toolbar put on screen the last time it was built.
+//
+// Nothing in the toolbar is a state slot: the counters belong to the pipeline
+// and the selection to the gallery, and both change without a view function
+// running — a thumbnail arriving repaints its tile and nothing else, and a
+// control-click or space that deselects writes no state. Left alone, the
+// status line would show 0 decoded on a cold start until the next click.
+// [refresh] compares this against the live figures and rebuilds when they
+// differ. Written and read on the UI goroutine only.
+var shown toolbarFacts
+
+type toolbarFacts struct {
+	decodes, diskHits, failed uint64
+	selection                 uint64
+}
+
+func facts(g *ui.Gallery) toolbarFacts {
+	s := stats()
+	return toolbarFacts{
+		decodes: s.Decodes, diskHits: s.DiskHits, failed: s.Failed,
+		selection: g.Selection().Version(),
+	}
+}
+
+// refresh keeps the toolbar honest, four times a second. The comparison runs
+// in a posted closure and not here, because the gallery and the shown facts
+// belong to the UI goroutine; the cost of an idle tick is one struct compare.
+// A root rebuild is the price of a change, which is fine at this rate: the
+// gallery does not rebuild its tiles for it.
+func refresh(app *gift.App, g *ui.Gallery) {
+	for range time.Tick(250 * time.Millisecond) {
+		app.Post(func() {
+			if facts(g) != shown {
+				app.Invalidate()
+			}
+		})
+	}
+}
 
 // scan collects the pictures of a directory, serving every second one over a
 // local HTTP server so that both source kinds are exercised offline.
@@ -287,13 +328,18 @@ func browser(ctx *gift.Context, g *ui.Gallery) gift.View {
 
 func toolbar(ctx *gift.Context, g *ui.Gallery, justified *gift.State[bool], picked asset.ID) gift.View {
 	on := ctx.Read(justified)
-	s := stats()
+	shown = facts(g)
 	// Cold versus warm, on screen: a first run decodes everything, a second
 	// run answers from the persistent thumbnail cache.
 	status := fmt.Sprintf("%d photos · %d decoded · %d from disk · %d failed",
-		g.Collection().Len(), s.Decodes, s.DiskHits, s.Failed)
+		g.Collection().Len(), shown.decodes, shown.diskHits, shown.failed)
 	if n := g.Selection().Len(); n > 0 {
-		status += " · " + strconv.Itoa(n) + " selected · " + string(picked)
+		status += " · " + strconv.Itoa(n) + " selected"
+		// The last entry clicked, unless that click was the one that took it
+		// out of the selection.
+		if g.Selection().Contains(picked) {
+			status += " · " + string(picked)
+		}
 	}
 	return ui.HStack(
 		ui.Text("Library").FontSize(20).Foreground(label),
