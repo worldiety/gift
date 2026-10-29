@@ -259,7 +259,13 @@ func (b ButtonView) Build(*gift.BuildContext) gift.Element {
 	st := b.style.resolved()
 	n.normal = defaultStyle(ColorControl).resolved(ColorControl)
 	if b.style.isSet(bitBackground) {
-		n.normal.Background = st.background
+		// A [Gradient] arrives as a background plus an end colour, and the
+		// end colour is the BackgroundTo of the state; dropping it painted
+		// the top colour flat.
+		n.normal.Background, n.normal.BackgroundTo = st.background, Color{}
+		if st.grad {
+			n.normal.BackgroundTo = st.gradTo
+		}
 	}
 	if b.style.isSet(bitBorder) {
 		n.normal.Border = st.border
@@ -311,8 +317,9 @@ func (b ButtonView) Build(*gift.BuildContext) gift.Element {
 // Three cases, and the middle one is the rule the old code expressed with a
 // single hasStyle flag:
 //
-//   - The caller declared the state. It is used as written; it was already
-//     resolved by the modifier that took it.
+//   - The caller declared the state. It is used as written, with the unset
+//     rule of [ButtonStyle] applied and its colours resolved here, in Build,
+//     like every other colour of the view.
 //   - The caller gave the button a background of its own. The state then
 //     keeps that background, because a control painted in an application's
 //     own colour must not light up in gift's stock hover grey when the
@@ -549,13 +556,24 @@ func (n *buttonNode) activate() {
 // .CornerRadius(11), kept them. See [ButtonView.stateStyle] for why that bit
 // decides the question.
 //
+// A BackgroundTo makes the normal face a [Gradient], as it does in the other
+// three states; with no Background beside it the gradient starts at the
+// themed face, which is what the unset rule says Background means.
+//
 // The one thing the aggregate spelling cannot say is "no corner radius at
 // all", because a zero CornerRadius here is indistinguishable from an unset
 // one. Write .CornerRadius(0) for that. That is the price of a struct without
 // per field presence, and it is the same price [ButtonStyle] pays everywhere
 // else; see its documentation.
 func (b ButtonView) Style(v ButtonStyle) ButtonView {
-	if v.Background != (Color{}) {
+	switch {
+	case v.BackgroundTo != (Color{}):
+		from := v.Background
+		if from == (Color{}) {
+			from = ColorControl
+		}
+		b.setBackgroundSpec(LinearGradient(from, v.BackgroundTo))
+	case v.Background != (Color{}):
 		b.setBackground(v.Background)
 	}
 	if v.Border.Width > 0 {
@@ -634,7 +652,7 @@ func (b ButtonView) PaddingInsets(v geom.Insets) ButtonView {
 // centred on both axes.
 func (b ButtonView) Align(v geom.Alignment) ButtonView { b.setAlign(v); return b }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free. Precedence: Frame, then Max, then Min; see [frameSpec].
 func (b ButtonView) Frame(w, h float32) ButtonView { b.setFrame(w, h); return b }
 
@@ -655,8 +673,19 @@ func (b ButtonView) MaxWidth(v float32) ButtonView { b.setMaxWidth(v); return b 
 func (b ButtonView) MaxHeight(v float32) ButtonView { b.setMaxHeight(v); return b }
 
 // Background fills the bounds in the normal state. Use [ButtonView.HoverStyle]
-// and friends for the other states.
+// and friends for the other states. A [Color] and a [Gradient] are accepted.
+//
+// A [GlassMaterial] panics. The state styles of a button are [ButtonStyle]
+// values, which have no field for a material, so a glass face would be
+// dropped the moment the pointer arrived — or, as it used to be, never drawn
+// at all. The package documentation promises that a view never accepts a
+// modifier it then ignores; for a glass control, put the button in front of
+// a glass [Box] in a [ZStack] and give it [ColorClear].
 func (b ButtonView) Background(v Background) ButtonView {
+	if _, ok := v.(GlassMaterial); ok {
+		panic("gift/ui: Button.Background with a glass material; a button's state styles " +
+			"cannot carry one. Put the button over a glass Box in a ZStack instead.")
+	}
 	b.setBackgroundSpec(v)
 	return b
 }

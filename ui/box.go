@@ -9,7 +9,10 @@ import (
 var boxType = gift.RegisterType("ui.Box")
 
 // BoxView is a styled rectangle without children. It is the base primitive of
-// gift: everything that is drawn but not text or an image is a Box.
+// gift: a plate, a divider or a swatch — anything drawn that is neither text,
+// an image nor a container — is a Box. Containers paint their own background
+// and border through the same styling code, so a Box behind content is only
+// needed where the shape is not the container's own.
 //
 // # Size
 //
@@ -60,7 +63,7 @@ func (b BoxView) Padding(v float32) BoxView { b.setPadding(v); return b }
 // PaddingInsets sets the padding per edge, replacing any previous padding.
 func (b BoxView) PaddingInsets(v geom.Insets) BoxView { b.setPaddingInsets(v); return b }
 
-// Frame fixes both axes. Pass [geom.Unbounded] for an axis that should stay
+// Frame fixes both axes. Pass [geom.Unbounded]() for an axis that should stay
 // free.
 //
 // Precedence: Frame is applied first, then Max, then Min, and the call order
@@ -92,7 +95,9 @@ func (b BoxView) Background(v Background) BoxView { b.setBackgroundSpec(v); retu
 // Border strokes the inside of the bounds.
 func (b BoxView) Border(v Border) BoxView { b.setBorder(v); return b }
 
-// Shadow draws a blurred copy of the background shape behind the view.
+// Shadow draws a blurred copy of the box's shape — its bounds, rounded by
+// [BoxView.CornerRadius] — behind the view. It is drawn from the shape and not
+// from the fill, so a box without a background casts one too.
 //
 // It extends the paint bounds but not the layout size and not the hit area, so
 // a shadow never moves a sibling and never makes a gap clickable; the project
@@ -102,9 +107,10 @@ func (b BoxView) Shadow(v Shadow) BoxView { b.setShadow(v); return b }
 // CornerRadius rounds the background and the border.
 func (b BoxView) CornerRadius(v float32) BoxView { b.setCornerRadius(v); return b }
 
-// Clip pushes a clip around the padded bounds. A Box has no children, so this
-// only matters once it is used as a container in a later step; it is kept for
-// symmetry with the other views.
+// Clip confines the node's children to its full bounds; see
+// [gift.Element.Clip]. A Box has no children and a node's own drawing is never
+// clipped, so on a Box it has no visible effect; it is kept for symmetry with
+// the other views.
 func (b BoxView) Clip(v bool) BoxView { b.setClip(v); return b }
 
 // Key sets the reconciliation key of this view among its siblings.

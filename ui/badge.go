@@ -39,11 +39,15 @@ const (
 // at each end, with a floor at the height so that a single digit is a circle
 // rather than a slot.
 //
-// The text is one line and is not truncated. A badge with a sentence in it is
-// a badge with the wrong content; a [TextView] with MaxLines is the thing that
-// truncates, and silently shortening a count would be worse than a wide badge.
-// That is why its label asks for [TruncateNone] explicitly: MaxLines alone
-// ends in an ellipsis, and "12" squeezed into "1…" is a different number.
+// The text is one line and never ends in an ellipsis. A badge with a sentence
+// in it is a badge with the wrong content; a [TextView] with MaxLines is the
+// thing that truncates, and silently shortening a count would be worse than a
+// wide badge. That is why its label asks for [TruncateNone] explicitly:
+// MaxLines alone ends in an ellipsis, and "12" squeezed into "1…" is a
+// different number. A badge normally gets the width it asks for; one squeezed
+// narrower by its parent keeps the first line of its text as it was broken,
+// so a single word overflows and the words of a longer string after the
+// break are dropped, without a mark.
 //
 // # Colour
 //

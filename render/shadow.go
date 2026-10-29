@@ -85,7 +85,8 @@ func (s Shadow) Extent() float32 { return ShadowSigmas * s.Sigma() }
 //
 // This is the rectangle that goes into [Op.Bounds]; the blur is carried
 // separately in [Op.Blur] so that a backend can grow the geometry itself. It
-// is deliberately not the paint rectangle; see [Shadow.PaintBounds].
+// is deliberately not the paint rectangle; that is [Op.PaintBounds], which
+// adds [Shadow.Extent] on every side.
 func (s Shadow) Shape(b geom.Rect) geom.Rect {
 	return geom.Rc(
 		b.Min.X-s.Spread+s.OffsetX, b.Min.Y-s.Spread+s.OffsetY,

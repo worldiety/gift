@@ -55,9 +55,9 @@ type styleSpec struct {
 	gradTo Color
 	grad   bool
 	border Border
-	shadow   Shadow
-	radius   float32
-	clip     bool
+	shadow Shadow
+	radius float32
+	clip   bool
 	// set records which of the fields above a caller actually assigned.
 	//
 	// This is the "was this field set" bit the project plan, section 20,
@@ -221,6 +221,11 @@ func (b *base) setKey(v string)           { b.key = v }
 func (b *base) setFlex(v float32)         { b.flex = checkFlex(v) }
 func (b *base) setAlign(v geom.Alignment) { b.align = v }
 
+// baseFlex reads the Flex back before the view is built; see [viewFlex]. It
+// has a value receiver so that it is in the method set of the view values
+// that embed base.
+func (b base) baseFlex() float32 { return b.flex }
+
 func (b *base) setPadding(v float32) { b.pad = geom.InsetsAll(checkPadding("Padding", v)) }
 
 func (b *base) setPaddingInsets(v geom.Insets) {
@@ -320,7 +325,8 @@ func (b *base) setBackground(v Color) {
 	b.style.set |= bitBackground
 }
 
-// setBackgroundSpec accepts either of the two things a background can be.
+// setBackgroundSpec accepts any of the three things a background can be: a
+// [Color], a [GlassMaterial] or a [Gradient].
 //
 // The type switch is here, once, rather than in eight view types. A nil
 // Background clears the background, which is what ".Background(nil)" ought to
@@ -328,7 +334,9 @@ func (b *base) setBackground(v Color) {
 func (b *base) setBackgroundSpec(v Background) {
 	switch t := v.(type) {
 	case nil:
-		b.style.background, b.style.material = Color{}, render.Material{}
+		// All four fields, like every other branch: a gradient left behind
+		// here would still paint, from transparent to its end colour.
+		b.style.background, b.style.material, b.style.gradTo, b.style.grad = Color{}, render.Material{}, Color{}, false
 		b.style.set |= bitBackground
 	case Color:
 		b.setBackground(t)
@@ -340,8 +348,9 @@ func (b *base) setBackgroundSpec(v Background) {
 		b.style.set |= bitBackground
 	default:
 		// Unreachable: render.Background has an unexported method and
-		// exactly two implementations. The panic is here so that adding a
-		// third one without coming back here is loud rather than silent.
+		// exactly the three implementations above. The panic is here so that
+		// adding a fourth one without coming back here is loud rather than
+		// silent.
 		panic(fmt.Sprintf("gift/ui: Background of unknown type %T", v))
 	}
 }

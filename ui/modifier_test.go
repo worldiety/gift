@@ -2,12 +2,14 @@ package ui_test
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/asset"
 	"github.com/worldiety/gift/geom"
+	"github.com/worldiety/gift/gifttest"
 	"github.com/worldiety/gift/ui"
 )
 
@@ -399,5 +401,51 @@ func TestOnlyTheControlsThatHaveAnAccentCarryATint(t *testing.T) {
 		t.Errorf("%s has grown a Tint. controlWhy says it deliberately has none, and "+
 			"SegmentedControlView argues at length why its indicator must not be the accent; "+
 			"if that argument has been overturned, overturn it in the prose too", typ.Name())
+	}
+}
+
+// TestACardWithAHeaderPassesItsFlexOn: a scroll container in a flexed card
+// with a header gets the card's height. The header wrapper used to measure the
+// content stack as an inflexible child, with an unbounded main axis, so the
+// scroll container's Flex had nothing to divide and it came out zero tall.
+func TestACardWithAHeaderPassesItsFlexOn(t *testing.T) {
+	for _, header := range []string{"", "Log"} {
+		lines := make([]gift.View, 40)
+		for i := range lines {
+			lines[i] = ui.Text("line").Key(strconv.Itoa(i))
+		}
+		h := gifttest.New(t, gifttest.Options{
+			Font: loadTestFont(t), Size: geom.Sz(300, 400),
+			View: ui.VStack(ui.Card(ui.VScroll(lines...).Flex(1).Key("log")).Header(header).Flex(1)).Flex(1),
+		})
+		h.Settle()
+		if b := h.Find(gifttest.ByKey("log")).Bounds(); b.Height() < 100 {
+			t.Errorf("header %q: the scroll container is %v, want most of the card", header, b)
+		}
+	}
+}
+
+// TestAFlexedCardWithAHeaderInARowHoldsItsContent: a card flexed across an
+// [ui.HStack] shares the row's width and keeps its own height. Handing the
+// card's Flex to its content stack stretched the card to a bounded row's
+// height, and in an unbounded row measured that stack zero tall, so the text
+// hung below a card that was only its header.
+func TestAFlexedCardWithAHeaderInARowHoldsItsContent(t *testing.T) {
+	for _, rowFlex := range []float32{0, 1} {
+		h := gifttest.New(t, gifttest.Options{
+			Font: loadTestFont(t), Size: geom.Sz(480, 240),
+			View: ui.VStack(ui.HStack(
+				ui.Card(ui.Text("Delivery").Key("text")).Header("Today").Flex(1).Key("card"),
+				ui.Card(ui.Text("Report")).Header("Yesterday").Flex(1),
+			).Flex(rowFlex)).Flex(1),
+		})
+		h.Settle()
+		card, text := h.Find(gifttest.ByKey("card")).Bounds(), h.Find(gifttest.ByKey("text")).Bounds()
+		if text.Max.Y > card.Max.Y || text.Height() == 0 {
+			t.Errorf("row flex %v: the text is %v, outside the card %v", rowFlex, text, card)
+		}
+		if card.Height() > 150 {
+			t.Errorf("row flex %v: the card is %v, stretched to the row instead of shrink-wrapped", rowFlex, card)
+		}
 	}
 }

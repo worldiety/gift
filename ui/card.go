@@ -51,8 +51,8 @@ const (
 //
 // A card does not clip its children, and turning the clip on would not round
 // them: gift's clip is the bounding rectangle and not the rounded shape; see
-// paintBorder. A child painted into a corner therefore covers it. The answer
-// is to leave the corner alone — a [ListView] inside a card draws no
+// [gift.Element.Clip]. A child painted into a corner therefore covers it. The
+// answer is to leave the corner alone — a [ListView] inside a card draws no
 // background of its own, so the card's face is what shows through — rather
 // than to promise a rounding that the backend cannot do yet.
 type CardView struct {
@@ -105,8 +105,45 @@ func (v CardView) Build(bc *gift.BuildContext) gift.Element {
 				Left:   CardPadding,
 			}).
 			Key("header"),
-		body.Key("body"),
+		body.Flex(v.bodyFlex()).Key("body"),
 	)).Key(v.key).Flex(v.flex).Build(bc)
+}
+
+// bodyFlex is the Flex of the content stack inside the header wrapper: one
+// when a child of the card has a Flex of its own, zero otherwise.
+//
+// That makes the wrapper behave the way a card without a header does, where
+// the content stack is the card and receives its constraints directly. A Flex
+// child — a [ScrollView], typically — then gets the space the card was given,
+// which it cannot otherwise: an inflexible body is measured with an unbounded
+// main axis and offers its children nothing to divide. A card of rigid
+// children still shrink-wraps. Keying this on the card's own Flex instead is
+// wrong twice over for a card flexed across an [HStack]: in a row of bounded
+// height the card stretches to the height of the row, and in an unbounded one
+// the body is measured zero tall and the content hangs below the card.
+//
+// A child whose Flex cannot be read here — a component, whose element exists
+// only once it is built — counts as rigid.
+func (v CardView) bodyFlex() float32 {
+	for _, c := range v.children {
+		if viewFlex(c) > 0 {
+			return 1
+		}
+	}
+	return 0
+}
+
+// viewFlex is the Flex a view of this package was given, read before it is
+// built; see [CardView.bodyFlex]. Every view with a Flex keeps it in [base],
+// except [SpacerView], which has no base.
+func viewFlex(v gift.View) float32 {
+	switch t := v.(type) {
+	case SpacerView:
+		return t.flex
+	case interface{ baseFlex() float32 }:
+		return t.baseFlex()
+	}
+	return 0
 }
 
 // face applies the card's own look to the stack that carries it.

@@ -2,9 +2,10 @@ package render
 
 // Background is what a node fills its shape with.
 //
-// There are exactly two implementations and there is no route for a third from
-// outside this package: a plain [Color], and a [Glass] material. The interface
-// exists so that the modifier of the project plan, section 8,
+// There are exactly three implementations and there is no route for a fourth
+// from outside this package: a plain [Color], a [Glass] material and a
+// vertical [Gradient]. The interface exists so that the modifier of the
+// project plan, section 8,
 //
 //	.Background(ui.Glass().Quality(ui.Adaptive))
 //
