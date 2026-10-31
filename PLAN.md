@@ -2597,6 +2597,8 @@ bei gift das Modell (Text, Caret, Auswahl), deshalb heisst die Ansicht
   ist korrigiert). Der Offset am weichen Umbruch ist zweideutig; eine
   Affinitaet (`up`) haelt ihn am Ende der oberen Zeile, wenn End oder ein
   Klick hinter das Zeilenende ihn dorthin gesetzt hat.
+- Enter beginnt eine Zeile; mit der Shortcut-Taste ruft es `OnSubmit` auf,
+  ohne `OnSubmit` bleibt es ein Zeilenumbruch.
 - Tasten: hoch/runter mit gemerkter Spalte, Bild hoch/runter um die
   sichtbaren Zeilen, Pos1/Ende auf der Bildschirmzeile, mit der
   Shortcut-Taste an die Enden des Texts; Dreifachklick waehlt den Absatz.

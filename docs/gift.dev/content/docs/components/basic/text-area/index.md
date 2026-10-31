@@ -19,8 +19,8 @@ ui.TextArea(notes).Placeholder("Notes").Lines(3, 8)
 ```
 
 The editor, `Bind`, `OnChange`, `Placeholder`, `Label`, `Disabled`, the fonts, the colors and the box modifiers work
-as in a [Text Field](../text-field/). There is no `OnSubmit`: enter is a line break here. Tab still moves the focus
-on, as in every form.
+as in a [Text Field](../text-field/). Enter is a line break here, so `OnSubmit` runs on the shortcut modifier plus
+enter. Tab still moves the focus on, as in every form.
 
 ### Size
 
@@ -59,6 +59,7 @@ that scrolls leaves the caret where it was; a finger that moves sideways selects
 | left, right with the word modifier           | move by words                                            |
 | home, end, up, down with the shortcut modifier | go to the start or the end of the text                 |
 | enter                                        | start a new line                                         |
+| shortcut + enter                             | `OnSubmit`, or a new line without one                    |
 | backspace, delete                            | delete before or after the caret, or the selection       |
 | shortcut modifier with A, C, X, V            | select all, copy, cut, paste                             |
 
