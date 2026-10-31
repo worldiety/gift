@@ -64,6 +64,7 @@ type TextAreaView struct {
 	name        string
 
 	onChange func(string)
+	onSubmit func(string)
 	bind     gift.Binding[string]
 
 	fg, placeholderFG, selection, caret Color
@@ -126,6 +127,7 @@ func (v TextAreaView) Build(*gift.BuildContext) gift.Element {
 		pad:         geom.InsetsAll(8),
 		placeholder: v.placeholder,
 		onChange:    v.onChange,
+		onSubmit:    v.onSubmit,
 		bind:        v.bind,
 		disabled:    v.disabled,
 		minLines:    v.minLines,
@@ -198,6 +200,7 @@ type textAreaNode struct {
 	focusRing                                  Border
 
 	onChange func(string)
+	onSubmit func(string)
 	bind     gift.Binding[string]
 
 	disabled           bool
@@ -800,6 +803,10 @@ func (n *textAreaNode) key(ctx *gift.EventContext, e gift.Event) bool {
 		}
 		return true
 	case gift.KeyEnter:
+		if shortcut && n.onSubmit != nil {
+			n.onSubmit(ed.Text())
+			return true
+		}
 		ed.Insert("\n")
 		n.afterEdit(ctx, e.Time)
 		return true
@@ -964,6 +971,11 @@ func (v TextAreaView) Label(s string) TextAreaView { v.name = s; return v }
 
 // OnChange sets the function called with the text after every edit.
 func (v TextAreaView) OnChange(f func(string)) TextAreaView { v.onChange = f; return v }
+
+// OnSubmit sets the function called with the text when the user presses enter
+// with [gift.ShortcutModifier], because enter alone starts a new line here.
+// Without it that combination starts a new line too.
+func (v TextAreaView) OnSubmit(f func(string)) TextAreaView { v.onSubmit = f; return v }
 
 // Bind reads the text from b and writes every edit back; see
 // [TextFieldView.Bind].
