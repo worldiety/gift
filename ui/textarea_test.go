@@ -297,3 +297,45 @@ func TestScrolledTextIsCutAtThePaddingNotAtTheBorder(t *testing.T) {
 		}
 	}
 }
+
+func TestShortcutEnterSubmitsAnArea(t *testing.T) {
+	var submitted []string
+	f := newArea(t, "one", func(v ui.TextAreaView) ui.TextAreaView {
+		return v.OnSubmit(func(s string) { submitted = append(submitted, s) })
+	})
+	f.h.Key(gift.KeyEnter, gift.ShortcutModifier)
+	if len(submitted) != 1 || submitted[0] != "one" {
+		t.Errorf("submitted %q", submitted)
+	}
+	if got := f.ed.Text(); got != "one" {
+		t.Errorf("text %q after a submission", got)
+	}
+	f.h.Key(gift.KeyEnter)
+	if len(submitted) != 1 || f.ed.Text() != "one\n" {
+		t.Errorf("enter alone: submitted %q, text %q", submitted, f.ed.Text())
+	}
+}
+
+func TestHoldingShortcutEnterSubmitsAnAreaOnce(t *testing.T) {
+	submitted := 0
+	f := newArea(t, "one", func(v ui.TextAreaView) ui.TextAreaView {
+		return v.OnSubmit(func(string) { submitted++ })
+	})
+	f.h.KeyDown(gift.KeyEnter, gift.ShortcutModifier)
+	f.h.AdvanceTicks(120, 16*time.Millisecond)
+	f.h.KeyUp(gift.KeyEnter, gift.ShortcutModifier)
+	if submitted != 1 {
+		t.Errorf("submitted %d times", submitted)
+	}
+	if got := f.ed.Text(); got != "one" {
+		t.Errorf("text %q", got)
+	}
+}
+
+func TestShortcutEnterWithoutOnSubmitStartsALine(t *testing.T) {
+	f := newArea(t, "one", nil)
+	f.h.Key(gift.KeyEnter, gift.ShortcutModifier)
+	if got := f.ed.Text(); got != "one\n" {
+		t.Errorf("text %q", got)
+	}
+}

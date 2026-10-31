@@ -7578,6 +7578,11 @@
             "synopsis": "OnChange sets the function called with the text after every edit."
           },
           {
+            "name": "OnSubmit",
+            "signature": "OnSubmit(f func(string)) TextAreaView",
+            "synopsis": "OnSubmit sets the function called with the text when the user presses enter with gift.ShortcutModifier, because enter alone starts a new line here."
+          },
+          {
             "name": "Padding",
             "signature": "Padding(f float32) TextAreaView",
             "synopsis": "Padding sets the room between the edge and the text on every side."
