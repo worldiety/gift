@@ -9,7 +9,9 @@
 //
 // The demos are those of internal/showcase, the very code the screenshots of
 // the documentation are drawn from, so a component that is documented is in
-// here, and in here as the page shows it. Above the list sit a search field,
+// here, and in here as the page shows it. A section of its own after them
+// shows what is no component: the notifications of the operating system,
+// see notifications.go. Above the list sit a search field,
 // a switch for the on-screen keyboard of a kiosk and one for the dark
 // appearance, which switches the whole window without a colour being passed
 // down anywhere.
@@ -42,7 +44,7 @@ func main() {
 }
 
 func run(show string, width, height int, keyboard bool) error {
-	if _, ok := showcase.Lookup(show); !ok {
+	if _, ok := lookup(show); !ok {
 		return fmt.Errorf("no component %q", show)
 	}
 	initialDemo = show

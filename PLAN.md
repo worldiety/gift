@@ -20,6 +20,9 @@ Ebitengine wird in Schritt 1 gepinnt.
   Ebitengine-Desktop-Backend.
 - Zielplattform: Raspberry Pi 4 und Pi 5, Raspberry Pi OS 64-Bit,
   X11/XWayland, hardwarebeschleunigtes Mesa, 1920x1080 bei 60 Hz.
+  Desktop-Ziele daneben: macOS und Linux; Windows 11 als Best-Effort-Ziel
+  seit Abschnitt 43, geprueft auf einem Windows-PC des Nutzers, nicht in
+  der Abnahmematrix.
 - Erster Aufschlag enthaelt VStack, HStack, Text, Button und eine virtuelle
   Bildergalerie mit 10.000 bis 100.000 Eintraegen.
 - Border, abgerundete Formen und Shadow gehoeren zum ersten Aufschlag.
@@ -3768,6 +3771,209 @@ und zurueck zum Desktop fuehrt kein Weg. Recherche unter
 - Offen: WLAN-Land auf dem Pi (rfkill bis gesetzt), Bildschirmabschaltung
   nach Leerlauf, Ubuntu Server ohne NetworkManager, Anzeige in der Doku mit
   Screenshots.
+
+## 43. Native Benachrichtigungen
+
+Anlass (01.11.2026): Benachrichtigungen ausserhalb des Programmfensters, wie
+sie auch der Sperrbildschirm zeigt. Ziel sind macOS, Windows 11 und Linux mit
+GNOME und KDE; ein System ohne Unterstuetzung tut nichts. Windows steht damit
+zum ersten Mal auf der Liste, entgegen Abschnitt 1 und der Begruendung in
+`clipboard`; das braucht eine Windows-Testmaschine.
+
+### Der gemeinsame Nenner
+
+| Funktion | macOS | Windows 11 | GNOME | KDE |
+|---|---|---|---|---|
+| Titel und Text, Klartext | ja | ja | ja | ja |
+| Name und Icon aus der Registrierung | Bundle | AUMID | desktop-entry | desktop-entry |
+| Ersetzen und Zurueckziehen per ID | identifier | Tag | replaces_id | replaces_id |
+| Klick, solange die App laeuft | Delegate | Activated | Aktion "default" | Aktion "default" |
+| Knoepfe | nur vorab registriert | ja | ja | ja |
+| Bild, Ton, Dringlichkeit, Ablauf | uneinheitlich | | | |
+| Klick nach Programmende | automatisch | COM-Aktivator | D-Bus-Aktivierung | |
+
+`notify` verspricht genau die ersten vier Zeilen. Der Sperrbildschirm ist
+ueberall Einstellung des Benutzers; KDE Plasma zeigt dort nach heutigem Stand
+gar keine Inhalte.
+
+### Linux: ein eigener D-Bus-Client
+
+Die Desktop Notifications Specification ueber den Session-Bus, die GNOME
+Shell, KDE Plasma und die kleinen Server (dunst, mako, xfce4-notifyd)
+umsetzen. Ohne cgo gab es drei Wege: godbus/dbus (reines Go, aber das erste
+Modul, das dieses Projekt fuer ein Plattformmerkmal aufnimmt), libdbus per
+purego (Callbacks und eine eigene Main-Loop) oder ein eigener Client.
+Entschieden ist der eigene, weil der Bedarf klein ist: eine Verbindung,
+EXTERNAL-Authentifizierung ueber einen Unix-Socket, fuenf Aufrufe, zwei
+Signale.
+
+- `wire.go`: alle Typen ausser UNIX_FD, beide Byte-Reihenfolgen beim Lesen,
+  die Grenzen der Spezifikation (64 MiB je Array, 128 MiB je Nachricht,
+  Tiefe 64). Getestet gegen von Hand ausgerechnete Byte-Layouts und gefuzzt.
+- `conn.go`: Adresse (`DBUS_SESSION_BUS_ADDRESS`, sonst
+  `$XDG_RUNTIME_DIR/bus`), SASL EXTERNAL, Hello, ein Lese-Goroutine fuer
+  Antworten und Signale, `Peer.Ping` wird beantwortet. Jeder Aufruf hat zwei
+  Sekunden.
+- `freedesktop.go`: AddMatch vor GetCapabilities, Notify mit `desktop-entry`
+  als Hint, die ID der Anwendung wird auf die Nummer des Servers abgebildet
+  (`replaces_id`). Kann der Server Markup (`body-markup`, GNOME und KDE),
+  wird der Text maskiert, sonst verschwaende bei "a < b" der Rest. Die
+  Aktion "default" wird nur mit OnClick und nur bei der Faehigkeit
+  `actions` gesendet. Ein Klick geht ueber `Config.Post` auf den
+  UI-Executor.
+- Alles ausser dem Oeffnen des Sockets ist ohne Build-Tag und laeuft auf dem
+  Mac mit `go test ./notify/`, gegen einen Bus im Test ueber `net.Pipe`.
+- Geprueft am 01.11.2026 in einem Container (Debian trixie, linux/arm64)
+  mit `dbus-daemon` und dunst: Anzeigen, Ersetzen unter derselben Nummer,
+  Klick per `dunstctl action` bis in OnClick, Zurueckziehen.
+  `GIFT_NOTIFY_DBUS=1 go test ./notify/ -run DBus -v` wiederholt das auf
+  einem echten Desktop.
+- Nicht geloest: das Fenster nach vorne holen. GNOME und KDE schicken ein
+  ActivationToken fuer xdg-activation, Ebitengine kann damit nichts
+  anfangen. Flatpak und Snap brauchten stattdessen das Portal
+  `org.freedesktop.portal.Notification`. Geht die Busverbindung verloren,
+  wird nicht neu verbunden; jedes Show liefert dann einen Fehler und loggt
+  ihn.
+
+### macOS: umgesetzt (01.11.2026)
+
+- `notify/platform_darwin.go`: UNUserNotificationCenter ueber purego/objc.
+  Zuerst die Pruefung auf ein Bundle (`bundleIdentifier`, Pfad auf `.app`),
+  sonst `ErrUnsupported` statt SIGABRT; `TestNotABundleIsUnsupported` laeuft
+  in jedem `go test` auf dem Mac. Ein Delegate (`objc.RegisterClass`) zeigt
+  Banner auch bei aktiver App und reicht den Klick auf die Nachricht ueber
+  `Post` weiter; die Bloecke des Systems ruft `callBlock` ueber das
+  Block-ABI auf, weil purego nur eigene Bloecke aufrufen kann. Vor jedem
+  Show wird die Erlaubnis abgefragt, nicht gemerkt.
+- Jedes Show ist eine neue Anfrage mit eigener Kennung; eine bereits
+  gezeigte ID wird danach entfernt. Zwei Anfragen unter derselben Kennung im
+  Abstand von 2 ms haben auf macOS 27.2 beide verloren (`CancellationError`
+  in usernoted), obwohl das Ersetzen per Kennung der dokumentierte Weg ist.
+- `cmd/giftbundle`: Wrapper fuer `go run -exec` und `go test -exec`. Bundle
+  unter `~/Library/Application Support/gift/bundles/<id>.app`,
+  `Info.plist` mit `NSHighResolutionCapable`, Ad-hoc-Signatur,
+  `lsregister -f`, dann `exec`. Auf anderen Systemen startet es das Binary
+  unveraendert.
+- `cmd/example-notify`: Erlaubnis, Anzeigen oder Aktualisieren unter einer
+  ID, Zurueckziehen, Klickzaehler.
+- Der Klick kommt auf der Main-Queue an, die nur der Haupt-Thread bedient.
+  Eine Ebitengine-App tut das (NSApplication), ein Testbinary nicht; der
+  Test parkt deshalb den Haupt-Thread in `dispatch_main`. Ohne das meldete
+  usernoted den Klick an den Prozess, und der Delegate sah ihn nie.
+- Geprueft auf diesem Mac (macOS 27.2): Erlaubnisfrage, Zustellung als
+  Banner, auf dem Sperrbildschirm und in der Mitteilungszentrale (laut Log
+  von usernoted), Ersetzen, Klick bis in OnClick, Zurueckziehen.
+
+### macOS: Ergebnis der Recherche
+
+`UNUserNotificationCenter` ueber purego/objc ist moeglich (Blocks und
+`objc.RegisterClass` fuer den Delegate sind da), verlangt aber eine
+Identitaet, die ein nacktes Go-Binary nicht hat:
+
+- Ein `.app`-Bundle mit `CFBundleIdentifier` (dazu `CFBundleExecutable`,
+  `CFBundlePackageType=APPL`), bei LaunchServices registriert (`open` oder
+  `lsregister -f`) und nicht unter `/var/folders`, wo `go run` baut.
+  Ohne Bundle bricht schon `currentNotificationCenter` den Prozess mit
+  SIGABRT ab; vorher muss `[[NSBundle mainBundle] bundleIdentifier]`
+  geprueft werden.
+- Eine Signatur ist noetig, ad hoc genuegt (`codesign --force -s -` ueber das
+  ganze Bundle, nach dem Schreiben der Info.plist). Die Ad-hoc-Signatur des
+  Go-Linkers allein deckt das Bundle nicht ab. Developer ID,
+  Notarisierung und Hardened Runtime braucht nur die Weitergabe an Dritte
+  (Gatekeeper). Time-sensitive und kritische Mitteilungen brauchen
+  Entitlements und damit ein echtes Zertifikat.
+- Ein in das Binary eingebettetes `__TEXT,__info_plist` hilft nicht: es
+  braucht externes Linken (cgo) und ergibt keinen LaunchServices-Eintrag.
+  `osascript` erscheint als Skripteditor, `NSUserNotification` ist
+  veraltet und auf macOS 26 unzuverlaessig.
+- Vorschlag fuer die Entwicklung: ein Wrapper fuer `go run -exec`, der das
+  Binary in ein festes Bundle unter `~/Library/Application Support` legt,
+  ad hoc signiert, registriert und direkt startet.
+
+### Windows 11: umgesetzt und geprueft (01.11.2026)
+
+- `notify/platform_windows.go`: WinRT-Toasts ueber syscall und
+  handgeschriebene Vtables, alle Aufrufe auf einem Worker-Thread im MTA
+  (`RoInitialize`). IIDs und Vtable-Reihenfolgen gegen die generierten
+  Bindungen von microsoft/windows-rs geprueft. Tag pro ID in der Gruppe
+  "gift", Ersetzen nativ ueber denselben Tag, Zurueckziehen ueber
+  `History.RemoveGroupedTagWithId`. Vor jedem Show wird
+  `ToastNotifier.Setting` gelesen (`ErrNotPermitted`).
+- Klicks ueber COM statt ueber das Activated-Event: `CustomActivator` in der
+  Registry, `CoRegisterClassObject` fuer eine aus der AUMID abgeleitete
+  CLSID (UUID v5), statische IClassFactory und
+  INotificationActivationCallback mit `windows.NewCallback`. Das deckt auch
+  Klicks im Benachrichtigungscenter ab, solange die App laeuft; ohne
+  `LocalServer32` tut ein Klick nach Programmende nichts. Beim Klick holt
+  `SetForegroundWindow` das erste sichtbare Fenster des Prozesses nach vorn.
+- `notify/registry_windows.go`: `DisplayName`, `CustomActivator`, `IconUri`
+  (neues `Config.Icon`), nur geschrieben, wenn sie sich unterscheiden;
+  `notify.Unregister` loescht den Schluessel. Ein Prozess mit Adminrechten
+  bekommt `ErrUnsupported`.
+- `notify/toast.go` ohne Build-Tag: Toast-XML mit Escaping, Entfernen von
+  Steuerzeichen und Kuerzen auf 4 900 Bytes nach dem Escaping, Pruefung der
+  AUMID, Ableitung der CLSID. Laeuft in jedem `go test`.
+- `golang.org/x/sys` ist jetzt direkte Abhaengigkeit (war indirekt).
+- Geprueft auf Windows 11 26H2 (Build 26300.9818, amd64, ohne
+  Adminrechte): Mit dem Registry-Eintrag allein, ohne Verknuepfung, Paket
+  oder Signatur, erscheint der Toast, und der Klick kommt ueber den
+  COM-Activator in `OnClick` an. Die Berichte, 25H2 zeige so keine Banner
+  mehr, treffen hier nicht zu; der Tray-Fallback bleibt zurueckgestellt.
+- `ToastNotifier.Setting` ist fuer eine App ohne Paket nicht lesbar: der
+  Aufruf scheitert mit `0x80070490` (ERROR_NOT_FOUND), obwohl der Toast
+  erscheint. Der erste Lauf brach deshalb ab, bevor ein Toast gezeigt
+  wurde. Jetzt gilt nur noch eine gelesene Sperre durch Benutzer oder
+  Gruppenrichtlinie als `ErrNotPermitted`; ERROR_NOT_FOUND wird still
+  hingenommen, andere Fehler und DisabledByManifest einmal geloggt. Folge:
+  Hat der Benutzer die Toasts abgeschaltet, meldet gift unter Windows
+  wahrscheinlich kein `ErrNotPermitted`, und `Authorize` antwortet `true`.
+- Mit `example-notify.exe` ebenfalls bestaetigt: Ersetzen per Tag (nur ein
+  Eintrag im Benachrichtigungscenter), `Withdraw`, und ein Klick holt das
+  Fenster nach vorn, auch aus dem minimierten Zustand.
+
+### Windows 11: Ergebnis der Recherche
+
+WinRT-Toasts (`ToastNotificationManager.CreateToastNotifier(AUMID)`) ueber
+syscall auf `combase.dll` und COM-Vtables von Hand. Weder MSIX noch eine
+Signatur sind noetig; die Signatur wird erst fuer MSIX oder ein Sparse
+Package Pflicht und betrifft beim nackten .exe nur SmartScreen. Noetig ist
+eine AUMID, die Windows aufloesen kann:
+
+- Eine nirgends registrierte AUMID wird seit Windows 10 1709 still
+  verworfen: `Show` meldet Erfolg, angezeigt wird nichts.
+  `SetCurrentProcessExplicitAppUserModelID` allein reicht nicht.
+- Dokumentiert sind zwei Wege, beide pro Benutzer und ohne Adminrechte zur
+  Laufzeit zu schreiben: der Registry-Schluessel
+  `HKCU\Software\Classes\AppUserModelId\<AUMID>` (`DisplayName`, `IconUri`,
+  `CustomActivator`; so machen es Windows App SDK, Community Toolkit und
+  go-toast v2) oder eine Startmenue-Verknuepfung mit
+  `System.AppUserModel.ID`. Zwei Berichte aus Sept./Okt. 2026 sehen auf
+  Windows 11 25H2 (Build 26200) mit der Registry allein keine Banner mehr,
+  mit Verknuepfung schon. gift sollte beides anlegen, abschaltbar, mit einer
+  Funktion zum Entfernen.
+- Der In-Process-Event `Activated` kommt ohne COM-Aktivator, solange die App
+  laeuft und das Banner sichtbar ist. Klicks aus dem Benachrichtigungscenter
+  und nach Programmende brauchen `INotificationActivationCallback` mit CLSID
+  und `LocalServer32`.
+- Ein erhoehter Prozess (Administrator) kann keine Toasts zeigen.
+- Rueckfall ohne jede Registrierung: `Shell_NotifyIcon` mit `NIF_INFO`.
+  Windows 11 zeigt daraus ein kurzes Banner ohne Eintrag im Center, unter
+  dem `FileDescription` des Programms.
+- Ob die Registry allein auf aktuellem 25H2 genuegt, muss auf einer echten
+  Maschine geprueft werden, einmal mit und einmal ohne Verknuepfung.
+
+### Entscheidungen fuer macOS und Windows (01.11.2026)
+
+- macOS: Ein Show vor der Antwort auf die Berechtigungsfrage oder nach einem
+  Nein wird mit `ErrNotPermitted` verworfen, nicht zurueckgehalten.
+  `Notifier.Authorize` stellt die Frage zu einem Zeitpunkt, den die
+  Anwendung waehlt; sonst stellt sie das erste Show.
+- Windows: nur der Registry-Eintrag, nie eine Startmenue-Verknuepfung.
+  Scheitert das auf 25H2, wird die Sprechblase am Tray-Icon vorgezogen.
+- Windows: `Config.AppID` ist Pflicht und wird nicht abgeleitet.
+- Windows wird auf einem echten PC des Nutzers geprueft; die Test- und
+  Beispielprogramme werden auf dem Mac gebaut (`GOOS=windows`).
+- Reihenfolge: gemeinsame Vorarbeit und macOS zuerst, dann Windows.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

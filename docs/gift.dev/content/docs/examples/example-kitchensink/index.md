@@ -3,9 +3,9 @@ title: Kitchen Sink
 weight: 2
 ---
 
-The kitchen sink shows every component of gift in one window. A list grouped like these pages, Basic, Layout,
-Lists, Navigation, Dialogs & Overlays, Styling and Media, runs down the left; beside it stands the component you
-picked, with its name, what it does, and its demo, which is live: tap it, drag it, type into it.
+The kitchen sink shows every component of gift in one window. A list grouped like these pages, Basic, Layout, Lists,
+Navigation, Dialogs & Overlays, Styling, Media and Documents, then System, runs down the left; beside it stands the
+component you picked, with its name, what it does, and its demo, which is live: tap it, drag it, type into it.
 
 {{< gallery-shot alt="The kitchen sink: a list of every component grouped like the documentation, with Color Picker selected, and beside it the colour picker" >}}
 
@@ -13,6 +13,10 @@ The demos are the very ones the component pages of this documentation are drawn 
 [`internal/showcase`](https://github.com/worldiety/gift/tree/main/internal/showcase), one file per component, and
 the docs, their screenshots and the kitchen sink all use them. A component with a page is therefore in the kitchen
 sink, and in there as its page shows it.
+
+A section of its own, System, follows the components with what is no component: the
+[notifications](../../concepts/notifications/) of the operating system, shown, replaced and withdrawn with the
+text you type, and a count of the clicks on them.
 
 ## What to try
 
@@ -27,6 +31,9 @@ sink, and in there as its page shows it.
   colors such as `ui.ColorAccent`, and the theme resolves them, so the switch passes no color to any view.
 - **On-screen keyboard**: the keyboard button turns on the keyboard of a kiosk without a hardware keyboard; every
   text field of every demo then brings it up. `-keyboard` starts with it on.
+- **Notifications**: under System, *Show or replace* sends the text of the two fields to the notification center;
+  showing it again replaces it, and a click on it counts. On macOS the kitchen sink has to run as an app bundle for
+  that, see below; elsewhere the status line says why nothing appears.
 
 ## Run it
 
@@ -36,6 +43,13 @@ From the repository root:
 go run ./cmd/example-kitchensink
 go run ./cmd/example-kitchensink -show color-picker            # start with this component
 go run ./cmd/example-kitchensink -width 800 -height 480 -keyboard   # a five inch kiosk
+```
+
+macOS shows notifications only for an app bundle, which `giftbundle` makes:
+
+```bash
+go install ./cmd/giftbundle
+go run -exec "giftbundle -id dev.gift.kitchensink" ./cmd/example-kitchensink -show notifications
 ```
 
 On first start, the program writes a dozen small sample pictures and a three second video clip into

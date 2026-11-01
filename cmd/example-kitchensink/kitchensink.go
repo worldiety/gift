@@ -42,9 +42,9 @@ func Screen(ctx *gift.Context) gift.View {
 	ctx.Read(compact)
 	ctx.Read(query)
 
-	d, ok := showcase.Lookup(selected.Get())
+	d, ok := lookup(selected.Get())
 	if !ok {
-		d = showcase.All()[0]
+		d = pages()[0]
 	}
 	choose := func(name string) {
 		selected.Set(name)
@@ -74,13 +74,55 @@ func Screen(ctx *gift.Context) gift.View {
 // initialDemo is the component shown first; main sets it from -show.
 var initialDemo = "button"
 
+// page is an entry of the list: a demo of internal/showcase, or one of the
+// kitchen sink's own, see [own].
+type page struct {
+	showcase.Demo
+	build  func(ctx *gift.Context) gift.View // nil for a demo of internal/showcase
+	source string
+}
+
+// View builds the page.
+func (p page) View(ctx *gift.Context) gift.View {
+	if p.build != nil {
+		return p.build(ctx)
+	}
+	return p.Demo.View(ctx)
+}
+
+// pages are the entries of the list: every demo of internal/showcase, then
+// the kitchen sink's own.
+func pages() []page {
+	out := make([]page, 0, len(showcase.All())+len(own))
+	for _, d := range showcase.All() {
+		out = append(out, page{Demo: d, source: "internal/showcase/" + strings.ReplaceAll(d.Name, "-", "_") + ".go"})
+	}
+	return append(out, own...)
+}
+
+// groups are the sections of the list: those of the documentation, then
+// one for what the operating system offers beside the window.
+func groups() []showcase.Group {
+	return append(showcase.Groups(), showcase.Group{Key: "system", Title: "System"})
+}
+
+// lookup returns the page called name.
+func lookup(name string) (page, bool) {
+	for _, p := range pages() {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return page{}, false
+}
+
 // sidebar is the header and the list of components, filtered by the query.
 func sidebar(ctx *gift.Context, selected string, compact bool, query *gift.State[string], choose func(string)) ui.Stack {
 	q := strings.ToLower(strings.TrimSpace(query.Get()))
 	var rows []gift.View
-	for _, g := range showcase.Groups() {
+	for _, g := range groups() {
 		var group []gift.View
-		for _, d := range showcase.All() {
+		for _, d := range pages() {
 			if d.Group != g.Key || !matches(d, q) {
 				continue
 			}
@@ -161,7 +203,7 @@ func sidebarList(l ui.ListView, compact bool) ui.ListView {
 	return l.SeparatorColor(ui.ColorClear)
 }
 
-func matches(d showcase.Demo, q string) bool {
+func matches(d page, q string) bool {
 	if q == "" {
 		return true
 	}
@@ -172,9 +214,9 @@ func matches(d showcase.Demo, q string) bool {
 // detail is one component: where it belongs, its name and what it does,
 // and its demo on a stage of the size the demo was made for, scrolling where
 // the window is smaller.
-func detail(d showcase.Demo) ui.ScrollView {
+func detail(d page) ui.ScrollView {
 	group := ""
-	for _, g := range showcase.Groups() {
+	for _, g := range groups() {
 		if g.Key == d.Group {
 			group = g.Title
 		}
@@ -203,7 +245,7 @@ func detail(d showcase.Demo) ui.ScrollView {
 		ui.Text(d.Title).FontSize(30).Key("title"),
 		ui.Text(d.Summary).Foreground(ui.ColorSecondaryLabel),
 		ui.HScroll(stage).Key("stage-scroll"),
-		ui.Text("Source: internal/showcase/"+strings.ReplaceAll(d.Name, "-", "_")+".go").
+		ui.Text("Source: "+d.source).
 			FontSize(12).Foreground(ui.ColorSecondaryLabel),
 	).Gap(8).Padding(24).Align(geom.Alignment{X: 0, Y: 0}).Key("detail")
 }

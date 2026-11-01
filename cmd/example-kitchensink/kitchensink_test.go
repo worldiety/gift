@@ -29,7 +29,7 @@ func scene(t *testing.T, w, h float32) *gifttest.Harness {
 
 func TestEveryComponentIsListedAndShowsItsDemo(t *testing.T) {
 	h := scene(t, 1180, 800)
-	for _, d := range showcase.All() {
+	for _, d := range pages() {
 		h.AssertExists(gifttest.ByKey("row-" + d.Name))
 	}
 	h.AssertExists(gifttest.ByKey("stage-button"))
@@ -61,7 +61,7 @@ func TestEveryDemoRunsOnItsStage(t *testing.T) {
 			n.Tap()
 			h.AdvanceTicks(40, gifttest.FrameInterval)
 		}
-		for _, d := range showcase.All() {
+		for _, d := range pages() {
 			tap(h.Find(gifttest.ByKey("row-" + d.Name)).ScrollIntoView())
 			if !h.Find(gifttest.ByKey("stage-" + d.Name)).IsVisible() {
 				t.Fatalf("%vx%v: the stage of %s is not shown", size.W, size.H, d.Name)
