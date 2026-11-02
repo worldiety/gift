@@ -25,4 +25,5 @@ in action.
   {{< card link="kiosks/" title="Kiosks and Raspberry Pi" icon="desktop-computer" subtitle="Drawing on demand, glass quality, window setup and Raspberry Pi OS." >}}
   {{< card link="testing/" title="Testing and Automation" icon="beaker" subtitle="Headless tests with gifttest, golden images and the giftauto interface." >}}
   {{< card link="diagnostics/" title="Diagnostics and Metrics" icon="chart-bar" subtitle="Counters, overflow reports, the metrics build, the debug build and logging." >}}
+  {{< card link="login-and-payment/" title="Login and Payment" icon="key" subtitle="OAuth and payments in the system browser, and on the phone for a kiosk, without a web view." >}}
 {{< /cards >}}

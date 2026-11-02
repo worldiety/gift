@@ -96,6 +96,7 @@ func Groups() []Group {
 		{"media", "Media"},
 		{"charts", "Charts"},
 		{"documents", "Documents"},
+		{"web", "Login & Payment"},
 	}
 }
 

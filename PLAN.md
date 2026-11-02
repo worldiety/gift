@@ -4100,6 +4100,52 @@ Ghostscript-Tiger. Paket `ui/svg`.
 Offen: Text (ueber gifts Glyphen), Stylesheets mit Klassen-Selektoren,
 Masken, Muster, Gruppenopazitaet ueber eine eigene Ebene.
 
+## 46. Login und Zahlung ohne WebView, QR-Codes
+
+Anlass (02.11.2026): ein WebView ohne cgo fuer OAuth und Payment, auch fuer
+Android, iOS, wasm, Desktop und Kiosk. Die Recherche (Bericht "WebView ohne
+cgo fuer OAuth und Payment", nicht eingecheckt) kam zu: kein eingebettetes
+WebView fuer Login und Zahlung. RFC 8252 verbietet es, Google blockt es
+(`disallowed_useragent`), PayPal verbietet es, Stripe schickt iOS nach
+Safari, Wallets laufen im Browser, nicht im WebView. Umgesetzt sind die
+Stufen 1 und 2 von sechs.
+
+- Paket `web`: Ergebnis statt Widget. `Open(ctx, Flow)` mit `Start(ctx,
+  redirectURI)`, weil der Loopback-Port erst beim Start feststeht und das
+  Backend eine Checkout-Session mit genau dieser URI anlegt. Getypte
+  Callbacks (`Loopback`, `Scheme`, `HTTPS`) in Vorzugsreihenfolge; Provider
+  registrieren sich beim Import, spaeter registrierte gehen vor.
+  `Return.AuthCode` prueft state (konstante Zeit) und Fehlerantworten.
+- Loopback nach RFC 8252: 127.0.0.1 (sonst ::1), freier Port; unter Unix
+  nimmt `ListenConfig.Control` das SO_REUSEADDR zurueck, das Go setzt,
+  unter Windows SO_EXCLUSIVEADDRUSE. Host-Pruefung gegen DNS-Rebinding,
+  form_post (Sign in with Apple), Antwortseite oder 303 auf `Landing`,
+  no-store und no-referrer. Browser: `open`, `ShellExecuteW` mit COM auf
+  eigenem Thread, `xdg-open` (Exit 3 = kein Browser = ErrUnsupported; drei
+  Sekunden warten, weil xdg-open manche Browser im Vordergrund startet).
+- Ein Rueckweg ist keine Quittung: Zahlungsergebnis kommt per Webhook ans
+  Backend; `Open` endet mit `context.Cause(ctx)`, damit die App den Ablauf
+  beendet, sobald das Backend bezahlt meldet.
+- Paket `ui/qr`: eigener Encoder (Modell 2, Version 1-40, L/M/Q/H, Masken nach
+  den Strafregeln, ein Segment numerisch/alphanumerisch/Bytes). Bitgenau mit
+  rsc.io/qr verglichen (alle Versionen und Stufen an der Kapazitaetsgrenze,
+  alle Masken fuer drei Modi; nur lokal, keine Abhaengigkeit) und mit
+  Chromiums BarcodeDetector dekodiert (18 von 19; Version 36/H liest
+  Apples Detektor nicht, das Raster ist mit rsc.io/qr identisch). Die View
+  rastet Module auf ganze Geraetepixel, schwarz auf weiss in beiden Themes.
+- Paket `web/handoff`: `Device` (Device Flow aus x/oauth2, QR von
+  verification_uri_complete, sonst verification_uri), `Login` (ganzer
+  Ablauf mit Polling, Neustart, Ende beim Aushaengen), `Pay` (Zahlungslink,
+  Zustand vom Backend), `Texts` fuer andere Sprachen. Neue Abhaengigkeit
+  golang.org/x/oauth2 v0.36.0. Hinweis: x/oauth2 sendet eine fehlschlagende
+  Token-Anfrage ein zweites Mal im anderen AuthStyle.
+
+Offen (Stufen 3-6): Chromium unter labwc als Kiosk-Rueckfall fuer Entra,
+ASWebAuthenticationSession ueber purego/objc, Host-Bruecke fuer Android/iOS
+und wasm-Redirect, eingebettetes WebView (Windows zuerst). Der
+Linux-Pfad (Socket-Optionen, xdg-open) ist kompiliert, aber noch nicht auf
+einem Linux-Rechner gelaufen; der Pi war nicht erreichbar.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

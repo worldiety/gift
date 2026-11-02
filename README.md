@@ -233,6 +233,29 @@ logo, err := svg.ParseFile("logo.svg") // github.com/worldiety/gift/ui/svg
 return svg.View(logo).Frame(120, 0)
 ```
 
+### Login and payment
+
+`web` runs an OAuth login or a checkout in the system browser and hands the
+application the redirect it ends with, on a loopback port as RFC 8252 asks;
+the protocol is `golang.org/x/oauth2`'s. There is no web view: identity
+providers block logins in one, and payment providers forbid them. On a kiosk,
+`web/handoff` moves the flow to the user's phone with a QR code: the device
+flow of RFC 8628 for a login, a payment link for a payment. `ui/qr` draws the
+code, and none of it needs cgo.
+
+```go
+ret, err := web.Open(ctx, web.Flow{ // github.com/worldiety/gift/web
+	Callbacks: []web.Callback{web.Loopback("/oauth")},
+	Start: func(_ context.Context, redirect string) (string, error) {
+		conf.RedirectURL = redirect
+		return conf.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)), nil
+	},
+})
+code, err := ret.AuthCode(state)
+
+handoff.Login(conf, func(tok *oauth2.Token) { session.Set(tok) }) // github.com/worldiety/gift/web/handoff
+```
+
 ### Charts
 
 `ui/charts` draws charts after Swift Charts: lines, areas, bars, dots, rules,

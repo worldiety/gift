@@ -10,11 +10,13 @@ Basic components display one piece of content or take one input. All of them liv
 - [Text](text/): labels, headings and paragraphs, with wrapping, line limits and truncation.
 - [Icon](icon/): a monochrome symbol from the outline or solid set, tinted with a color.
 - [Image](image/): one picture from a file or a URL, loaded in the background.
+- [SVG Image](svg-image/): a vector picture from an SVG document, sharp at any size.
 - [Badge](badge/): a small capsule with a count or a one-word status.
 - [Divider](divider/): a horizontal hairline between groups of content.
 - [Progress Bar](progress-bar/): how much of a task is done, or an indeterminate bar.
 - [Progress Ring](progress-ring/): how much of a task is done as a ring, or the spinner of iOS.
 - [Gauge](gauge/): a value within a range on a ring.
+- [QR Code](qr-code/): a link or a code for the camera of a phone.
 
 **Controls**
 

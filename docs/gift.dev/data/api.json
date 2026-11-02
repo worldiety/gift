@@ -4753,6 +4753,155 @@
       }
     ]
   },
+  "handoff": {
+    "importPath": "github.com/worldiety/gift/web/handoff",
+    "synopsis": "",
+    "types": {
+      "DeviceView": {
+        "synopsis": "DeviceView shows a device authorization: the code the user enters on their phone.",
+        "decl": "type DeviceView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Device",
+            "signature": "Device(da *oauth2.DeviceAuthResponse) DeviceView",
+            "synopsis": "Device returns a view of a device authorization of RFC 8628, as golang.org/x/oauth2's Config.DeviceAuth returns it: a QR code of the verification URI, the address to type instead and the user code, large, with the time the code is valid for."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Key",
+            "signature": "Key(s string) DeviceView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Message",
+            "signature": "Message(s string) DeviceView",
+            "synopsis": "Message sets a line in place of the default text of the state: why it failed, say."
+          },
+          {
+            "name": "OnRestart",
+            "signature": "OnRestart(fn func()) DeviceView",
+            "synopsis": "OnRestart shows a button for a new code once the code has expired or the login failed, and calls fn when it is pressed."
+          },
+          {
+            "name": "State",
+            "signature": "State(s State) DeviceView",
+            "synopsis": "State sets where the login stands, Waiting by default."
+          },
+          {
+            "name": "Texts",
+            "signature": "Texts(t Texts) DeviceView",
+            "synopsis": "Texts sets the words of the view; see Texts."
+          }
+        ]
+      },
+      "LoginView": {
+        "synopsis": "LoginView runs a device flow and shows it.",
+        "decl": "type LoginView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Login",
+            "signature": "Login(conf *oauth2.Config, done func(*oauth2.Token)) LoginView",
+            "synopsis": "Login returns a view that signs the user in on their phone, with the device authorization grant of RFC 8628: it asks conf's DeviceAuthURL for a code, shows it as Device does, polls the token endpoint as golang.org/x/oauth2 does, at the interval the server asks for, and calls done with the token on the UI goroutine."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Context",
+            "signature": "Context(ctx context.Context) LoginView",
+            "synopsis": "Context sets the context the requests are made with, for an HTTP client of the application's own (oauth2.HTTPClient) or to end the flow; the view ends it as well when it is taken out of the tree."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) LoginView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "OnError",
+            "signature": "OnError(fn func(error)) LoginView",
+            "synopsis": "OnError calls fn with the errors the view shows as a failure other than a declined login: an unreachable server, a client the server does not know, a tenant that blocks the device flow."
+          },
+          {
+            "name": "Options",
+            "signature": "Options(opts ...oauth2.AuthCodeOption) LoginView",
+            "synopsis": "Options sets parameters of the authorization and token requests, as oauth2.SetAuthURLParam makes them: an audience, say."
+          },
+          {
+            "name": "Texts",
+            "signature": "Texts(t Texts) LoginView",
+            "synopsis": "Texts sets the words of the view; see Texts."
+          }
+        ]
+      },
+      "PayView": {
+        "synopsis": "PayView shows a payment the user makes on their phone.",
+        "decl": "type PayView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Pay",
+            "signature": "Pay(url string) PayView",
+            "synopsis": "Pay returns a view of a payment link as a QR code, for a payment the user makes on their own phone: a Stripe Payment Link or Checkout Session, a PayPal order, any page of a payment provider."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Amount",
+            "signature": "Amount(s string) PayView",
+            "synopsis": "Amount sets the amount, as the application formats it: \"12,50 €\"."
+          },
+          {
+            "name": "Expiry",
+            "signature": "Expiry(t time.Time) PayView",
+            "synopsis": "Expiry sets when the link expires, for a countdown; the view enters Expired by itself then."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) PayView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Message",
+            "signature": "Message(s string) PayView",
+            "synopsis": "Message sets a line in place of the default text of the state."
+          },
+          {
+            "name": "OnRestart",
+            "signature": "OnRestart(fn func()) PayView",
+            "synopsis": "OnRestart shows a button to try again once the link has expired or the payment failed, and calls fn when it is pressed."
+          },
+          {
+            "name": "State",
+            "signature": "State(s State) PayView",
+            "synopsis": "State sets where the payment stands, Waiting by default."
+          },
+          {
+            "name": "Texts",
+            "signature": "Texts(t Texts) PayView",
+            "synopsis": "Texts sets the words of the view; see Texts."
+          }
+        ]
+      },
+      "State": {
+        "synopsis": "State is where a flow on the user's phone stands, as the application learns it: from the token endpoint for a login, from its backend for a payment.",
+        "decl": "type State uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Texts": {
+        "synopsis": "Texts are the words of the views of this package.",
+        "decl": "type Texts struct {\n\tSignInTitle  string\n\tSignInScan   string\n\tSignInOpen   string\n\tSignInCode   string\n\tRequesting   string\n\tSignedIn     string\n\tDeclined     string\n\tPayTitle     string\n\tPayScan      string\n\tPayWaiting   string\n\tPayPreparing string\n\tPaid         string\n\tPayFailed    string\n\tExpires      string\n\tExpired      string\n\tFailed       string\n\tNewCode      string\n\tTryAgain     string\n}",
+        "constructors": [],
+        "methods": []
+      }
+    },
+    "funcs": []
+  },
   "imageviewer": {
     "importPath": "github.com/worldiety/gift/ui/imageviewer",
     "synopsis": "Package imageviewer shows pictures as large and as interactive as the screen allows: a picture that zooms and pans in place, and a full screen viewer that pages through a catalogue, in the manner of iOS's Photos.",
@@ -5511,6 +5660,106 @@
         "synopsis": "RubberInverse is the pull that Rubber shows as r: the finger travel that produced a displacement."
       }
     ]
+  },
+  "qr": {
+    "importPath": "github.com/worldiety/gift/ui/qr",
+    "synopsis": "Package qr encodes text as a QR code and shows it: a link a phone opens with its camera, the way a kiosk hands a login or a payment to the customer's own device (see web/handoff).",
+    "types": {
+      "Code": {
+        "synopsis": "Code is an encoded QR code: a square of dark and light modules, Size on each side.",
+        "decl": "type Code struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Encode",
+            "signature": "Encode(text string, level Level) (*Code, error)",
+            "synopsis": "Encode returns text as a QR code at level or better: the smallest version that holds it, at the highest level that still fits that version."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Dark",
+            "signature": "Dark(x, y int) bool",
+            "synopsis": "Dark reports whether the module in column x and row y is dark."
+          },
+          {
+            "name": "Image",
+            "signature": "Image(px int) *image.Gray",
+            "synopsis": "Image returns the code as a grey image, black on white, with every module px pixels square and the quiet zone around it: for a file, a print or a test, where View is for the screen."
+          },
+          {
+            "name": "Level",
+            "signature": "Level() Level",
+            "synopsis": "Level returns the error correction level."
+          },
+          {
+            "name": "Size",
+            "signature": "Size() int",
+            "synopsis": "Size returns the number of modules on each side, 21 for version 1 up to 177 for version 40, without the quiet zone."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": "String draws the code in text, two characters per module, for a test failure or a terminal."
+          },
+          {
+            "name": "Version",
+            "signature": "Version() int",
+            "synopsis": "Version returns the version, 1 to 40, which is what the size follows from."
+          }
+        ]
+      },
+      "CodeView": {
+        "synopsis": "CodeView shows a QR code.",
+        "decl": "type CodeView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "View",
+            "signature": "View(text string) CodeView",
+            "synopsis": "View returns a view of text as a QR code at level M: black modules on a white square with the quiet zone, in light and in dark appearance alike, because not every reader takes a code with its colours inverted."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) CodeView",
+            "synopsis": "Flex sets the flex factor in a stack; a flexible code takes the room it is given, as a square."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) CodeView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) CodeView",
+            "synopsis": "Label sets the accessible name, \"QR code\" by default."
+          },
+          {
+            "name": "Level",
+            "signature": "Level(l Level) CodeView",
+            "synopsis": "Level sets the error correction level, M by default."
+          },
+          {
+            "name": "Size",
+            "signature": "Size(s float32) CodeView",
+            "synopsis": "Size sets the length of each side, quiet zone included."
+          }
+        ]
+      },
+      "Level": {
+        "synopsis": "Level is the error correction level: how much of a code may be damaged or hidden and still be read.",
+        "decl": "type Level uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      }
+    },
+    "funcs": []
   },
   "svg": {
     "importPath": "github.com/worldiety/gift/ui/svg",
@@ -11305,5 +11554,119 @@
       }
     },
     "funcs": []
+  },
+  "web": {
+    "importPath": "github.com/worldiety/gift/web",
+    "synopsis": "Package web runs logins and payments in a browser that the application does not control, and hands it the redirect they end with.",
+    "types": {
+      "AuthError": {
+        "synopsis": "AuthError is the error response of an authorization request, RFC 6749 section 4.1.2.1: \"access_denied\" when the user declined.",
+        "decl": "type AuthError struct {\n\tCode        string\n\tDescription string\n\tURI         string\n}",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Error",
+            "signature": "Error() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Callback": {
+        "synopsis": "Callback is where a flow ends: the redirect URI the provider of the login or the payment sends the browser to, and which the platform catches.",
+        "decl": "type Callback struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "HTTPS",
+            "signature": "HTTPS(host, path string) Callback",
+            "synopsis": "HTTPS is a redirect to an https URL that the platform hands to the application instead of a browser: a universal link on iOS and macOS, an app link on Android."
+          },
+          {
+            "name": "Loopback",
+            "signature": "Loopback(path string) Callback",
+            "synopsis": "Loopback is a redirect to a server of the application's own on the loopback interface, http://127.0.0.1:port/path, on a port chosen when the flow starts."
+          },
+          {
+            "name": "Scheme",
+            "signature": "Scheme(scheme, path string) Callback",
+            "synopsis": "Scheme is a redirect to a private URI scheme of the application, such as \"com.example.app:/oauth\": a reverse domain name the application owns, as RFC 8252 asks."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Host",
+            "signature": "Host() string",
+            "synopsis": "Host returns the host of an HTTPS callback, and \"\" for the others."
+          },
+          {
+            "name": "Kind",
+            "signature": "Kind() CallbackKind",
+            "synopsis": "Kind returns the kind of the callback; the zero Callback has none."
+          },
+          {
+            "name": "Path",
+            "signature": "Path() string",
+            "synopsis": "Path returns the path of the redirect URI, which begins with a slash."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": "String returns the redirect URI, with the port of a loopback left open."
+          },
+          {
+            "name": "URIScheme",
+            "signature": "URIScheme() string",
+            "synopsis": "URIScheme returns the scheme of the redirect URI: \"http\" for a loopback, the application's own for a Scheme, \"https\" for an HTTPS."
+          }
+        ]
+      },
+      "CallbackKind": {
+        "synopsis": "CallbackKind tells the three kinds of Callback apart.",
+        "decl": "type CallbackKind uint8",
+        "constructors": [],
+        "methods": []
+      },
+      "Flow": {
+        "synopsis": "Flow is a login or a payment in a browser that the application does not control: it starts at a URL and ends with a redirect to a Callback.",
+        "decl": "type Flow struct {\n\tStart     func(ctx context.Context, redirectURI string) (string, error)\n\tCallbacks []Callback\n\tEphemeral bool\n\tLanding   string\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Provider": {
+        "synopsis": "Provider is a mechanism that runs flows: the loopback server with the system browser of this package, and the ones of packages that register themselves when they are imported.",
+        "decl": "type Provider interface {\n\tSupports(c Callback) bool\n\tRun(ctx context.Context, f Flow, c Callback) (Return, error)\n}// Supports reports whether the provider can catch c on this machine.\n// Run runs f to the redirect to c, as [Open] describes.\n",
+        "constructors": [],
+        "methods": []
+      },
+      "Return": {
+        "synopsis": "Return is the redirect that ended a flow, as it arrived.",
+        "decl": "type Return struct{ URL *url.URL }",
+        "constructors": [
+          {
+            "name": "Open",
+            "signature": "Open(ctx context.Context, f Flow) (Return, error)",
+            "synopsis": "Open runs f and waits for it to end: for the redirect, for the user to close it where that can be seen, or for ctx to end, whose cause it then returns."
+          }
+        ],
+        "methods": [
+          {
+            "name": "AuthCode",
+            "signature": "AuthCode(state string) (string, error)",
+            "synopsis": "AuthCode returns the authorization code of an OAuth redirect, after checking that its state is the one the request was sent with."
+          }
+        ]
+      }
+    },
+    "funcs": [
+      {
+        "name": "OpenURL",
+        "signature": "OpenURL(u string) error",
+        "synopsis": "OpenURL opens u in the system's browser and returns, without waiting for anything: a help page, the terms, a receipt."
+      },
+      {
+        "name": "Register",
+        "signature": "Register(p Provider)",
+        "synopsis": "Register adds a provider."
+      }
+    ]
   }
 }

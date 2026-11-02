@@ -22,6 +22,7 @@ that drew it, how to use the component well and its API. The pages are grouped i
   {{< card link="styling/" title="Styling" icon="color-swatch" subtitle="Colors, shadow and border, gradients and glass." >}}
   {{< card link="media/" title="Media" icon="film" subtitle="A full screen image viewer, a zoomable image and a video player with touch controls." >}}
   {{< card link="charts/" title="Charts" icon="chart-bar" subtitle="Line, area, bar and scatter charts after Swift Charts, with gaps, zoom and millions of points." >}}
+  {{< card link="web/" title="Login & Payment" icon="key" subtitle="A login and a payment on the phone, for a kiosk: the device flow and a payment link as a QR code." >}}
 {{< /cards >}}
 
 ## Views are values
