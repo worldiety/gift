@@ -94,6 +94,7 @@ func Groups() []Group {
 		{"dialogs", "Dialogs & Overlays"},
 		{"styling", "Styling"},
 		{"media", "Media"},
+		{"charts", "Charts"},
 		{"documents", "Documents"},
 	}
 }

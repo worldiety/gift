@@ -220,6 +220,28 @@ HEVC in software or, with `HW`, in hardware. Try it with
 
 <img src="docs/screenshots/video.png" alt="A video with round play, back and forward buttons, a volume slider and an open audio track menu, captured on a Raspberry Pi 5 at 800x480" width="600">
 
+### Charts
+
+`ui/charts` draws charts after Swift Charts: lines, areas, bars, dots, rules and
+bands on axes that fit the data, with a legend and the values under the
+pointer. A missing value (NaN) breaks a line, and every chart with a
+continuous x axis zooms: pinch, double tap, a range dragged with the mouse.
+
+```go
+temps := charts.Times(times, values) // github.com/worldiety/gift/ui/charts
+return charts.Chart(
+	charts.Line(temps).Name("Hall 2"),
+	charts.RuleY(23).Label("Limit").Dash(4, 3),
+).YTitle("°C")
+```
+
+A chart draws no more than its width can show: of every pixel column the
+first, the last, the lowest and the highest point, the M4 aggregation, which
+covers the same pixels as all of them. Data in memory keeps an index for it,
+so ten million points zoom like a hundred, and a `charts.Source` is asked, off
+the user interface goroutine, for just the points of what is shown, the way a
+map asks for tiles.
+
 ## Testing And Automation
 
 ```sh

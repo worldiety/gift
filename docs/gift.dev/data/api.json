@@ -613,6 +613,549 @@
       }
     ]
   },
+  "charts": {
+    "importPath": "github.com/worldiety/gift/ui/charts",
+    "synopsis": "Package charts draws charts after Swift Charts: marks on a pair of axes, with a legend, an inspection of the values under the pointer, and zoom.",
+    "types": {
+      "AreaMark": {
+        "synopsis": "AreaMark fills the space between a series and zero, the counterpart of Swift Charts' AreaMark.",
+        "decl": "type AreaMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Area",
+            "signature": "Area(s Series) AreaMark",
+            "synopsis": "Area returns the area under the points of s."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) AreaMark",
+            "synopsis": "Color sets the colour; see LineMark.Color."
+          },
+          {
+            "name": "Gradient",
+            "signature": "Gradient(b bool) AreaMark",
+            "synopsis": "Gradient fades the area out towards zero."
+          },
+          {
+            "name": "Interpolation",
+            "signature": "Interpolation(i Interpolation) AreaMark",
+            "synopsis": "Interpolation sets how the edge of the area runs between points."
+          },
+          {
+            "name": "MaxGap",
+            "signature": "MaxGap(dx float64) AreaMark",
+            "synopsis": "MaxGap breaks the area where two points are further apart than dx; see LineMark.MaxGap."
+          },
+          {
+            "name": "MaxGapDuration",
+            "signature": "MaxGapDuration(d time.Duration) AreaMark",
+            "synopsis": "MaxGapDuration is AreaMark.MaxGap on a time axis."
+          },
+          {
+            "name": "Name",
+            "signature": "Name(s string) AreaMark",
+            "synopsis": "Name names the series in the legend and in the inspection."
+          },
+          {
+            "name": "Opacity",
+            "signature": "Opacity(f float32) AreaMark",
+            "synopsis": "Opacity sets how opaque the area is, 0.3 by default, so that a line on it and the grid behind it show."
+          }
+        ]
+      },
+      "BandMark": {
+        "synopsis": "BandMark shades a range across the whole plot, the counterpart of a Swift Charts RectangleMark that spans the plot: the range a value should stay in, the hours a machine was down.",
+        "decl": "type BandMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "BandTime",
+            "signature": "BandTime(from, to time.Time) BandMark",
+            "synopsis": "BandTime returns a vertical band from one time to another, on a time axis."
+          },
+          {
+            "name": "BandX",
+            "signature": "BandX(lo, hi float64) BandMark",
+            "synopsis": "BandX returns a vertical band from lo to hi."
+          },
+          {
+            "name": "BandY",
+            "signature": "BandY(lo, hi float64) BandMark",
+            "synopsis": "BandY returns a horizontal band from lo to hi."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) BandMark",
+            "synopsis": "Color sets the colour, shown at BandMark.Opacity; the default is the accent colour."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) BandMark",
+            "synopsis": "Label sets a text in the top leading corner of the band."
+          },
+          {
+            "name": "Opacity",
+            "signature": "Opacity(f float32) BandMark",
+            "synopsis": "Opacity sets how opaque the band is, 0.12 by default."
+          }
+        ]
+      },
+      "BarMark": {
+        "synopsis": "BarMark draws a bar from zero to each value, the counterpart of Swift Charts' BarMark.",
+        "decl": "type BarMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Bar",
+            "signature": "Bar(s Series) BarMark",
+            "synopsis": "Bar returns a bar for every point of s."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) BarMark",
+            "synopsis": "Color sets the colour; see LineMark.Color."
+          },
+          {
+            "name": "CornerRadius",
+            "signature": "CornerRadius(px float32) BarMark",
+            "synopsis": "CornerRadius rounds the corners of the bars; the default is 2."
+          },
+          {
+            "name": "Name",
+            "signature": "Name(s string) BarMark",
+            "synopsis": "Name names the series in the legend and in the inspection."
+          },
+          {
+            "name": "Width",
+            "signature": "Width(f float32) BarMark",
+            "synopsis": "Width sets the share of the distance between two points a bar takes, 0.8 by default."
+          }
+        ]
+      },
+      "ChartView": {
+        "synopsis": "ChartView is a chart: marks on a pair of axes, with a legend.",
+        "decl": "type ChartView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Chart",
+            "signature": "Chart(marks ...Mark) ChartView",
+            "synopsis": "Chart returns a chart of marks, the counterpart of Swift Charts' Chart:"
+          }
+        ],
+        "methods": [
+          {
+            "name": "Budget",
+            "signature": "Budget(points int) ChartView",
+            "synopsis": "Budget sets how many points the chart draws at most, all marks together; the default is 200,000."
+          },
+          {
+            "name": "Categories",
+            "signature": "Categories(names ...string) ChartView",
+            "synopsis": "Categories makes the x axis one of names: the X of a point is the index of its name, so a bar chart of four products plots the points 0 to 3 and labels them with the four names."
+          },
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) ChartView",
+            "synopsis": "Flex sets the flex factor in a stack."
+          },
+          {
+            "name": "Height",
+            "signature": "Height(px float32) ChartView",
+            "synopsis": "Height sets the height; the default is 220."
+          },
+          {
+            "name": "Inspection",
+            "signature": "Inspection(b bool) ChartView",
+            "synopsis": "Inspection sets whether a pointer over the chart shows the values there; it does by default."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) ChartView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) ChartView",
+            "synopsis": "Label sets the accessible name."
+          },
+          {
+            "name": "Legend",
+            "signature": "Legend(b bool) ChartView",
+            "synopsis": "Legend shows or hides the legend."
+          },
+          {
+            "name": "Location",
+            "signature": "Location(loc *time.Location) ChartView",
+            "synopsis": "Location sets the time zone of a time axis; the default is time.Local."
+          },
+          {
+            "name": "MinSpan",
+            "signature": "MinSpan(dx float64) ChartView",
+            "synopsis": "MinSpan sets the narrowest range of x a zoom goes down to."
+          },
+          {
+            "name": "OnInspect",
+            "signature": "OnInspect(fn func(x float64, ok bool)) ChartView",
+            "synopsis": "OnInspect sets the function called when the inspected x changes, and with false when the inspection ends: to show the moment in a second chart, a map or a table."
+          },
+          {
+            "name": "OnVisibleChange",
+            "signature": "OnVisibleChange(fn func(lo, hi float64)) ChartView",
+            "synopsis": "OnVisibleChange sets the function called when the visible range of the x axis changes by zooming or dragging, with the range it moves to."
+          },
+          {
+            "name": "TimeAxis",
+            "signature": "TimeAxis() ChartView",
+            "synopsis": "TimeAxis makes the x axis a time axis, for data whose X are seconds since the Unix epoch made with XY or a Func."
+          },
+          {
+            "name": "Visible",
+            "signature": "Visible(lo, hi float64) ChartView",
+            "synopsis": "Visible shows [lo, hi] of the x axis, the part of the chart zoomed into, and follows it when it changes."
+          },
+          {
+            "name": "Width",
+            "signature": "Width(px float32) ChartView",
+            "synopsis": "Width sets the width; by default the chart is as wide as it may be."
+          },
+          {
+            "name": "XDomain",
+            "signature": "XDomain(lo, hi float64) ChartView",
+            "synopsis": "XDomain fixes the x axis to [lo, hi], the whole of the chart when it is not zoomed, instead of the extent of the data."
+          },
+          {
+            "name": "XDomainTime",
+            "signature": "XDomainTime(from, to time.Time) ChartView",
+            "synopsis": "XDomainTime is ChartView.XDomain for a time axis, which it makes the x axis."
+          },
+          {
+            "name": "XFormat",
+            "signature": "XFormat(fn func(x float64) string) ChartView",
+            "synopsis": "XFormat sets the labels of the x axis and of the inspection."
+          },
+          {
+            "name": "XTitle",
+            "signature": "XTitle(s string) ChartView",
+            "synopsis": "XTitle sets the title of the x axis, under its labels at the trailing end, as Swift Charts' chartXAxisLabel does."
+          },
+          {
+            "name": "YAxisLeading",
+            "signature": "YAxisLeading(b bool) ChartView",
+            "synopsis": "YAxisLeading puts the y axis on the leading side; Swift Charts and this chart put it on the trailing side by default."
+          },
+          {
+            "name": "YDomain",
+            "signature": "YDomain(lo, hi float64) ChartView",
+            "synopsis": "YDomain fixes the y axis to [lo, hi] instead of fitting it to the visible values."
+          },
+          {
+            "name": "YFormat",
+            "signature": "YFormat(fn func(y float64) string) ChartView",
+            "synopsis": "YFormat sets the labels of the y axis and of the values in the inspection."
+          },
+          {
+            "name": "YIncludesZero",
+            "signature": "YIncludesZero(b bool) ChartView",
+            "synopsis": "YIncludesZero keeps zero on the y axis; a chart with bars or areas always does."
+          },
+          {
+            "name": "YTitle",
+            "signature": "YTitle(s string) ChartView",
+            "synopsis": "YTitle sets the title of the y axis, above it."
+          },
+          {
+            "name": "Zoomable",
+            "signature": "Zoomable(b bool) ChartView",
+            "synopsis": "Zoomable sets whether the chart can be zoomed and dragged; it can by default."
+          }
+        ]
+      },
+      "Data": {
+        "synopsis": "Data is a series in memory: points ascending in X, the counterpart of the data collection of a Swift Charts mark.",
+        "decl": "type Data struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "From",
+            "signature": "From[T any](items []T, xy func(T) (float64, float64)) *Data",
+            "synopsis": "From returns the data of items, with the X and Y of each from xy, the way a Swift Charts mark plots a collection of structs."
+          },
+          {
+            "name": "FromTimes",
+            "signature": "FromTimes[T any](items []T, xy func(T) (time.Time, float64)) *Data",
+            "synopsis": "FromTimes is From for a time series."
+          },
+          {
+            "name": "Times",
+            "signature": "Times(ts []time.Time, ys []float64) *Data",
+            "synopsis": "Times returns the data of a time series, for a time axis."
+          },
+          {
+            "name": "XY",
+            "signature": "XY(xs, ys []float64) *Data",
+            "synopsis": "XY returns the data of xs and ys, which must be of the same length."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Append",
+            "signature": "Append(x, y float64)",
+            "synopsis": "Append adds a point."
+          },
+          {
+            "name": "AppendTime",
+            "signature": "AppendTime(t time.Time, y float64)",
+            "synopsis": "AppendTime is Data.Append for a time series."
+          },
+          {
+            "name": "At",
+            "signature": "At(i int) Point",
+            "synopsis": "At returns point i."
+          },
+          {
+            "name": "DropBefore",
+            "signature": "DropBefore(x float64)",
+            "synopsis": "DropBefore removes the points before x, for a chart of the last minutes of a live signal."
+          },
+          {
+            "name": "DropBeforeTime",
+            "signature": "DropBeforeTime(t time.Time)",
+            "synopsis": "DropBeforeTime is Data.DropBefore for a time series."
+          },
+          {
+            "name": "Extent",
+            "signature": "Extent() (lo, hi float64, ok bool)",
+            "synopsis": "Extent returns the smallest and the largest X, and false for empty data."
+          },
+          {
+            "name": "Len",
+            "signature": "Len() int",
+            "synopsis": "Len returns the number of points."
+          }
+        ]
+      },
+      "Func": {
+        "synopsis": "Func is a function plotted as a series, the counterpart of Swift Charts' LinePlot of a function: the chart evaluates it once a pixel column, so it costs the same at any zoom.",
+        "decl": "type Func func(x float64) float64",
+        "constructors": [],
+        "methods": []
+      },
+      "Interpolation": {
+        "synopsis": "Interpolation is how a line or an area runs from one point to the next.",
+        "decl": "type Interpolation uint8",
+        "constructors": [],
+        "methods": []
+      },
+      "LineMark": {
+        "synopsis": "LineMark draws a series as a line, the counterpart of Swift Charts' LineMark.",
+        "decl": "type LineMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Line",
+            "signature": "Line(s Series) LineMark",
+            "synopsis": "Line returns a line through the points of s."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) LineMark",
+            "synopsis": "Color sets the colour; by default each series takes the next colour of the chart's palette, the accent colour first."
+          },
+          {
+            "name": "Dash",
+            "signature": "Dash(on, off float32) LineMark",
+            "synopsis": "Dash draws the line in dashes on pixels long with off pixels between them, for a forecast, a target, a series that is less certain."
+          },
+          {
+            "name": "Interpolation",
+            "signature": "Interpolation(i Interpolation) LineMark",
+            "synopsis": "Interpolation sets how the line runs between points; the default is Linear."
+          },
+          {
+            "name": "MaxGap",
+            "signature": "MaxGap(dx float64) LineMark",
+            "synopsis": "MaxGap breaks the line between two points that are further apart than dx, for a series whose missing values are left out rather than written as NaN: a recording that stopped at night."
+          },
+          {
+            "name": "MaxGapDuration",
+            "signature": "MaxGapDuration(d time.Duration) LineMark",
+            "synopsis": "MaxGapDuration is LineMark.MaxGap on a time axis."
+          },
+          {
+            "name": "Name",
+            "signature": "Name(s string) LineMark",
+            "synopsis": "Name names the series in the legend and in the inspection."
+          },
+          {
+            "name": "Symbols",
+            "signature": "Symbols(b bool) LineMark",
+            "synopsis": "Symbols draws a dot on every point when the points are far enough apart to tell them apart, as Swift Charts' symbol modifier does."
+          },
+          {
+            "name": "Width",
+            "signature": "Width(px float32) LineMark",
+            "synopsis": "Width sets the width of the line in logical pixels; the default is 2."
+          }
+        ]
+      },
+      "Mark": {
+        "synopsis": "Mark is what a chart draws: a LineMark, AreaMark, BarMark, ScatterMark, RuleMark or BandMark, the building blocks of Swift Charts.",
+        "decl": "type Mark interface {\n\n}// contains filtered or unexported methods\n",
+        "constructors": [],
+        "methods": []
+      },
+      "Point": {
+        "synopsis": "Point is one value of a series: Y at X. A Y that is NaN or infinite is a missing value, where a line breaks; see Missing.",
+        "decl": "type Point struct{ X, Y float64 }",
+        "constructors": [],
+        "methods": []
+      },
+      "Request": {
+        "synopsis": "Request is what a chart asks a Source for: the points between From and To, and how many pixel columns it has across them.",
+        "decl": "type Request struct {\n\tFrom, To float64\n\tBuckets  int\n}",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "FromTime",
+            "signature": "FromTime() time.Time",
+            "synopsis": "FromTime and ToTime are From and To on a time axis."
+          },
+          {
+            "name": "ToTime",
+            "signature": "ToTime() time.Time",
+            "synopsis": "ToTime is To on a time axis; see Request.FromTime."
+          }
+        ]
+      },
+      "RuleMark": {
+        "synopsis": "RuleMark is a line across the whole plot at one value, the counterpart of Swift Charts' RuleMark: a limit, a target, the moment something happened.",
+        "decl": "type RuleMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "RuleTime",
+            "signature": "RuleTime(t time.Time) RuleMark",
+            "synopsis": "RuleTime returns a vertical line at t, on a time axis."
+          },
+          {
+            "name": "RuleX",
+            "signature": "RuleX(x float64) RuleMark",
+            "synopsis": "RuleX returns a vertical line at x."
+          },
+          {
+            "name": "RuleY",
+            "signature": "RuleY(y float64) RuleMark",
+            "synopsis": "RuleY returns a horizontal line at y."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) RuleMark",
+            "synopsis": "Color sets the colour; the default is that of secondary text."
+          },
+          {
+            "name": "Dash",
+            "signature": "Dash(on, off float32) RuleMark",
+            "synopsis": "Dash draws the line in dashes; see LineMark.Dash."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) RuleMark",
+            "synopsis": "Label sets a text at the end of the line."
+          },
+          {
+            "name": "Width",
+            "signature": "Width(px float32) RuleMark",
+            "synopsis": "Width sets the width of the line; the default is 1."
+          }
+        ]
+      },
+      "ScatterMark": {
+        "synopsis": "ScatterMark draws a dot on every point, the counterpart of Swift Charts' PointMark.",
+        "decl": "type ScatterMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Scatter",
+            "signature": "Scatter(s Series) ScatterMark",
+            "synopsis": "Scatter returns a dot for every point of s."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) ScatterMark",
+            "synopsis": "Color sets the colour; see LineMark.Color."
+          },
+          {
+            "name": "Name",
+            "signature": "Name(s string) ScatterMark",
+            "synopsis": "Name names the series in the legend and in the inspection."
+          },
+          {
+            "name": "Size",
+            "signature": "Size(px float32) ScatterMark",
+            "synopsis": "Size sets the diameter of the dots; the default is 7."
+          }
+        ]
+      },
+      "Series": {
+        "synopsis": "Series is the data of a mark: a *Data in memory, a *Source that is asked for what the chart shows, or a Func.",
+        "decl": "type Series interface {\n\n}// contains filtered or unexported methods\n",
+        "constructors": [],
+        "methods": []
+      },
+      "Source": {
+        "synopsis": "Source is a series that is too large to hold, or that lives elsewhere: a column of a time series database, a log on disk, a service.",
+        "decl": "type Source struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "NewSource",
+            "signature": "NewSource(cfg SourceConfig) *Source",
+            "synopsis": "NewSource returns a source of the points of cfg."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Refresh",
+            "signature": "Refresh()",
+            "synopsis": "Refresh makes the charts that show s ask for its extent and its points again, after new points have arrived."
+          }
+        ]
+      },
+      "SourceConfig": {
+        "synopsis": "SourceConfig says where a Source gets its points.",
+        "decl": "type SourceConfig struct {\n\tExtent func(ctx context.Context) (lo, hi float64, err error)\n\tPoints func(ctx context.Context, r Request) (iter.Seq[Point], error)\n\tTime   bool\n}",
+        "constructors": [],
+        "methods": []
+      }
+    },
+    "funcs": [
+      {
+        "name": "M4",
+        "signature": "M4(points iter.Seq[Point], lo, hi float64, buckets int) iter.Seq[Point]",
+        "synopsis": "M4 reduces points, ascending in X, to what a line chart of buckets pixel columns between lo and hi can show: for every column the first and the last point, and the ones with the smallest and the largest value, in order."
+      },
+      {
+        "name": "Missing",
+        "signature": "Missing(y float64) bool",
+        "synopsis": "Missing reports whether y is a missing value: NaN or infinite."
+      },
+      {
+        "name": "Seconds",
+        "signature": "Seconds(t time.Time) float64",
+        "synopsis": "Seconds is t as an X of a time axis: seconds since the Unix epoch, with the fraction."
+      },
+      {
+        "name": "Time",
+        "signature": "Time(x float64) time.Time",
+        "synopsis": "Time is the inverse of Seconds."
+      }
+    ]
+  },
   "dwd": {
     "importPath": "github.com/worldiety/gift/weather/dwd",
     "synopsis": "Package dwd is the weather of the Deutscher Wetterdienst behind the seam of package weather: the ICON-D2 model, 2.2 km over Germany and its neighbours, from the open data server, free for any use with the source named.",

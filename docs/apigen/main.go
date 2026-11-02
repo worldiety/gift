@@ -38,6 +38,7 @@ var packages = []string{
 	"ui/imageviewer",
 	"ui/motion",
 	"ui/maps",
+	"ui/charts",
 	"ui/typstview",
 	"ui/syntax",
 	"typst",

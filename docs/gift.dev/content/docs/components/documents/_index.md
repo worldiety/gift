@@ -1,6 +1,6 @@
 ---
 title: Documents
-weight: 8
+weight: 9
 ---
 
 Document components show and edit paged documents: letters, offers, invoices, reports with tables. The pages are

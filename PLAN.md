@@ -3975,6 +3975,62 @@ eine AUMID, die Windows aufloesen kann:
   Beispielprogramme werden auf dem Mac gebaut (`GOOS=windows`).
 - Reihenfolge: gemeinsame Vorarbeit und macOS zuerst, dann Windows.
 
+## 44. Charts nach Swift Charts, mit Luecken, Zoom und M4
+
+Anlass (02.11.2026): Diagramme nach dem Vorbild von Swift Charts, mit
+fehlenden Werten, an denen eine Linie nicht durchgezogen wird, mit Drill-down
+(Zoom), und geschuetzt gegen zu viele Punkte; Vorbild fuer Letzteres sind die
+Iterator-API und der M4-Algorithmus von nago (`pkg/ndb/tsdb`,
+`pkg/timeseries`). Paket `ui/charts`.
+
+- Marks wie Swift Charts: `Line`, `Area`, `Bar`, `Scatter` (PointMark),
+  `RuleY`/`RuleX`, `BandY`/`BandX` (RectangleMark ueber den ganzen Plot);
+  `ChartView` mit Domains, Titeln, Formaten, `Categories`, `TimeAxis`,
+  Legende, Inspektion, `Visible`/`OnVisibleChange` fuer gekoppelte Charts.
+  Swift Charts kennt weder Luecken noch Pinch-Zoom; beides ist hier dazu.
+- Fehlende Werte sind NaN oder Inf (wie in nago), dazu `MaxGap` fuer Daten,
+  die fehlende Werte weglassen. Ein einzelner Wert zwischen zwei Luecken wird
+  ein Punkt.
+- M4 mit Luecken: pro Pixelspalte erster, letzter, kleinster, groesster Wert;
+  eine Spalte mit fehlenden Werten liefert den Lauf davor, einen Bruch, die
+  Extreme dazwischen, einen Bruch und den Lauf danach, hoechstens zwoelf
+  Punkte. nagos M4 vergleicht NA-Werte wie Zahlen und verliert sie. `M4` ist
+  exportiert, damit eine Quelle es dort laufen laesst, wo die Punkte liegen.
+- Schutz gegen zu viele Punkte, je nach Herkunft:
+  - `Data` (Speicher) haelt einen Segmentbaum ueber Blaetter von 64 Punkten
+    mit den Indizes von Minimum und Maximum und die Liste der fehlenden
+    Werte: hoechstens ein halbes Byte je Punkt, M4 jeder Spanne in
+    O(Breite · log n); 10 Mio. Punkte auf 1600 Spalten in 1,4 ms auf M1,
+    ohne Allokation. Das Ergebnis ist bit-gleich zum Streaming-M4 (Test).
+  - `Source` (Datenbank) laeuft auf eigener Goroutine; der Chart reduziert
+    beim Eintreffen mit konstantem Speicher, hat hoechstens eine Anfrage
+    offen, bricht ueberholte ab (auch bei Quellen, die ctx ignorieren),
+    holt eine halbe Breite Vorrat je Seite und zeigt bis zur Antwort das
+    Alte. Panics der Quelle werden zur Fehlermeldung im Chart; eine
+    fehlgeschlagene Anfrage wird erst wiederholt, wenn etwas anderes
+    gebraucht wird.
+  - `Func` wird einmal je Spalte ausgewertet.
+  - `Budget` (200.000) begrenzt alle Marks zusammen; viele Serien werden
+    groeber statt mehr.
+  - Absurde Werte (1e300) werden vor float32 begrenzt und geclippt.
+- Zoom: Pinch, Doppeltipp, Mausbereich (Brush), Strg/Cmd+Rad,
+  Trackpad seitwaerts, Finger-Pan mit Schwung im gezoomten Zustand,
+  Pfeile, +/-, 0/Home, Reset-Knopf. Ohne Zoom geht ein vertikaler Finger
+  und das Rad ohne Taste an den Scroll-Container weiter. Die y-Achse passt
+  sich dem Sichtbaren an und gleitet (Feder).
+- Das Layout haengt an der Zeit (animierter Bereich); es wird ueber den
+  Timer des Plot-Knotens weitergetrieben, nicht ueber RequestLayout je
+  Frame, damit ein Frame zur selben Zeit nichts auslegt (sonst kommt
+  gifttest.Settle nie zur Ruhe). Weil ein Knoten nur einen Timer hat, liegen
+  die Gesten wie bei der Karte auf einem eigenen Kind.
+- Linien sind antialiasierte Dreiecke (`OpTriangles`, Federrand von einem
+  Geraetepixel), Gehrung bei sanften Knicken, verlaengerte Enden bei den
+  scharfen der M4-Spalten; Flaechenverlaeufe exakt als Farbe als lineare
+  Funktion der Hoehe je Vertex.
+
+Offen: gestapelte und gruppierte Balken, Sektoren (Pie), Annotationen an
+Marks, Zoom der y-Achse, Gesten-Inspektion mehrerer gekoppelter Charts.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb
