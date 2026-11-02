@@ -16,7 +16,8 @@ sink, and in there as its page shows it.
 
 A section of its own, System, follows the components with what is no component: the
 [notifications](../../concepts/notifications/) of the operating system, shown, replaced and withdrawn with the
-text you type, and a count of the clicks on them.
+text you type, and a count of the clicks on them; and an icon in the [menu bar or tray](../../concepts/tray/) with
+a menu of its own.
 
 ## What to try
 
@@ -34,6 +35,10 @@ text you type, and a count of the clicks on them.
 - **Notifications**: under System, *Show or replace* sends the text of the two fields to the notification center;
   showing it again replaces it, and a click on it counts. On macOS the kitchen sink has to run as an app bundle for
   that, see below; elsewhere the status line says why nothing appears.
+- **Tray**: under System, *Show or update* puts a star into the menu bar of macOS, the notification area of Windows
+  or the status area of the panel, with the tooltip from the field. Its menu has a check mark that moves when you
+  click it, a disabled entry and a submenu two levels deep; every click counts. Leaving the page takes the icon out
+  again. No app bundle is needed for it.
 
 ## Run it
 

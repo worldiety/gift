@@ -9686,6 +9686,11 @@
             "name": "IsZero",
             "signature": "IsZero() bool",
             "synopsis": "IsZero reports whether s carries no geometry."
+          },
+          {
+            "name": "Rasterize",
+            "signature": "Rasterize(px int) *image.Alpha",
+            "synopsis": "Rasterize returns the coverage mask of s at px by px device pixels, for a consumer outside the frame: the icon of gift/tray in the menu bar, which the operating system draws and not the GPU of this process."
           }
         ]
       },

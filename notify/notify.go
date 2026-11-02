@@ -42,9 +42,10 @@
 //
 //   - linux: the Desktop Notifications Specification over the session bus,
 //     which GNOME Shell, KDE Plasma, dunst, mako, xfce4-notifyd and others
-//     implement. The bus is reached by a D-Bus client of this package's own,
-//     in wire.go and conn.go, because there is no cgo-free one in the module
-//     graph; freedesktop.go is the notification protocol on top.
+//     implement. The bus is reached by a D-Bus client of gift's own, in
+//     internal/dbus, because there is no cgo-free one in the module graph
+//     that this project wanted to depend on; freedesktop.go is the
+//     notification protocol on top. gift/tray shares that client.
 //   - darwin: UNUserNotificationCenter through the Objective-C runtime, in
 //     platform_darwin.go. Only for an application that is an app bundle:
 //     macOS ends a process that asks for the notification centre without

@@ -73,7 +73,10 @@ gift/                       Modulwurzel, Package gift
     outline/                Eingebettete Icons, optional, siehe Abschnitt 21
     solid/                  Eingebettete Icons, optional, siehe Abschnitt 21
   clipboard/                Zwischenablage per purego, optional, Abschnitt 19
+  notify/                   Benachrichtigungen des Systems, Abschnitt 43
+  tray/                     Icon in Menueleiste und Infobereich, Abschnitt 47
   internal/
+    dbus/                   D-Bus ohne cgo, Client und Server, Abschnitte 43, 47
     scene/                  Indexierte retained Nodes und Handles
     layout/                 Layoutalgorithmen, Masonry-/Zeilenindex
     text/                   Shaping, Messung, Zeilenumbruch, Glyphenschluessel
@@ -101,6 +104,13 @@ Typ, den sie liefern oder registrieren, dort liegt; sie stehen damit
 von gift nennt sie, sie sind ausschliesslich ueber einen Side-Effect-Import
 oder eine ausdrueckliche Nennung durch die Anwendung erreichbar. Die Richtung
 der Abhaengigkeiten aus diesem Abschnitt bleibt dadurch unveraendert.
+
+`notify` und `tray` sind mit den Abschnitten 43 und 46 dazugekommen. Sie
+sprechen mit dem Betriebssystem, nicht mit dem Frame, und erreichen den
+UI-Executor nur ueber eine uebergebene `Post`-Funktion. `tray` importiert
+`ui` allein fuer `ui.Symbol` und steht damit wie `clipboard` oberhalb von
+`ui`; kein Paket innerhalb von gift nennt eines der beiden. Ihr
+gemeinsamer Unterbau fuer Linux ist `internal/dbus`.
 
 `internal/iconsvg` ist bewusst intern und wird nur vom Generator benutzt: es
 ist eine Teilmenge von SVG fuer genau einen Korpus und keine Zusage, SVG zu
@@ -3807,6 +3817,12 @@ Entschieden ist der eigene, weil der Bedarf klein ist: eine Verbindung,
 EXTERNAL-Authentifizierung ueber einen Unix-Socket, fuenf Aufrufe, zwei
 Signale.
 
+Nachtrag (02.11.2026): Wire-Format und Verbindung sind nach
+`internal/dbus` umgezogen, weil `tray` (Abschnitt 47) sie ebenfalls braucht,
+und haben dort eine Serverseite bekommen (`export.go`: exportierte Objekte,
+Properties, Introspection, Signale senden). In `notify` bleibt nur
+`freedesktop.go`. Die Dateinamen unten sind die von damals.
+
 - `wire.go`: alle Typen ausser UNIX_FD, beide Byte-Reihenfolgen beim Lesen,
   die Grenzen der Spezifikation (64 MiB je Array, 128 MiB je Nachricht,
   Tiefe 64). Getestet gegen von Hand ausgerechnete Byte-Layouts und gefuzzt.
@@ -3822,7 +3838,7 @@ Signale.
   `actions` gesendet. Ein Klick geht ueber `Config.Post` auf den
   UI-Executor.
 - Alles ausser dem Oeffnen des Sockets ist ohne Build-Tag und laeuft auf dem
-  Mac mit `go test ./notify/`, gegen einen Bus im Test ueber `net.Pipe`.
+  Mac mit `go test ./notify/ ./internal/dbus/`, gegen einen Bus im Test ueber `net.Pipe`.
 - Geprueft am 01.11.2026 in einem Container (Debian trixie, linux/arm64)
   mit `dbus-daemon` und dunst: Anzeigen, Ersetzen unter derselben Nummer,
   Klick per `dunstctl action` bis in OnClick, Zurueckziehen.
@@ -4145,6 +4161,172 @@ ASWebAuthenticationSession ueber purego/objc, Host-Bruecke fuer Android/iOS
 und wasm-Redirect, eingebettetes WebView (Windows zuerst). Der
 Linux-Pfad (Socket-Optionen, xdg-open) ist kompiliert, aber noch nicht auf
 einem Linux-Rechner gelaufen; der Pi war nicht erreichbar.
+
+## 47. Tray und Menueleiste
+
+Anlass (02.11.2026): ein Icon der Anwendung ausserhalb ihres Fensters, in
+der Menueleiste von macOS, im Infobereich der Windows-Taskleiste und im
+Statusbereich eines Linux-Panels, mit einem nativen Menue. Vorbild fuer
+Aufbau, Fehlerbild und Logging ist `notify` (Abschnitt 43); ein System ohne
+Tray tut nichts und meldet `ErrUnsupported`. Paket `tray`.
+
+### Der gemeinsame Nenner
+
+| Funktion | macOS | Windows | Linux (StatusNotifierItem) |
+|---|---|---|---|
+| Icon | NSStatusItem, Template-Bild | HICON, Shell_NotifyIconW | IconPixmap, ARGB32 |
+| Tooltip | toolTip des Buttons | szTip, 127 UTF-16-Einheiten | Property ToolTip |
+| Menuetext | NSMenuItem | MENUITEMINFOW, `&` als Mnemonic | dbusmenu `label`, `_` als Mnemonic |
+| Symbol im Eintrag | image (Template) | hbmpItem, 32-Bit-DIB | `icon-data` (PNG) |
+| Trennstrich | separatorItem | MFT_SEPARATOR | `type` "separator" |
+| deaktiviert | enabled | MFS_DISABLED | `enabled` false |
+| Haken | state | MFS_CHECKED | `toggle-type` "checkmark" |
+| Untermenues | submenu | hSubMenu | `children-display` "submenu" |
+| Tastenkuerzel | keyEquivalent | nur als Text hinter einem Tab | nicht verlaesslich |
+| Linksklick | oeffnet das Menue | NIN_SELECT, Bedeutung frei | Activate oder Menue (ItemIsMenu) |
+| Farbe des Icons | das System, Template | die Anwendung, je Taskleiste | die Anwendung, Panel unbekannt |
+
+`tray` verspricht alles bis auf die Tastenkuerzel, die es nur auf macOS
+gibt, und den Linksklick mit eigener Bedeutung: ein Klick, links oder
+rechts, oeffnet ueberall das Menue. Das Icon ist ein `ui.Symbol`, also eine
+Maske; macOS faerbt sie selbst, fuer Windows und Linux faerbt `tray`.
+
+### macOS: umgesetzt und geprueft (02.11.2026)
+
+- `tray/platform_darwin.go`: NSStatusItem und NSMenu ueber purego/objc,
+  dieselben Aufrufe wie ein AppKit-Programm. Ein Status-Item mit Menue
+  oeffnet es bei jedem Klick, eine eigene Behandlung des Icons gibt es
+  nicht.
+- AppKit nur auf dem Haupt-Thread, der Ebitengine gehoert: update und
+  remove bereiten in Go vor (Rastern, PNG), merken den gewuenschten Zustand
+  und reichen eine Funktion per `dispatch_async_f` an die Main-Queue; nie
+  `dispatch_sync`, weil Update im Single-Thread-Modus selbst auf dem
+  Haupt-Thread laeuft. Mehrere Aenderungen vor dem naechsten Durchlauf
+  werden zu einer. Genau ein purego-Callback fuer alle Trays.
+- Ohne NSApplication erscheint ein Status-Item nie. Gefragt wird nicht beim
+  Oeffnen, sondern bei jedem update ueber die globale Variable `NSApp`
+  (per dlsym, ohne `sharedApplication`, das eine App erzeugen wuerde): ein
+  Set vor `backend.Run` liefert `ErrUnsupported` und wird gezeigt, sobald
+  die Run-Loop laeuft. Ein Kommandozeilenprogramm und ein Testbinary
+  bekommen den Fehler. Kein Bundle, keine Signatur, anders als `notify`.
+- Klicks: Ziel ist ein Objekt der registrierten Klasse `GiftTrayTarget`
+  je Tray; der Tag eines Eintrags traegt ID und Generation, damit ein
+  Klick in einem ersetzten Menue verworfen wird. Der Klick geht auf einer
+  eigenen Goroutine an den portablen Teil, nie blockierend auf dem
+  Haupt-Thread.
+- Geprueft auf diesem Mac (macOS 27.2) mit
+  `GIFT_TRAY_MACOS=1 go test ./tray/ -run MacOS -v`: der Test startet eine
+  echte NSApplication (Accessory) auf dem Haupt-Thread, prueft Icon, Tooltip,
+  Eintraege, Haken, deaktivierte Eintraege, Trennstriche, Untermenues und
+  Template-Bilder am lebenden NSMenu und klickt ueber
+  `performActionForItemAtIndex:`, das die Aktion genau wie ein Mausklick
+  ausloest, bis in OnClick. `cmd/example-tray` startet und meldet
+  "tray ready". Ein Klick mit der Maus auf das Icon im Test ist nicht
+  automatisiert.
+
+### Windows: umgesetzt, nicht geprueft (02.11.2026)
+
+- `tray/platform_windows.go`: Shell_NotifyIconW mit NOTIFYICON_VERSION_4
+  und ein Win32-Popup-Menue ueber syscall und handgeschriebene Strukturen,
+  auf einem eigenen gesperrten Thread mit verstecktem Fenster und
+  Message-Loop, damit ein offenes Menue keine Frames anhaelt. Linksklick
+  (NIN_SELECT), Rechtsklick (WM_CONTEXTMENU) und Tastatur (NIN_KEYSELECT)
+  oeffnen das Menue.
+- Identitaet: eine aus der AppID abgeleitete GUID (UUID v5), unter der
+  Windows die Wahl "immer anzeigen" merkt; ein benannter Mutex verhindert,
+  dass zwei Prozesse dieselbe GUID benutzen. Windows bindet die GUID an den
+  Pfad des Programms; ein anderer Pfad bekommt ein Icon ohne GUID, mit
+  Logeintrag.
+- Farbe des Icons: weiss, schwarz bei heller Taskleiste
+  (`SystemUsesLightTheme`), neu bei `WM_SETTINGCHANGE` "ImmersiveColorSet".
+  Nach einem Neustart des Explorers ("TaskbarCreated") wird das Icon neu
+  angelegt; ein abgelehntes NIM_ADD wird mit wachsendem Abstand bis 30 s
+  wiederholt.
+- `tray/winlogic.go` ohne Build-Tag (GUID, Kuerzen des Tooltips ohne
+  halbes Surrogat-Paar, `&` im Menuetext, Pixelformate, Wiederholungen)
+  laeuft in jedem `go test`. `tray_windows_test.go` haelt Groessen und
+  Offsets der Strukturen fuer 64 und 32 Bit fest.
+- Nur mit `GOOS=windows` gebaut und gevettet, nie ausgefuehrt.
+  `GIFT_TRAY_WINDOWS=1 go test ./tray/ -run WindowsTray -v` (mit
+  `GIFT_TRAY_CLICK` fuer einen Klick von Hand) und `example-tray.exe` sind
+  auf einem echten Windows 11 offen, ebenso Explorer-Neustart, helle
+  Taskleiste und DPI.
+
+### Linux: umgesetzt, gegen dbus-daemon geprueft (02.11.2026)
+
+- `tray/sni.go` und `tray/dbusmenu.go`, ohne Build-Tag wie
+  `notify/freedesktop.go`: ein StatusNotifierItem unter
+  `org.kde.StatusNotifierItem-<pid>-<n>` (bei belegtem oder verbotenem
+  Namen der eindeutige Name der Verbindung, wie libappindicator) mit einem
+  `com.canonical.dbusmenu`-Menue, Version 3. `ItemIsMenu` ist true, damit
+  auch der Linksklick das Menue oeffnet. IconPixmap in 16 bis 48 Pixeln,
+  fast weisse Glyphe mit dunklem Rand, weil die Farbe des Panels nicht zu
+  erfragen ist; Symbole im Menue mittelgrau als PNG.
+- Ohne StatusNotifierWatcher ist das kein Fehler, sondern "noch nicht": das
+  Item wird angelegt, einmal gewarnt (mit Hinweis auf die
+  AppIndicator-Erweiterung) und bei NameOwnerChanged registriert. Das deckt
+  ein Panel ab, das nach der Anwendung startet oder neu gestartet wird.
+  GNOME ohne Erweiterung und ein Kiosk ohne Panel bleiben bei der Warnung.
+  Ohne Session-Bus `ErrUnsupported`.
+- Eine eigene Verbindung je Tray, nicht die von `notify`: der Busname
+  gehoert der Verbindung, die ihn anfordert.
+- Getestet auf dem Mac mit `go test ./tray/` gegen einen Bus im Test, der
+  jede Nachricht durch das Wire-Format schickt (`sni_test.go`).
+- Geprueft in einem Docker-Container gegen einen echten `dbus-daemon`
+  (`dbus-run-session -- env GIFT_TRAY_DBUS=1 go test ./tray/ -run DBus -v`):
+  die Anwendung startet vor dem Watcher, Watcher und Host spielt der Test
+  auf eigenen Verbindungen, Registrierung, Properties, GetLayout, Klick
+  auf Quit bis in OnClick. Ein echtes Panel (Plasma, GNOME mit
+  Erweiterung, waybar) hat das Icon noch nicht gezeichnet.
+
+### Entscheidungen
+
+- Das Menue ist ein Wert: `Set` ersetzt es ganz, es gibt keine Handles auf
+  einzelne Eintraege. Ein Haken wandert, indem die Anwendung die Liste neu
+  baut und neu setzt, wie eine View neu gebaut wird. Ein Klick in einem
+  ersetzten Menue wird verworfen (Generation), auch nach einem Set mit
+  denselben Eintraegen, auf allen drei Systemen gleich (unter Linux neue
+  IDs und LayoutUpdated); `SetIcon` und `SetTooltip` reichen das Menue des
+  letzten Set unveraendert weiter (`sameMenu`, Identitaet des Slices),
+  damit ein offenes Menue bei einem tickenden Tooltip nicht taub wird.
+- `Set` lehnt ein Menue ohne einen Eintrag ausser Trennstrichen ab: ein
+  Klick auf das Icon oeffnete sonst nichts, und was dann geschieht, waere
+  je System verschieden.
+- "Noch nicht bereit" meldet nur macOS vor der Run-Loop als
+  `ErrUnsupported`. Windows ohne Taskleiste und Linux ohne Watcher liefern
+  nil und loggen das einmal selbst: beides ist auf der Goroutine des
+  Aufrufers nicht ohne Rundreise zum System zu erfahren.
+- Kein `Close`: ein Tray lebt so lange wie der Prozess (Windows: Thread,
+  Fenster, Mutex; Linux: Verbindung und zwei Goroutinen). Eines je Icon,
+  einmal beim Start; so steht es in der Paketdokumentation.
+- Jeder Peer am Session-Bus kann das Item und sein Menue aufrufen. Darum:
+  eine Nachricht, die sich nicht dekodieren laesst (etwa mit UNIX_FD),
+  wird von `internal/dbus` uebersprungen und mit InvalidArgs beantwortet,
+  statt die Verbindung zu beenden; Tray und notify dekodieren hoechstens
+  1 MiB je Nachricht (`SetReceiveLimit`); GetGroupProperties beantwortet
+  jede ID einmal, hoechstens 64 Property-Namen; EventGroup nimmt hoechstens
+  `MaxItems`+1 Ereignisse und reicht einen Klick weiter; Klicks laufen
+  ueber eine kleine Warteschlange statt je eine Goroutine; NameOwnerChanged
+  zaehlt nur vom Bus selbst (Sender `org.freedesktop.DBus`), und der
+  Signal-Handler steht vor AddMatch, damit ein Watcher, der waehrend des
+  Anlegens erscheint, nicht verloren geht.
+- Als Icon nur `ui.Symbol`, keine Bilddatei und keine Farbe: eine Maske
+  passt auf jede Leiste, macOS braucht ohnehin ein Template-Bild, und
+  Linux-Panels faerben Pixmaps nicht. Dafuer `ui.Symbol.Rasterize`, das die
+  Maske ausserhalb des Frames in Geraetepixeln liefert.
+- Der Linksklick oeffnet ueberall das Menue. Eine eigene Aktion fuer den
+  Linksklick gibt es auf macOS nur ohne Menue und unter Linux nur, wenn der
+  Host Activate ruft; ein Versprechen darauf waere auf einem der Systeme
+  falsch.
+- Untermenues bis `MaxDepth` 4 (oberste Ebene und drei darunter), hoechstens
+  `MaxItems` 1024 Eintraege, Titel bis 256 Bytes. Ein laengeres Menue gehoert
+  ins Fenster.
+- `internal/dbus` ist von `notify` abgespalten und um die Serverseite
+  erweitert: ein Panel ruft die Anwendung an, um Icon und Menue zu lesen
+  und Klicks zu melden. Intern, weil seine API von seinen zwei Nutzern
+  geformt ist; weiterhin kein godbus.
+- Kein Tray-Ersatz fuer Benachrichtigungen (Sprechblase `NIF_INFO`), keine
+  Badges, keine Radiogruppen, keine Tastenkuerzel.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

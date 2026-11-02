@@ -11,7 +11,8 @@
 // the documentation are drawn from, so a component that is documented is in
 // here, and in here as the page shows it. A section of its own after them
 // shows what is no component: the notifications of the operating system,
-// see notifications.go. Above the list sit a search field,
+// see notifications.go, and an icon with a menu in its menu bar or tray, see
+// tray.go. Above the list sit a search field,
 // a switch for the on-screen keyboard of a kiosk and one for the dark
 // appearance, which switches the whole window without a colour being passed
 // down anywhere.

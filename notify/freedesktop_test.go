@@ -4,6 +4,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/worldiety/gift/internal/dbus"
 )
 
 // The notification protocol is tested against a server that lives in the
@@ -23,7 +25,7 @@ type fakeServer struct {
 	calls   []call
 }
 
-func (s *fakeServer) call(dest string, path objectPath, iface, member string, sig signature, args ...any) ([]any, error) {
+func (s *fakeServer) Call(dest string, path dbus.ObjectPath, iface, member string, sig dbus.Signature, args ...any) ([]any, error) {
 	s.calls = append(s.calls, call{member, args})
 	switch member {
 	case "AddMatch", "CloseNotification":
@@ -64,8 +66,8 @@ func newTestFreedesktop(t *testing.T, caps ...any) (*freedesktop, *fakeServer, *
 	return f, s, &posted
 }
 
-func signalMsg(member, sig string, body ...any) *message {
-	return &message{typ: msgSignal, path: notifyPath, iface: notifyInterface, member: member, sig: signature(sig), body: body}
+func signalMsg(member, sig string, body ...any) *dbus.Message {
+	return &dbus.Message{Type: dbus.TypeSignal, Path: notifyPath, Interface: notifyInterface, Member: member, Sig: dbus.Signature(sig), Body: body}
 }
 
 func TestOpeningSubscribesBeforeItAsks(t *testing.T) {
@@ -76,7 +78,7 @@ func TestOpeningSubscribesBeforeItAsks(t *testing.T) {
 }
 
 func TestNoServerIsUnsupported(t *testing.T) {
-	s := &fakeServer{capsErr: &busError{name: "org.freedesktop.DBus.Error.ServiceUnknown"}}
+	s := &fakeServer{capsErr: &dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown"}}
 	_, err := newFreedesktop(s, openConfig{})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("error %v, want ErrUnsupported", err)
@@ -90,7 +92,7 @@ func TestNotifySendsWhatTheSpecificationAsksFor(t *testing.T) {
 	}
 	want := []any{"Photos", uint32(0), "", "Import finished", "1 024 pictures",
 		[]string{"default", ""},
-		[]dictEntry{{key: "desktop-entry", value: variant{sig: "s", value: "com.example.Photos"}}},
+		[]dbus.DictEntry{{Key: "desktop-entry", Value: dbus.Variant{Sig: "s", Value: "com.example.Photos"}}},
 		int32(-1)}
 	if got := s.last("Notify"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Notify\n got %#v\nwant %#v", got, want)
