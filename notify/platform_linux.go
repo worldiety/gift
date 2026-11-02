@@ -36,6 +36,7 @@ func openPlatform(cfg openConfig) (platform, error) {
 		c.Close()
 		return nil, err
 	}
+	f.raise = newRaiser(cfg.log)
 	c.SetSignalHandler(f.signal)
 	return f, nil
 }
