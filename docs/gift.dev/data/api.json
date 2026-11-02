@@ -5512,6 +5512,89 @@
       }
     ]
   },
+  "svg": {
+    "importPath": "github.com/worldiety/gift/ui/svg",
+    "synopsis": "Package svg draws SVG documents: the common subset that drawing programs and icon sets write, sharp at any size.",
+    "types": {
+      "Image": {
+        "synopsis": "Image is a parsed SVG document, ready to be drawn at any size.",
+        "decl": "type Image struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Parse",
+            "signature": "Parse(src []byte) (*Image, error)",
+            "synopsis": "Parse reads an SVG document."
+          },
+          {
+            "name": "ParseFile",
+            "signature": "ParseFile(path string) (*Image, error)",
+            "synopsis": "ParseFile reads the SVG document in the file at path."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Rasterize",
+            "signature": "Rasterize(w, h int) *image.RGBA",
+            "synopsis": "Rasterize draws the document into a new picture of w by h pixels, the viewBox fitted as preserveAspectRatio says."
+          },
+          {
+            "name": "RasterizeTinted",
+            "signature": "RasterizeTinted(w, h int, r, g, b, a float64) *image.RGBA",
+            "synopsis": "RasterizeTinted is Image.Rasterize with every paint replaced by tint, keeping its opacity: a monochrome icon in the colour of the text, the way SwiftUI's template rendering mode draws it."
+          },
+          {
+            "name": "Size",
+            "signature": "Size() (w, h float64)",
+            "synopsis": "Size returns the size the document asks for, in logical pixels: its width and height, or those of its viewBox, or 300 by 150, as a browser takes it."
+          },
+          {
+            "name": "Skipped",
+            "signature": "Skipped() []string",
+            "synopsis": "Skipped returns what the document has that is not drawn, each name once: elements such as text or filter, and attributes such as an even-odd fill whose contours cross."
+          }
+        ]
+      },
+      "ImageView": {
+        "synopsis": "ImageView shows an SVG document.",
+        "decl": "type ImageView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "View",
+            "signature": "View(im *Image) ImageView",
+            "synopsis": "View returns a view of im, the counterpart of SwiftUI's Image of a vector asset: as large as the document asks for and no larger than there is room, the document fitted into it as its preserveAspectRatio says."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) ImageView",
+            "synopsis": "Flex sets the flex factor in a stack; a flexible view takes the room it is given and fits the document into it."
+          },
+          {
+            "name": "Frame",
+            "signature": "Frame(w, h float32) ImageView",
+            "synopsis": "Frame sets the size; a zero width or height is the one the document's aspect gives it."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) ImageView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) ImageView",
+            "synopsis": "Label sets the accessible name."
+          },
+          {
+            "name": "Tint",
+            "signature": "Tint(c ui.Color) ImageView",
+            "synopsis": "Tint draws the document in one colour, keeping its opacity, the way SwiftUI's template rendering mode draws an icon: in the colour of the text around it, say."
+          }
+        ]
+      }
+    },
+    "funcs": []
+  },
   "syntax": {
     "importPath": "github.com/worldiety/gift/ui/syntax",
     "synopsis": "Package syntax colours source code for ui.CodeEditor.",

@@ -220,6 +220,19 @@ HEVC in software or, with `HW`, in hardware. Try it with
 
 <img src="docs/screenshots/video.png" alt="A video with round play, back and forward buttons, a volume slider and an open audio track menu, captured on a Raspberry Pi 5 at 800x480" width="600">
 
+### SVG
+
+`ui/svg` draws SVG documents: paths and shapes, groups and `use`, colours,
+gradients, strokes with joins, caps and dashes, transforms and clip paths,
+the subset drawing programs and icon sets write. A picture is rasterised at
+the resolution of the screen, a large one on a goroutine, and an icon can be
+tinted like text.
+
+```go
+logo, err := svg.ParseFile("logo.svg") // github.com/worldiety/gift/ui/svg
+return svg.View(logo).Frame(120, 0)
+```
+
 ### Charts
 
 `ui/charts` draws charts after Swift Charts: lines, areas, bars, dots, rules,

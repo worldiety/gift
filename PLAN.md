@@ -4059,6 +4059,47 @@ Offen: Beschriftungen an beliebigen Marks ueber eine eigene View (Swift
 erlaubt beliebige Views als Annotation), Achsen mit logarithmischer
 Skala, eine zweite y-Achse.
 
+## 45. SVG-Bilder
+
+Anlass (02.11.2026): eine Komponente, die SVG-Dateien zeigt, mit einem leicht
+erreichbaren Subset der ueblichen Grundfunktionen; Testbild ist der
+Ghostscript-Tiger. Paket `ui/svg`.
+
+- Der Tiger steht unter AGPL-3.0, gift unter BSD-2: er wird nicht
+  eingecheckt, weder als Datei noch als Golden oder Screenshot. Getestet
+  wird mit ihm lokal (240 Pfade, alles gezeichnet, nichts uebersprungen),
+  eingecheckt sind eigene Testbilder.
+- Swift: SwiftUI zeigt SVG nur aus dem Asset-Katalog (Xcode bewahrt die
+  Vektordaten); eine zur Laufzeit gelesene Datei zeichnet es nicht, dafuer
+  nimmt man WKWebView oder Bibliotheken wie SVGKit oder exyte/SVGView.
+- Lesen mit `encoding/xml`, Elemente fremder Namensraeume (Inkscape)
+  fallen mit ihrem Inhalt weg. Die Pfaddaten liest `iconsvg.ParsePathData`
+  des Icon-Generators, mit seinen Boegen und Kurzformen; Even-Odd loest
+  dessen `Orient` beim Lesen, exakt fuer Konturen, die sich nicht kreuzen.
+  Abschnitt 21 haelt den SVG-Parser aus dem Frame-Pfad; das bleibt so: hier
+  wird einmal beim Laden geparst, im Frame nur ein fertiges Raster gezeigt.
+- Gezeichnet: path, rect (rx/ry), circle, ellipse, line, polyline, polygon,
+  g, svg, use (Element oder symbol), defs; Farben (hex, rgb(), CSS-Namen,
+  currentColor), Opazitaeten, lineare und radiale Verlaeufe (Units,
+  Transform, Spread, href-Vererbung), Striche mit Joins, Caps, Miterlimit,
+  Dash; transform, opacity (in die Kinder multipliziert), display,
+  visibility, clip-path (userSpaceOnUse), style-Attribut,
+  preserveAspectRatio. Ausgelassen und in `Skipped` gemeldet: text, image,
+  filter, mask, pattern, Stylesheets.
+- Raster auf der CPU mit `x/image/vector` (Abdeckung, Nonzero) je Form im
+  Begrenzungsrechteck, selbst gemischt mit Farbe oder Verlauf, Opazitaet und
+  Clip-Masken; Striche als Vereinigung gleich orientierter Stempel wie in
+  internal/icon, damit halbtransparente Striche keine Naehte haben.
+  Haarlinien unter einem Viertelpixel werden blasser statt duenner.
+- Die View rastert in Geraetepixeln; bis 160x160 sofort, groessere auf
+  einer Goroutine (Token des Komponentenzustands), bis dahin das alte Raster
+  skaliert. Jedes Image haelt seine letzten vier Raster, damit dasselbe Icon
+  in jeder Zeile einer Liste einmal gerastert wird. `Tint` wie SwiftUIs
+  Template-Modus. Tiger: 29 ms bei 900x900, 4 ms bei 300x300 auf M1.
+
+Offen: Text (ueber gifts Glyphen), Stylesheets mit Klassen-Selektoren,
+Masken, Muster, Gruppenopazitaet ueber eine eigene Ebene.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

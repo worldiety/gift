@@ -39,6 +39,7 @@ var packages = []string{
 	"ui/motion",
 	"ui/maps",
 	"ui/charts",
+	"ui/svg",
 	"ui/typstview",
 	"ui/syntax",
 	"typst",
