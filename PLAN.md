@@ -4328,6 +4328,33 @@ Maske; macOS faerbt sie selbst, fuer Windows und Linux faerbt `tray`.
 - Kein Tray-Ersatz fuer Benachrichtigungen (Sprechblase `NIF_INFO`), keine
   Badges, keine Radiogruppen, keine Tastenkuerzel.
 
+## 47. DisclosureGroup und Akkordeon
+
+Anlass (02.11.2026): SwiftUIs DisclosureGroup fehlte, ebenso ein Akkordeon.
+
+- `ui.DisclosureGroup(title, content...)`: das Label ist eine `ui.Row`
+  (Icon, Subtitle, Value, Leading durchgereicht), damit die Gruppe in
+  `List` und `Card` wie eine Zeile wirkt, mit deren Hover, Druck, Fokus und
+  Tastatur. Der Chevron (gemalt wie im Kalender, kein Icon-Paket in ui)
+  zeigt geschlossen nach rechts und dreht sich beim Oeffnen nach unten, in
+  Akzentfarbe wie in SwiftUI unter iOS.
+- Ohne `Expanded` merkt sich die Gruppe den Zustand selbst (Start zu), mit
+  `Expanded(open, onChange)` gehoert er der App, wie isExpanded.
+- Animation 220 ms (Smoothstep) als behaltener Zustand mit gifts Uhr: die
+  Inhaltsebene clippt Malen und Eingabe auf die sichtbare Hoehe und laeuft
+  ueber `After` plus Timer-Ereignis, nicht ueber RequestLayout, damit
+  `Settle` bei stehender Uhr endet. Kein Build pro Frame.
+- Inhalt wie in SwiftUI erst beim Oeffnen gebaut und nach dem Schliessen
+  aus dem Baum genommen (`RequestBuild` am Ende der Bewegung): eine
+  geschlossene Gruppe kostet nur ihr Label, Zustand im Inhalt beginnt neu.
+  Einzug standardmaessig bis zum Titel (mit Icon: Icon plus Abstand).
+- `ui.Accordion(groups...)`: eine `List`, in der hoechstens eine Gruppe
+  offen ist; ohne `Open` mit eigenem Zustand, mit `Open(i, onChange)` der
+  App. SwiftUI hat kein Akkordeon, man baut es aus geteiltem isExpanded.
+
+Offen: die Liste blendet Trennlinien um eine gedrueckte Gruppenzeile nicht
+aus, weil sie nur ihre direkten Kinder fragt.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

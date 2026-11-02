@@ -258,6 +258,19 @@ var views = []struct {
 			"ordinary HStack handed to ui.List, which takes any view at all.",
 	},
 	{
+		name: "ui.DisclosureGroup", set: setMinimal, v: ui.DisclosureGroup("x"),
+		why: "its label is a ui.Row and takes a row's options, for the reason ui.Row has no " +
+			"box modifiers; the content is the caller's views, styled as the caller likes.",
+	},
+	{
+		name: "ui.Accordion", set: setMinimal, v: ui.Accordion(),
+		why: "an accordion is a ui.List of disclosure groups; it forwards the list's Frame " +
+			"and separators, and a styled box around it is a ui.Card.",
+	},
+	{name: "ui.disclosureBody", set: setInternal, why: "the label and the content of a ui.DisclosureGroup, which carries its settings"},
+	{name: "ui.disclosureContent", set: setInternal, why: "the clip that reveals the content of a ui.DisclosureGroup"},
+	{name: "ui.disclosureChevron", set: setInternal, why: "the turning chevron of a ui.DisclosureGroup"},
+	{
 		name: "ui.Section", set: setMinimal, v: ui.Section("x"),
 		why: "a section header is one caption with the inset and the type size that make " +
 			"it read as a header; it is also the value ui.List recognises when it decides " +

@@ -6236,6 +6236,49 @@
     "importPath": "github.com/worldiety/gift/ui",
     "synopsis": "Package ui is the public view layer of gift.",
     "types": {
+      "AccordionView": {
+        "synopsis": "AccordionView is a list of disclosure groups of which at most one is open: opening one closes the one that was.",
+        "decl": "type AccordionView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Accordion",
+            "signature": "Accordion(groups ...DisclosureGroupView) AccordionView",
+            "synopsis": "Accordion returns the groups as a ListView in which at most one is open, the accordion of the web, which SwiftUI builds from DisclosureGroups and a shared isExpanded."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) AccordionView",
+            "synopsis": "Flex sets the flex factor in a stack."
+          },
+          {
+            "name": "Frame",
+            "signature": "Frame(w, h float32) AccordionView",
+            "synopsis": "Frame sets the size of the list; see ListView.Frame."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) AccordionView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Open",
+            "signature": "Open(i int, onChange func(int)) AccordionView",
+            "synopsis": "Open makes the application own which group is open: the one at index i, none for -1."
+          },
+          {
+            "name": "SeparatorInsets",
+            "signature": "SeparatorInsets(leading, trailing float32) AccordionView",
+            "synopsis": "SeparatorInsets sets the insets of the separators between the groups; see ListView.SeparatorInsets."
+          },
+          {
+            "name": "Separators",
+            "signature": "Separators(on bool) AccordionView",
+            "synopsis": "Separators turns the separators between the groups on or off; see ListView.Separators."
+          }
+        ]
+      },
       "AlertButton": {
         "synopsis": "AlertButton is one choice in an AlertView.",
         "decl": "type AlertButton struct {\n\t// Has unexported fields.\n}",
@@ -7317,6 +7360,69 @@
             "name": "Value",
             "signature": "Value(d Date) DateWheelView",
             "synopsis": "Value sets the date shown."
+          }
+        ]
+      },
+      "DisclosureGroupView": {
+        "synopsis": "DisclosureGroupView is a row that shows or hides content below it, after SwiftUI's DisclosureGroup: a chevron at its trailing edge points to the right while the content is hidden and down while it shows.",
+        "decl": "type DisclosureGroupView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "DisclosureGroup",
+            "signature": "DisclosureGroup(title string, content ...gift.View) DisclosureGroupView",
+            "synopsis": "DisclosureGroup returns a group titled title that shows content below its label while it is open."
+          }
+        ],
+        "methods": [
+          {
+            "name": "ContentPadding",
+            "signature": "ContentPadding(i geom.Insets) DisclosureGroupView",
+            "synopsis": "ContentPadding sets the inset of the content."
+          },
+          {
+            "name": "Disabled",
+            "signature": "Disabled(b bool) DisclosureGroupView",
+            "synopsis": "Disabled takes the label out of input and dims it, as RowView.Disabled does; an open group stays open."
+          },
+          {
+            "name": "Expanded",
+            "signature": "Expanded(open bool, onChange func(bool)) DisclosureGroupView",
+            "synopsis": "Expanded makes the application own whether the group is open: it shows open as given and calls onChange with the value a tap asks for."
+          },
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) DisclosureGroupView",
+            "synopsis": "Flex sets the flex factor in a stack."
+          },
+          {
+            "name": "Icon",
+            "signature": "Icon(s Symbol) DisclosureGroupView",
+            "synopsis": "Icon sets the leading icon of the label; see RowView.Icon."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) DisclosureGroupView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) DisclosureGroupView",
+            "synopsis": "Label sets the accessible name of the label, the title by default."
+          },
+          {
+            "name": "Leading",
+            "signature": "Leading(view gift.View) DisclosureGroupView",
+            "synopsis": "Leading sets a view in place of the leading icon; see RowView.Leading."
+          },
+          {
+            "name": "Subtitle",
+            "signature": "Subtitle(s string) DisclosureGroupView",
+            "synopsis": "Subtitle sets a second line under the title; see RowView.Subtitle."
+          },
+          {
+            "name": "Value",
+            "signature": "Value(s string) DisclosureGroupView",
+            "synopsis": "Value sets a secondary text before the chevron, what the content amounts to, such as \"3 networks\"; see RowView.Value."
           }
         ]
       },

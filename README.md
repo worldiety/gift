@@ -189,7 +189,9 @@ that slides in, stays two seconds and can be swiped away).
 Lists get the two gestures of iOS: `ui.Swipe` uncovers actions behind a row
 dragged sideways, with full swipe, and `VScroll(...).Refreshable` starts a
 refresh when the content is pulled down past its top, with the spinner of
-UIRefreshControl.
+UIRefreshControl. `ui.DisclosureGroup` is a row that shows or hides content
+below it, with a turning chevron, and `ui.Accordion` a list of them with at
+most one open.
 Rings are a shape of the renderer like rounded rectangles, drawn from a
 distance field in the same draw call: `ui.ProgressRing` (and its
 indeterminate spinner), `ui.Gauge` in the circular styles of SwiftUI and
