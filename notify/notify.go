@@ -45,7 +45,9 @@
 //     implement. The bus is reached by a D-Bus client of gift's own, in
 //     internal/dbus, because there is no cgo-free one in the module graph
 //     that this project wanted to depend on; freedesktop.go is the
-//     notification protocol on top. gift/tray shares that client.
+//     notification protocol on top. gift/tray shares that client. A click
+//     raises the application's window, which is an X11 window, also under
+//     XWayland, through the window manager; see raise_x11.go.
 //   - darwin: UNUserNotificationCenter through the Objective-C runtime, in
 //     platform_darwin.go. Only for an application that is an app bundle:
 //     macOS ends a process that asks for the notification centre without

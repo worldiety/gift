@@ -20,6 +20,7 @@ import (
 //	GetCapabilities() → as                    once, when the platform opens
 //	Notify(susssasa{sv}i) → u                  per Show
 //	CloseNotification(u)                       per Withdraw
+//	signal ActivationToken(u id, s token)      before ActionInvoked, on GNOME and KDE
 //	signal ActionInvoked(u id, s action_key)   a click; "default" is the body
 //	signal NotificationClosed(u id, u reason)  the server forgot one of ours
 //
@@ -37,14 +38,20 @@ import (
 //     a click on the notification into ActionInvoked. A server without it
 //     ignores clicks, and OnClick is never called.
 //
-// # What a click does not do
+// # Raising the window
 //
-// It does not raise the window. GNOME and KDE send an ActivationToken signal
-// before ActionInvoked, which a Wayland client hands to xdg-activation to be
-// allowed to take the focus; under X11 the window would have to send
-// _NET_ACTIVE_WINDOW. Ebitengine exposes neither, so the token is ignored and
-// raising the window is left to the application, which at least has
-// ebiten.RequestAttention.
+// A click brings the application's window to the front, as it does on macOS
+// and Windows. The window manager does not do that by itself: it would be the
+// notification taking the focus, which focus stealing prevention forbids, so
+// the application has to ask, and has to show that the user asked first.
+// GNOME and KDE send an ActivationToken signal before ActionInvoked for that
+// purpose. A Wayland client hands it to xdg-activation; Ebitengine's window
+// is an X11 window, under XWayland on a Wayland desktop, so the token goes to
+// [freedesktop.raise], which on Linux is raise_x11.go: a _NET_ACTIVE_WINDOW
+// request with the time of the click that the token carries.
+//
+// A click on a server that sends no token raises with an empty one. Only a
+// notification with OnClick can be clicked, so one without it never raises.
 
 const (
 	notifyName      = "org.freedesktop.Notifications"
@@ -66,6 +73,11 @@ type freedesktop struct {
 	desktopEntry string
 	activated    func(func())
 
+	// raise brings the window of this process to the front, with the
+	// activation token of the click, which may be empty. It may block for a
+	// round trip and is called on a goroutine of its own. Nil raises nothing.
+	raise func(token string)
+
 	actions bool
 	markup  bool
 
@@ -79,6 +91,7 @@ type freedesktop struct {
 type shownNote struct {
 	id      string
 	onClick func()
+	token   string // from ActivationToken, until the ActionInvoked it precedes
 }
 
 // newFreedesktop subscribes to the signals of the notification server and
@@ -199,6 +212,17 @@ func (f *freedesktop) signal(m *dbus.Message) {
 		return
 	}
 	switch m.Member {
+	case "ActivationToken":
+		if m.Sig != "us" {
+			return
+		}
+		sid, token := m.Body[0].(uint32), m.Body[1].(string)
+		f.mu.Lock()
+		if s, ok := f.shown[sid]; ok {
+			s.token = token
+			f.shown[sid] = s
+		}
+		f.mu.Unlock()
 	case "ActionInvoked":
 		if m.Sig != "us" {
 			return
@@ -209,8 +233,18 @@ func (f *freedesktop) signal(m *dbus.Message) {
 		}
 		f.mu.Lock()
 		s, ok := f.shown[sid]
+		if ok {
+			// The token is good for one activation.
+			f.shown[sid] = shownNote{id: s.id, onClick: s.onClick}
+		}
 		f.mu.Unlock()
-		if ok && s.onClick != nil {
+		if !ok {
+			return
+		}
+		if f.raise != nil {
+			go f.raise(s.token)
+		}
+		if s.onClick != nil {
 			f.activated(s.onClick)
 		}
 	case "NotificationClosed":
