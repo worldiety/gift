@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/worldiety/gift/internal/dbus"
 )
 
 // This file speaks the Desktop Notifications Specification, the D-Bus
@@ -46,14 +48,14 @@ import (
 
 const (
 	notifyName      = "org.freedesktop.Notifications"
-	notifyPath      = objectPath("/org/freedesktop/Notifications")
+	notifyPath      = dbus.ObjectPath("/org/freedesktop/Notifications")
 	notifyInterface = "org.freedesktop.Notifications"
 )
 
 // busCaller is the one method of [conn] this file needs, as an interface so
 // that a test can answer the calls.
 type busCaller interface {
-	call(dest string, path objectPath, iface, member string, sig signature, args ...any) ([]any, error)
+	Call(dest string, path dbus.ObjectPath, iface, member string, sig dbus.Signature, args ...any) ([]any, error)
 }
 
 // freedesktop is the Linux platform: a [platform] over a notification server
@@ -88,10 +90,10 @@ type shownNote struct {
 func newFreedesktop(bus busCaller, cfg openConfig) (*freedesktop, error) {
 	rule := "type='signal',sender='" + notifyName + "',interface='" + notifyInterface +
 		"',path='" + string(notifyPath) + "'"
-	if _, err := bus.call(busName, busPath, busInterface, "AddMatch", "s", rule); err != nil {
+	if _, err := bus.Call(dbus.BusName, dbus.BusPath, dbus.BusInterface, "AddMatch", "s", rule); err != nil {
 		return nil, fmt.Errorf("gift/notify: subscribing to the notification server: %w", err)
 	}
-	reply, err := bus.call(notifyName, notifyPath, notifyInterface, "GetCapabilities", "")
+	reply, err := bus.Call(notifyName, notifyPath, notifyInterface, "GetCapabilities", "")
 	if err != nil {
 		return nil, fmt.Errorf("%w: no notification server on the session bus: %v", ErrUnsupported, err)
 	}
@@ -134,12 +136,12 @@ func (f *freedesktop) show(n Notification) error {
 		// server that lists actions in a menu shows an empty entry.
 		actions = append(actions, "default", "")
 	}
-	hints := []dictEntry{}
+	hints := []dbus.DictEntry{}
 	if f.desktopEntry != "" {
-		hints = append(hints, dictEntry{key: "desktop-entry", value: variant{sig: "s", value: f.desktopEntry}})
+		hints = append(hints, dbus.DictEntry{Key: "desktop-entry", Value: dbus.Variant{Sig: "s", Value: f.desktopEntry}})
 	}
 
-	reply, err := f.bus.call(notifyName, notifyPath, notifyInterface, "Notify", "susssasa{sv}i",
+	reply, err := f.bus.Call(notifyName, notifyPath, notifyInterface, "Notify", "susssasa{sv}i",
 		f.appName, replaces, "", n.Title, body, actions, hints, int32(-1))
 	if err != nil {
 		return err
@@ -182,7 +184,7 @@ func (f *freedesktop) withdraw(id string) error {
 	if !ok {
 		return nil
 	}
-	_, err := f.bus.call(notifyName, notifyPath, notifyInterface, "CloseNotification", "u", sid)
+	_, err := f.bus.Call(notifyName, notifyPath, notifyInterface, "CloseNotification", "u", sid)
 	return err
 }
 
@@ -192,16 +194,16 @@ func (f *freedesktop) withdraw(id string) error {
 //
 // The signals are broadcast on older servers, so ids this package did not
 // receive from Notify are someone else's and are ignored.
-func (f *freedesktop) signal(m *message) {
-	if m.iface != notifyInterface || m.path != notifyPath {
+func (f *freedesktop) signal(m *dbus.Message) {
+	if m.Interface != notifyInterface || m.Path != notifyPath {
 		return
 	}
-	switch m.member {
+	switch m.Member {
 	case "ActionInvoked":
-		if m.sig != "us" {
+		if m.Sig != "us" {
 			return
 		}
-		sid, key := m.body[0].(uint32), m.body[1].(string)
+		sid, key := m.Body[0].(uint32), m.Body[1].(string)
 		if key != "default" {
 			return
 		}
@@ -212,10 +214,10 @@ func (f *freedesktop) signal(m *message) {
 			f.activated(s.onClick)
 		}
 	case "NotificationClosed":
-		if m.sig != "uu" {
+		if m.Sig != "uu" {
 			return
 		}
-		sid := m.body[0].(uint32)
+		sid := m.Body[0].(uint32)
 		f.mu.Lock()
 		if s, ok := f.shown[sid]; ok {
 			delete(f.shown, sid)

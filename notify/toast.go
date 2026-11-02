@@ -9,7 +9,7 @@ import (
 
 // This file is the part of the Windows half that is text and arithmetic: the
 // toast XML, the check of the AppUserModelID and the derivation of the COM
-// class id. Like wire.go it carries no build tag on purpose, so that it is
+// class id. Like freedesktop.go it carries no build tag on purpose, so that it is
 // tested on the machines this project is developed on, none of which runs
 // Windows. The calls into the Windows Runtime are in platform_windows.go.
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image"
 	"math"
 	"sync/atomic"
 
@@ -82,6 +83,26 @@ func NewSymbol(data []byte, box float32) Symbol {
 
 // IsZero reports whether s carries no geometry.
 func (s Symbol) IsZero() bool { return s.id == 0 }
+
+// Rasterize returns the coverage mask of s at px by px device pixels, for a
+// consumer outside the frame: the icon of gift/tray in the menu bar, which the
+// operating system draws and not the GPU of this process. It returns nil for
+// the zero Symbol, for a malformed one, for a size outside 1 to
+// 1024 and for an icon without ink.
+//
+// Every call rasterises anew into a mask of its own, without the cache of
+// [Icon]; it is for the handful of pictures a tray asks for when its menu
+// changes, never for a frame.
+func (s Symbol) Rasterize(px int) *image.Alpha {
+	if s.IsZero() {
+		return nil
+	}
+	var m icon.Mask
+	if !icon.NewRasterizer().Rasterize(s.data, s.box, px, &m) {
+		return nil
+	}
+	return &image.Alpha{Pix: m.Pix, Stride: m.Size, Rect: image.Rect(0, 0, m.Size, m.Size)}
+}
 
 // --- the mask cache ----------------------------------------------------------
 

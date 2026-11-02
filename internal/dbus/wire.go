@@ -1,6 +1,7 @@
-package notify
+package dbus
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -11,41 +12,36 @@ import (
 )
 
 // This file is the D-Bus wire format: the marshalling of values and the
-// framing of messages. It is the part of the Linux half that is arithmetic
-// rather than syscall, and like clipboard/selection.go it carries **no build
-// tag on purpose**: the machine this package is developed on is a Mac, and
-// logic behind `//go:build linux` is logic no default `go test ./...` ever
+// framing of messages. It is the part of the client that is arithmetic rather
+// than syscall, and like clipboard/selection.go it carries **no build tag on
+// purpose**: the machine this package is developed on is a Mac, and logic
+// behind `//go:build linux` is logic no default `go test ./...` ever
 // executes. Here it is covered everywhere, against the byte layouts of the
 // specification.
-//
-// # Why there is a D-Bus implementation in this package at all
-//
-// The notification server of GNOME and of KDE is reached over the session
-// bus, and there is no cgo-free way to reach the session bus other than to
-// speak its protocol. The alternatives were weighed in the project plan,
-// section 42: godbus/dbus would have been the first module this project adds
-// for a platform feature, and libdbus through purego is a C library built
-// around callbacks and a main loop. What this package needs of D-Bus is small
-// — one connection, a handful of method calls, two signals — and so is this
-// file.
 //
 // # What it covers
 //
 // Every type of the specification except UNIX_FD ('h'), which needs
-// SCM_RIGHTS on the socket and which no notification server sends. Both byte
-// orders on reading, little endian on writing; a peer must accept either and
-// every machine this project targets is little endian.
+// SCM_RIGHTS on the socket and which neither a notification server nor a
+// status notifier host sends. A signature may name it, but a value of it is
+// neither written nor read: a message that carries one is refused with
+// [ErrUndecodable]. Both byte orders on reading, little endian on
+// writing; a peer must accept either and every machine this project targets
+// is little endian.
 //
 // The Go representation of the D-Bus types:
 //
 //	y byte         b bool        n int16       q uint16
 //	i int32        u uint32      x int64       t uint64
-//	d float64      s string      o objectPath  g signature
-//	v variant      (…) []any     {kv} dictEntry
-//	a… []any, or []string for "as" and []dictEntry for "a{…}" when writing
+//	d float64      s string      o ObjectPath  g Signature
+//	v Variant      (…) []any     {kv} DictEntry
+//	a… []any, or []string for "as", []byte for "ay" and []DictEntry for
+//	   "a{…}" when writing
 //
-// Reading returns []any for every array except one of dictionary entries,
-// which comes back as []dictEntry. There is no reflection: the caller states
+// Reading returns []any for every array except two: one of dictionary
+// entries comes back as []DictEntry, and one of bytes as []byte, because a
+// picture of 48 by 48 pixels is nine thousand bytes that would otherwise be
+// nine thousand interfaces. There is no reflection: the caller states
 // the signature, and a value of the wrong Go type is an error rather than a
 // conversion.
 //
@@ -55,23 +51,23 @@ import (
 // broken peer cannot make this package allocate without bound: 64 MiB for an
 // array, 128 MiB for a message, and a nesting depth of 64 containers.
 
-// objectPath is the D-Bus type 'o'.
-type objectPath string
+// ObjectPath is the D-Bus type 'o'.
+type ObjectPath string
 
-// signature is the D-Bus type 'g'.
-type signature string
+// Signature is the D-Bus type 'g'.
+type Signature string
 
-// variant is the D-Bus type 'v': a value together with its own signature,
+// Variant is the D-Bus type 'v': a value together with its own signature,
 // which must be a single complete type.
-type variant struct {
-	sig   signature
-	value any
+type Variant struct {
+	Sig   Signature
+	Value any
 }
 
-// dictEntry is the D-Bus type "{kv}", which only exists as the element of an
+// DictEntry is the D-Bus type "{kv}", which only exists as the element of an
 // array.
-type dictEntry struct {
-	key, value any
+type DictEntry struct {
+	Key, Value any
 }
 
 const (
@@ -84,12 +80,12 @@ const (
 // The message types and header fields of the specification, section "Message
 // Format".
 const (
-	msgMethodCall   byte = 1
-	msgMethodReturn byte = 2
-	msgError        byte = 3
-	msgSignal       byte = 4
+	TypeMethodCall   byte = 1
+	TypeMethodReturn byte = 2
+	TypeError        byte = 3
+	TypeSignal       byte = 4
 
-	flagNoReplyExpected byte = 0x1
+	FlagNoReplyExpected byte = 0x1
 
 	fieldPath        byte = 1
 	fieldInterface   byte = 2
@@ -101,7 +97,7 @@ const (
 	fieldSignature   byte = 8
 )
 
-var errTruncated = errors.New("gift/notify: D-Bus data ends in the middle of a value")
+var errTruncated = errors.New("gift/dbus: D-Bus data ends in the middle of a value")
 
 // nextType splits the first single complete type off sig.
 func nextType(sig string) (string, string, error) {
@@ -116,13 +112,13 @@ func nextType(sig string) (string, string, error) {
 // sig.
 func completeLen(sig string, depth int) (int, error) {
 	if depth > maxDepth {
-		return 0, fmt.Errorf("gift/notify: D-Bus signature nests deeper than %d", maxDepth)
+		return 0, fmt.Errorf("gift/dbus: D-Bus signature nests deeper than %d", maxDepth)
 	}
 	if sig == "" {
-		return 0, errors.New("gift/notify: D-Bus signature ends where a type was expected")
+		return 0, errors.New("gift/dbus: D-Bus signature ends where a type was expected")
 	}
 	switch c := sig[0]; c {
-	case 'y', 'b', 'n', 'q', 'i', 'u', 'x', 't', 'd', 's', 'o', 'g', 'v':
+	case 'y', 'b', 'n', 'q', 'i', 'u', 'x', 't', 'd', 's', 'o', 'g', 'v', 'h':
 		return 1, nil
 	case 'a':
 		n, err := completeLen(sig[1:], depth+1)
@@ -131,11 +127,11 @@ func completeLen(sig string, depth int) (int, error) {
 		i := 1
 		for {
 			if i >= len(sig) {
-				return 0, fmt.Errorf("gift/notify: D-Bus signature %q has an unclosed struct", sig)
+				return 0, fmt.Errorf("gift/dbus: D-Bus signature %q has an unclosed struct", sig)
 			}
 			if sig[i] == ')' {
 				if i == 1 {
-					return 0, errors.New("gift/notify: D-Bus signature has an empty struct")
+					return 0, errors.New("gift/dbus: D-Bus signature has an empty struct")
 				}
 				return i + 1, nil
 			}
@@ -147,7 +143,7 @@ func completeLen(sig string, depth int) (int, error) {
 		}
 	case '{':
 		if len(sig) < 2 || !isBasic(sig[1]) {
-			return 0, fmt.Errorf("gift/notify: D-Bus dictionary key in %q is not a basic type", sig)
+			return 0, fmt.Errorf("gift/dbus: D-Bus dictionary key in %q is not a basic type", sig)
 		}
 		n, err := completeLen(sig[2:], depth+1)
 		if err != nil {
@@ -155,23 +151,23 @@ func completeLen(sig string, depth int) (int, error) {
 		}
 		end := 2 + n
 		if end >= len(sig) || sig[end] != '}' {
-			return 0, fmt.Errorf("gift/notify: D-Bus dictionary entry in %q is not closed after two types", sig)
+			return 0, fmt.Errorf("gift/dbus: D-Bus dictionary entry in %q is not closed after two types", sig)
 		}
 		return end + 1, nil
 	default:
-		return 0, fmt.Errorf("gift/notify: unsupported D-Bus type code %q", c)
+		return 0, fmt.Errorf("gift/dbus: unsupported D-Bus type code %q", c)
 	}
 }
 
 func isBasic(c byte) bool {
-	return strings.IndexByte("ybnqiuxtdsog", c) >= 0
+	return strings.IndexByte("ybnqiuxtdsogh", c) >= 0
 }
 
 // validSignature reports whether s is a sequence of complete types that fits
 // the 255 byte limit of the type 'g'.
 func validSignature(s string) error {
 	if len(s) > maxSignature {
-		return fmt.Errorf("gift/notify: D-Bus signature is longer than %d bytes", maxSignature)
+		return fmt.Errorf("gift/dbus: D-Bus signature is longer than %d bytes", maxSignature)
 	}
 	for s != "" {
 		_, rest, err := nextType(s)
@@ -188,10 +184,10 @@ func validSignature(s string) error {
 // anything else, so this is checked before a byte is written.
 func validString(s string) error {
 	if !utf8.ValidString(s) {
-		return errors.New("gift/notify: D-Bus strings must be valid UTF-8")
+		return errors.New("gift/dbus: D-Bus strings must be valid UTF-8")
 	}
 	if strings.IndexByte(s, 0) >= 0 {
-		return errors.New("gift/notify: D-Bus strings must not contain NUL")
+		return errors.New("gift/dbus: D-Bus strings must not contain NUL")
 	}
 	return nil
 }
@@ -203,16 +199,16 @@ func validObjectPath(p string) error {
 		return nil
 	}
 	if p == "" || p[0] != '/' || p[len(p)-1] == '/' {
-		return fmt.Errorf("gift/notify: %q is not a D-Bus object path", p)
+		return fmt.Errorf("gift/dbus: %q is not a D-Bus object path", p)
 	}
 	for _, elem := range strings.Split(p[1:], "/") {
 		if elem == "" {
-			return fmt.Errorf("gift/notify: %q is not a D-Bus object path", p)
+			return fmt.Errorf("gift/dbus: %q is not a D-Bus object path", p)
 		}
 		for i := 0; i < len(elem); i++ {
 			c := elem[i]
 			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
-				return fmt.Errorf("gift/notify: %q is not a D-Bus object path", p)
+				return fmt.Errorf("gift/dbus: %q is not a D-Bus object path", p)
 			}
 		}
 	}
@@ -224,7 +220,7 @@ func alignOf(c byte) int {
 	switch c {
 	case 'n', 'q':
 		return 2
-	case 'b', 'i', 'u', 's', 'o', 'a':
+	case 'b', 'i', 'u', 's', 'o', 'a', 'h':
 		return 4
 	case 'x', 't', 'd', '(', '{':
 		return 8
@@ -280,7 +276,7 @@ func (e *encoder) sig(s string) error {
 func (e *encoder) values(sig string, vs []any) error {
 	for i, v := range vs {
 		if sig == "" {
-			return fmt.Errorf("gift/notify: D-Bus signature has fewer types than the %d values", len(vs))
+			return fmt.Errorf("gift/dbus: D-Bus signature has fewer types than the %d values", len(vs))
 		}
 		t, rest, err := nextType(sig)
 		if err != nil {
@@ -292,13 +288,13 @@ func (e *encoder) values(sig string, vs []any) error {
 		sig = rest
 	}
 	if sig != "" {
-		return fmt.Errorf("gift/notify: D-Bus signature has more types than the %d values", len(vs))
+		return fmt.Errorf("gift/dbus: D-Bus signature has more types than the %d values", len(vs))
 	}
 	return nil
 }
 
 func mismatch(t string, v any) error {
-	return fmt.Errorf("gift/notify: D-Bus type %q cannot be written from a %T", t, v)
+	return fmt.Errorf("gift/dbus: D-Bus type %q cannot be written from a %T", t, v)
 }
 
 // value encodes v as the single complete type t.
@@ -371,7 +367,7 @@ func (e *encoder) value(t string, v any) error {
 		}
 		return e.str(x)
 	case 'o':
-		x, ok := v.(objectPath)
+		x, ok := v.(ObjectPath)
 		if !ok {
 			return mismatch(t, v)
 		}
@@ -380,24 +376,24 @@ func (e *encoder) value(t string, v any) error {
 		}
 		return e.str(string(x))
 	case 'g':
-		x, ok := v.(signature)
+		x, ok := v.(Signature)
 		if !ok {
 			return mismatch(t, v)
 		}
 		return e.sig(string(x))
 	case 'v':
-		x, ok := v.(variant)
+		x, ok := v.(Variant)
 		if !ok {
 			return mismatch(t, v)
 		}
-		inner, rest, err := nextType(string(x.sig))
+		inner, rest, err := nextType(string(x.Sig))
 		if err != nil || rest != "" {
-			return fmt.Errorf("gift/notify: variant signature %q is not a single complete type", x.sig)
+			return fmt.Errorf("gift/dbus: variant signature %q is not a single complete type", x.Sig)
 		}
 		if err := e.sig(inner); err != nil {
 			return err
 		}
-		return e.nested(func() error { return e.value(inner, x.value) })
+		return e.nested(func() error { return e.value(inner, x.Value) })
 	case 'a':
 		return e.nested(func() error { return e.array(t, v) })
 	case '(':
@@ -408,15 +404,15 @@ func (e *encoder) value(t string, v any) error {
 		e.pad(8)
 		return e.nested(func() error { return e.values(t[1:len(t)-1], x) })
 	case '{':
-		x, ok := v.(dictEntry)
+		x, ok := v.(DictEntry)
 		if !ok {
 			return mismatch(t, v)
 		}
 		e.pad(8)
 		key, val := t[1:2], t[2:len(t)-1]
-		return e.nested(func() error { return e.values(key+val, []any{x.key, x.value}) })
+		return e.nested(func() error { return e.values(key+val, []any{x.Key, x.Value}) })
 	default:
-		return fmt.Errorf("gift/notify: unsupported D-Bus type %q", t)
+		return fmt.Errorf("gift/dbus: unsupported D-Bus type %q", t)
 	}
 	return nil
 }
@@ -425,7 +421,7 @@ func (e *encoder) nested(fn func() error) error {
 	e.depth++
 	defer func() { e.depth-- }()
 	if e.depth > maxDepth {
-		return fmt.Errorf("gift/notify: D-Bus value nests deeper than %d", maxDepth)
+		return fmt.Errorf("gift/dbus: D-Bus value nests deeper than %d", maxDepth)
 	}
 	return fn()
 }
@@ -439,6 +435,11 @@ func (e *encoder) array(t string, v any) error {
 	e.pad(alignOf(elem[0]))
 	start := len(e.buf)
 	switch xs := v.(type) {
+	case []byte:
+		if elem != "y" {
+			return mismatch(t, v)
+		}
+		e.buf = append(e.buf, xs...)
 	case []string:
 		if elem != "s" {
 			return mismatch(t, v)
@@ -448,7 +449,7 @@ func (e *encoder) array(t string, v any) error {
 				return err
 			}
 		}
-	case []dictEntry:
+	case []DictEntry:
 		if elem[0] != '{' {
 			return mismatch(t, v)
 		}
@@ -468,7 +469,7 @@ func (e *encoder) array(t string, v any) error {
 	}
 	n := len(e.buf) - start
 	if n > maxArrayBytes {
-		return fmt.Errorf("gift/notify: D-Bus array of %d bytes exceeds the limit of %d", n, maxArrayBytes)
+		return fmt.Errorf("gift/dbus: D-Bus array of %d bytes exceeds the limit of %d", n, maxArrayBytes)
 	}
 	binary.LittleEndian.PutUint32(e.buf[at:], uint32(n))
 	return nil
@@ -490,7 +491,7 @@ func (d *decoder) align(n int) error {
 	}
 	for _, b := range d.buf[d.off : d.off+p] {
 		if b != 0 {
-			return errors.New("gift/notify: D-Bus padding is not zero")
+			return errors.New("gift/dbus: D-Bus padding is not zero")
 		}
 	}
 	d.off += p
@@ -541,7 +542,7 @@ func (d *decoder) str() (string, error) {
 		return "", err
 	}
 	if b[n] != 0 {
-		return "", errors.New("gift/notify: D-Bus string is not NUL terminated")
+		return "", errors.New("gift/dbus: D-Bus string is not NUL terminated")
 	}
 	s := string(b[:n])
 	if err := validString(s); err != nil {
@@ -561,7 +562,7 @@ func (d *decoder) sig() (string, error) {
 		return "", err
 	}
 	if b[n] != 0 {
-		return "", errors.New("gift/notify: D-Bus signature is not NUL terminated")
+		return "", errors.New("gift/dbus: D-Bus signature is not NUL terminated")
 	}
 	s := string(b[:n])
 	if err := validSignature(s); err != nil {
@@ -603,7 +604,7 @@ func (d *decoder) value(t string) (any, error) {
 			return nil, err
 		}
 		if u > 1 {
-			return nil, fmt.Errorf("gift/notify: D-Bus boolean holds %d", u)
+			return nil, fmt.Errorf("gift/dbus: D-Bus boolean holds %d", u)
 		}
 		return u == 1, nil
 	case 'n', 'q':
@@ -624,6 +625,11 @@ func (d *decoder) value(t string) (any, error) {
 		return int32(u), err
 	case 'u':
 		return d.u32()
+	case 'h':
+		// A signature may name it, so that a message with one is framed
+		// and refused rather than ending the connection; the value is an
+		// index into file descriptors this package never negotiates.
+		return nil, errors.New("gift/dbus: D-Bus UNIX_FD values are not supported")
 	case 'x':
 		u, err := d.u64()
 		return int64(u), err
@@ -642,10 +648,10 @@ func (d *decoder) value(t string) (any, error) {
 		if err := validObjectPath(s); err != nil {
 			return nil, err
 		}
-		return objectPath(s), nil
+		return ObjectPath(s), nil
 	case 'g':
 		s, err := d.sig()
-		return signature(s), err
+		return Signature(s), err
 	case 'v':
 		s, err := d.sig()
 		if err != nil {
@@ -653,11 +659,11 @@ func (d *decoder) value(t string) (any, error) {
 		}
 		inner, rest, err := nextType(s)
 		if err != nil || rest != "" {
-			return nil, fmt.Errorf("gift/notify: variant signature %q is not a single complete type", s)
+			return nil, fmt.Errorf("gift/dbus: variant signature %q is not a single complete type", s)
 		}
 		var v any
 		err = d.nested(func() (err error) { v, err = d.value(inner); return })
-		return variant{sig: signature(inner), value: v}, err
+		return Variant{Sig: Signature(inner), Value: v}, err
 	case 'a':
 		var v any
 		err := d.nested(func() (err error) { v, err = d.array(t[1:]); return })
@@ -678,16 +684,16 @@ func (d *decoder) value(t string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return dictEntry{key: kv[0], value: kv[1]}, nil
+		return DictEntry{Key: kv[0], Value: kv[1]}, nil
 	}
-	return nil, fmt.Errorf("gift/notify: unsupported D-Bus type %q", t)
+	return nil, fmt.Errorf("gift/dbus: unsupported D-Bus type %q", t)
 }
 
 func (d *decoder) nested(fn func() error) error {
 	d.depth++
 	defer func() { d.depth-- }()
 	if d.depth > maxDepth {
-		return fmt.Errorf("gift/notify: D-Bus value nests deeper than %d", maxDepth)
+		return fmt.Errorf("gift/dbus: D-Bus value nests deeper than %d", maxDepth)
 	}
 	return fn()
 }
@@ -698,7 +704,7 @@ func (d *decoder) array(elem string) (any, error) {
 		return nil, err
 	}
 	if n > maxArrayBytes {
-		return nil, fmt.Errorf("gift/notify: D-Bus array of %d bytes exceeds the limit of %d", n, maxArrayBytes)
+		return nil, fmt.Errorf("gift/dbus: D-Bus array of %d bytes exceeds the limit of %d", n, maxArrayBytes)
 	}
 	if err := d.align(alignOf(elem[0])); err != nil {
 		return nil, err
@@ -707,17 +713,22 @@ func (d *decoder) array(elem string) (any, error) {
 	if end > len(d.buf) {
 		return nil, errTruncated
 	}
+	if elem == "y" {
+		out := bytes.Clone(d.buf[d.off:end])
+		d.off = end
+		return out, nil
+	}
 	if elem[0] == '{' {
-		var out []dictEntry
+		var out []DictEntry
 		for d.off < end {
 			v, err := d.value(elem)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, v.(dictEntry))
+			out = append(out, v.(DictEntry))
 		}
 		if d.off != end {
-			return nil, errors.New("gift/notify: D-Bus array length does not match its elements")
+			return nil, errors.New("gift/dbus: D-Bus array length does not match its elements")
 		}
 		return out, nil
 	}
@@ -730,86 +741,118 @@ func (d *decoder) array(elem string) (any, error) {
 		out = append(out, v)
 	}
 	if d.off != end {
-		return nil, errors.New("gift/notify: D-Bus array length does not match its elements")
+		return nil, errors.New("gift/dbus: D-Bus array length does not match its elements")
 	}
 	return out, nil
 }
 
-// message is one D-Bus message, with the header fields this package reads or
+// Message is one D-Bus message, with the header fields this package reads or
 // writes spelled out. Unknown header fields are ignored on reading, as the
 // specification requires.
-type message struct {
-	typ         byte
-	flags       byte
-	serial      uint32
-	path        objectPath
-	iface       string
-	member      string
-	errorName   string
-	replySerial uint32
-	destination string
-	sender      string
-	sig         signature
-	body        []any
+type Message struct {
+	Type        byte
+	Flags       byte
+	Serial      uint32
+	Path        ObjectPath
+	Interface   string
+	Member      string
+	ErrorName   string
+	ReplySerial uint32
+	Destination string
+	Sender      string
+	Sig         Signature
+	Body        []any
+
+	// header says that ReadMessage decoded the header fields; see
+	// [Message.Header].
+	header bool
 }
 
-// marshal encodes m in little endian.
-func (m *message) marshal() ([]byte, error) {
+// Marshal encodes m in little endian.
+func (m *Message) Marshal() ([]byte, error) {
 	var body encoder
-	if err := body.values(string(m.sig), m.body); err != nil {
+	if err := body.values(string(m.Sig), m.Body); err != nil {
 		return nil, err
 	}
 
 	var fields []any
-	add := func(code byte, sig signature, v any) {
-		fields = append(fields, []any{code, variant{sig: sig, value: v}})
+	add := func(code byte, sig Signature, v any) {
+		fields = append(fields, []any{code, Variant{Sig: sig, Value: v}})
 	}
-	if m.path != "" {
-		add(fieldPath, "o", m.path)
+	if m.Path != "" {
+		add(fieldPath, "o", m.Path)
 	}
-	if m.iface != "" {
-		add(fieldInterface, "s", m.iface)
+	if m.Interface != "" {
+		add(fieldInterface, "s", m.Interface)
 	}
-	if m.member != "" {
-		add(fieldMember, "s", m.member)
+	if m.Member != "" {
+		add(fieldMember, "s", m.Member)
 	}
-	if m.errorName != "" {
-		add(fieldErrorName, "s", m.errorName)
+	if m.ErrorName != "" {
+		add(fieldErrorName, "s", m.ErrorName)
 	}
-	if m.replySerial != 0 {
-		add(fieldReplySerial, "u", m.replySerial)
+	if m.ReplySerial != 0 {
+		add(fieldReplySerial, "u", m.ReplySerial)
 	}
-	if m.destination != "" {
-		add(fieldDestination, "s", m.destination)
+	if m.Destination != "" {
+		add(fieldDestination, "s", m.Destination)
 	}
-	if m.sender != "" {
-		add(fieldSender, "s", m.sender)
+	if m.Sender != "" {
+		add(fieldSender, "s", m.Sender)
 	}
-	if m.sig != "" {
-		add(fieldSignature, "g", m.sig)
+	if m.Sig != "" {
+		add(fieldSignature, "g", m.Sig)
 	}
 
 	e := encoder{buf: make([]byte, 0, 128+len(body.buf))}
-	e.buf = append(e.buf, 'l', m.typ, m.flags, 1)
+	e.buf = append(e.buf, 'l', m.Type, m.Flags, 1)
 	e.buf = binary.LittleEndian.AppendUint32(e.buf, uint32(len(body.buf)))
-	e.buf = binary.LittleEndian.AppendUint32(e.buf, m.serial)
+	e.buf = binary.LittleEndian.AppendUint32(e.buf, m.Serial)
 	if err := e.value("a(yv)", fields); err != nil {
 		return nil, err
 	}
 	e.pad(8)
 	e.buf = append(e.buf, body.buf...)
 	if len(e.buf) > maxMessageBytes {
-		return nil, fmt.Errorf("gift/notify: D-Bus message of %d bytes exceeds the limit of %d", len(e.buf), maxMessageBytes)
+		return nil, fmt.Errorf("gift/dbus: D-Bus message of %d bytes exceeds the limit of %d", len(e.buf), maxMessageBytes)
 	}
 	return e.buf, nil
 }
 
-// readMessage reads exactly one message from r.
-func readMessage(r io.Reader) (*message, error) {
+// ErrUndecodable is wrapped by the error of [ReadMessage] for a message
+// that was read whole but cannot be used: its header fields or its body do
+// not decode, it is larger than the receive limit of the connection, or its
+// serial is 0. The stream is still in step, the next message can be read,
+// and the [Message] returned along with the error holds what was decoded:
+// Type, Flags and Serial always, the header fields when [Message.Header]
+// says so.
+//
+// A peer can send such a message on purpose — dbus-daemon routes a body
+// with a UNIX_FD in its signature to a connection that negotiated no file
+// descriptors, which this package refuses to decode — so a connection skips
+// it rather than closing. Only a message that cannot be framed, of an
+// unknown byte order or protocol, or beyond the limits of the
+// specification, ends the stream.
+var ErrUndecodable = errors.New("gift/dbus: the D-Bus message cannot be decoded")
+
+// ReadMessage reads exactly one message from r. An error that wraps
+// [ErrUndecodable] comes with the message as far as it was decoded; every
+// other error comes with nil and means that the stream is lost.
+func ReadMessage(r io.Reader) (*Message, error) {
+	return readMessage(r, func() int { return maxMessageBytes })
+}
+
+// readMessage is [ReadMessage] with a receive limit: a message longer than
+// limit bytes is read past and returned undecoded, with its header fields if
+// they are within the limit. limit is asked once the message has begun to
+// arrive, so that a limit set while the reader waits applies to the message
+// it waits for.
+func readMessage(r io.Reader, limitf func() int) (*Message, error) {
 	var head [16]byte
 	if _, err := io.ReadFull(r, head[:]); err != nil {
 		return nil, err
 	}
+	limit := limitf()
 	var order binary.ByteOrder
 	switch head[0] {
 	case 'l':
@@ -817,23 +860,45 @@ func readMessage(r io.Reader) (*message, error) {
 	case 'B':
 		order = binary.BigEndian
 	default:
-		return nil, fmt.Errorf("gift/notify: D-Bus message has the unknown byte order %q", head[0])
+		return nil, fmt.Errorf("gift/dbus: D-Bus message has the unknown byte order %q", head[0])
 	}
 	if head[3] != 1 {
-		return nil, fmt.Errorf("gift/notify: D-Bus message has protocol version %d", head[3])
+		return nil, fmt.Errorf("gift/dbus: D-Bus message has protocol version %d", head[3])
 	}
 	bodyLen := order.Uint32(head[4:])
 	fieldsLen := order.Uint32(head[12:])
 	if fieldsLen > maxArrayBytes || bodyLen > maxMessageBytes {
-		return nil, errors.New("gift/notify: D-Bus message exceeds the size limits")
+		return nil, errors.New("gift/dbus: D-Bus message exceeds the size limits")
 	}
 	headerEnd := 16 + int(fieldsLen)
 	bodyStart := (headerEnd + 7) &^ 7
 	total := bodyStart + int(bodyLen)
 	if total > maxMessageBytes {
-		return nil, errors.New("gift/notify: D-Bus message exceeds the size limits")
+		return nil, errors.New("gift/dbus: D-Bus message exceeds the size limits")
 	}
-	buf := make([]byte, total)
+	m := &Message{Type: head[1], Flags: head[2], Serial: order.Uint32(head[8:])}
+
+	// skip reads past n bytes, for a message that is not decoded whole.
+	skip := func(n int) error {
+		if _, err := io.CopyN(io.Discard, r, int64(n)); err != nil {
+			if err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return err
+		}
+		return nil
+	}
+	read := total
+	if total > limit {
+		read = bodyStart
+		if bodyStart > limit {
+			if err := skip(total - 16); err != nil {
+				return nil, err
+			}
+			return m, fmt.Errorf("%w: %d bytes exceed the receive limit of %d", ErrUndecodable, total, limit)
+		}
+	}
+	buf := make([]byte, read)
 	copy(buf, head[:])
 	if _, err := io.ReadFull(r, buf[16:]); err != nil {
 		if err == io.EOF {
@@ -841,70 +906,100 @@ func readMessage(r io.Reader) (*message, error) {
 		}
 		return nil, err
 	}
-
-	m := &message{typ: head[1], flags: head[2], serial: order.Uint32(head[8:])}
-	if m.serial == 0 {
-		return nil, errors.New("gift/notify: D-Bus message has serial 0")
-	}
-	d := decoder{buf: buf[:headerEnd], off: 12, order: order}
-	raw, err := d.value("a(yv)")
-	if err != nil {
-		return nil, fmt.Errorf("gift/notify: D-Bus header: %w", err)
-	}
-	for _, f := range raw.([]any) {
-		f := f.([]any)
-		code, v := f[0].(byte), f[1].(variant)
-		if err := m.setField(code, v); err != nil {
+	if read < total {
+		if err := skip(total - read); err != nil {
 			return nil, err
 		}
 	}
-	if d.off != headerEnd {
-		return nil, errors.New("gift/notify: D-Bus header length does not match its fields")
+	undecodable := func(err error) (*Message, error) {
+		return m, fmt.Errorf("%w: %w", ErrUndecodable, err)
 	}
 
-	d = decoder{buf: buf, off: headerEnd, order: order}
-	if err := d.align(8); err != nil {
-		return nil, err
+	if m.Serial == 0 {
+		return undecodable(errors.New("gift/dbus: D-Bus message has serial 0"))
 	}
-	if m.body, err = d.values(string(m.sig)); err != nil {
-		return nil, fmt.Errorf("gift/notify: D-Bus body of %s: %w", m.member, err)
+	if err := m.decodeHeader(buf[:headerEnd], order); err != nil {
+		*m = Message{Type: m.Type, Flags: m.Flags, Serial: m.Serial}
+		return undecodable(err)
+	}
+	m.header = true
+	if read < total {
+		return undecodable(fmt.Errorf("gift/dbus: D-Bus message of %d bytes exceeds the receive limit of %d", total, limit))
+	}
+
+	d := decoder{buf: buf, off: headerEnd, order: order}
+	var err error
+	if err = d.align(8); err != nil {
+		return undecodable(err)
+	}
+	if m.Body, err = d.values(string(m.Sig)); err != nil {
+		m.Body = nil
+		return undecodable(fmt.Errorf("gift/dbus: D-Bus body of %s: %w", m.Member, err))
 	}
 	if d.off != total {
-		return nil, errors.New("gift/notify: D-Bus body length does not match its signature")
+		m.Body = nil
+		return undecodable(errors.New("gift/dbus: D-Bus body length does not match its signature"))
 	}
 	return m, nil
 }
 
+// decodeHeader decodes the header fields of the message in buf, which ends
+// where they end.
+func (m *Message) decodeHeader(buf []byte, order binary.ByteOrder) error {
+	d := decoder{buf: buf, off: 12, order: order}
+	raw, err := d.value("a(yv)")
+	if err != nil {
+		return fmt.Errorf("gift/dbus: D-Bus header: %w", err)
+	}
+	for _, f := range raw.([]any) {
+		f := f.([]any)
+		code, v := f[0].(byte), f[1].(Variant)
+		if err := m.setField(code, v); err != nil {
+			return err
+		}
+	}
+	if d.off != len(buf) {
+		return errors.New("gift/dbus: D-Bus header length does not match its fields")
+	}
+	return nil
+}
+
+// Header reports whether the header fields of a message that [ReadMessage]
+// returned with [ErrUndecodable] were decoded: Path, Member, Sender,
+// ReplySerial and the others. It is true for every message read without an
+// error.
+func (m *Message) Header() bool { return m.header }
+
 // setField stores one header field, checking that its variant has the type
 // the specification assigns to the code.
-func (m *message) setField(code byte, v variant) error {
-	want := map[byte]signature{
+func (m *Message) setField(code byte, v Variant) error {
+	want := map[byte]Signature{
 		fieldPath: "o", fieldInterface: "s", fieldMember: "s", fieldErrorName: "s",
 		fieldReplySerial: "u", fieldDestination: "s", fieldSender: "s", fieldSignature: "g",
 	}[code]
 	if want == "" {
 		return nil
 	}
-	if v.sig != want {
-		return fmt.Errorf("gift/notify: D-Bus header field %d has type %q, want %q", code, v.sig, want)
+	if v.Sig != want {
+		return fmt.Errorf("gift/dbus: D-Bus header field %d has type %q, want %q", code, v.Sig, want)
 	}
 	switch code {
 	case fieldPath:
-		m.path = v.value.(objectPath)
+		m.Path = v.Value.(ObjectPath)
 	case fieldInterface:
-		m.iface = v.value.(string)
+		m.Interface = v.Value.(string)
 	case fieldMember:
-		m.member = v.value.(string)
+		m.Member = v.Value.(string)
 	case fieldErrorName:
-		m.errorName = v.value.(string)
+		m.ErrorName = v.Value.(string)
 	case fieldReplySerial:
-		m.replySerial = v.value.(uint32)
+		m.ReplySerial = v.Value.(uint32)
 	case fieldDestination:
-		m.destination = v.value.(string)
+		m.Destination = v.Value.(string)
 	case fieldSender:
-		m.sender = v.value.(string)
+		m.Sender = v.Value.(string)
 	case fieldSignature:
-		m.sig = v.value.(signature)
+		m.Sig = v.Value.(Signature)
 	}
 	return nil
 }
