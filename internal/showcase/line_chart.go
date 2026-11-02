@@ -41,6 +41,7 @@ func lineChartDemo(ctx *gift.Context) gift.View {
 		charts.Line(hall).Name("Hall 2"),
 		charts.Line(yard).Name("Yard").Interpolation(charts.Monotone),
 		charts.RuleY(23).Label("Limit 23 °C").Dash(4, 3),
+		charts.AnnotationTime(chartDay.Add(5*time.Hour+30*time.Minute), 18.2, "Gate open").Position(charts.Bottom),
 	).YTitle("°C").Location(chartZone).Height(280).Width(600)
 	// snippet:end
 }

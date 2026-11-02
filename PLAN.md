@@ -4028,8 +4028,36 @@ Iterator-API und der M4-Algorithmus von nago (`pkg/ndb/tsdb`,
   scharfen der M4-Spalten; Flaechenverlaeufe exakt als Farbe als lineare
   Funktion der Hoehe je Vertex.
 
-Offen: gestapelte und gruppierte Balken, Sektoren (Pie), Annotationen an
-Marks, Zoom der y-Achse, Gesten-Inspektion mehrerer gekoppelter Charts.
+Nachgezogen (02.11.2026):
+
+- `ChartView.Stacking`: `Stacked` (Vorgabe wie Swift Charts), `Normalized`
+  (Anteile, Achse in Prozent), `Grouped` (nebeneinander), `Unstacked`.
+  Balken stapeln je x, positiv nach oben, negativ nach unten; zu duenne
+  Balken stapeln je Pixelspalte mit dem groessten Wert jeder Reihe, eine
+  obere Schranke statt eines Breis. Flaechen stapeln, indem jede die
+  vorigen an ihren eigenen Punkten linear liest; die Reihen brauchen also
+  keine gemeinsamen x. Linien stapeln nie.
+- `BarMark.ValueLabels`: im Segment bei gestapelten, darueber sonst;
+  ausgelassen, wenn sie nicht passen oder mehr als hundert sind.
+  `Annotation(x, y, text)` mit `Position` und Punkt.
+- `Sector` (SectorMark): Kreis oder Ring (`InnerRadius`), im Uhrzeigersinn
+  ab zwoelf Uhr, `AngularInset` als parallele Luecke, `Percent`/`Label` im
+  Stueck, `ChartView.Center` fuer die Mitte. Hover und Tippen heben das
+  Stueck heraus, blenden die anderen ab und zeigen Wert und Anteil.
+- `ZoomY`: Pinch skaliert beide Achsen, die Maus zieht ein Rechteck,
+  gezoomt wird in jede Richtung verschoben; das Ganze des y-Zooms ist die
+  Achse, die beim ersten Zoom gepasst hat, und der Reset gleitet zurueck
+  zur Anpassung.
+- `ChartView.Inspect` mit `OnInspect` koppelt die Inspektion mehrerer
+  Charts wie `Visible` mit `OnVisibleChange` den Zoom. Ein vorgegebener
+  Bereich, der nur ein Schritt einer Geste ist, wird sofort uebernommen,
+  sonst folgte der zweite Chart einem Pinch mit Verzug.
+- Die Inspektion fuehrt eine Reihe einmal, auch wenn eine Flaeche und
+  ihre Linie sie zeigen.
+
+Offen: Beschriftungen an beliebigen Marks ueber eine eigene View (Swift
+erlaubt beliebige Views als Annotation), Achsen mit logarithmischer
+Skala, eine zweite y-Achse.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

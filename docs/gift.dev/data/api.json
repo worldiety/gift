@@ -617,6 +617,39 @@
     "importPath": "github.com/worldiety/gift/ui/charts",
     "synopsis": "Package charts draws charts after Swift Charts: marks on a pair of axes, with a legend, an inspection of the values under the pointer, and zoom.",
     "types": {
+      "AnnotationMark": {
+        "synopsis": "AnnotationMark is a text at a point of the plot, with a dot on the point: what happened then, the counterpart of the annotation modifier of a Swift Charts mark.",
+        "decl": "type AnnotationMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Annotation",
+            "signature": "Annotation(x, y float64, text string) AnnotationMark",
+            "synopsis": "Annotation returns text at x and y."
+          },
+          {
+            "name": "AnnotationTime",
+            "signature": "AnnotationTime(t time.Time, y float64, text string) AnnotationMark",
+            "synopsis": "AnnotationTime returns text at t and y, on a time axis."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) AnnotationMark",
+            "synopsis": "Color sets the colour of the dot; the default is that of text."
+          },
+          {
+            "name": "Dot",
+            "signature": "Dot(b bool) AnnotationMark",
+            "synopsis": "Dot sets whether a dot marks the point; it does by default."
+          },
+          {
+            "name": "Position",
+            "signature": "Position(p Position) AnnotationMark",
+            "synopsis": "Position sets where the text stands; the default is Top."
+          }
+        ]
+      },
       "AreaMark": {
         "synopsis": "AreaMark fills the space between a series and zero, the counterpart of Swift Charts' AreaMark.",
         "decl": "type AreaMark struct {\n\t// Has unexported fields.\n}",
@@ -661,7 +694,7 @@
           {
             "name": "Opacity",
             "signature": "Opacity(f float32) AreaMark",
-            "synopsis": "Opacity sets how opaque the area is, 0.3 by default, so that a line on it and the grid behind it show."
+            "synopsis": "Opacity sets how opaque the area is, 0.3 by default, so that a line on it and the grid behind it show; stacked areas do not lie on each other and are 0.85 by default."
           }
         ]
       },
@@ -730,6 +763,11 @@
             "synopsis": "Name names the series in the legend and in the inspection."
           },
           {
+            "name": "ValueLabels",
+            "signature": "ValueLabels(b bool) BarMark",
+            "synopsis": "ValueLabels writes its value on every bar: above it, or in it when the bars are stacked."
+          },
+          {
             "name": "Width",
             "signature": "Width(f float32) BarMark",
             "synopsis": "Width sets the share of the distance between two points a bar takes, 0.8 by default."
@@ -758,6 +796,11 @@
             "synopsis": "Categories makes the x axis one of names: the X of a point is the index of its name, so a bar chart of four products plots the points 0 to 3 and labels them with the four names."
           },
           {
+            "name": "Center",
+            "signature": "Center(content gift.View) ChartView",
+            "synopsis": "Center puts content in the middle of a ring of sectors: the total, say."
+          },
+          {
             "name": "Flex",
             "signature": "Flex(f float32) ChartView",
             "synopsis": "Flex sets the flex factor in a stack."
@@ -766,6 +809,11 @@
             "name": "Height",
             "signature": "Height(px float32) ChartView",
             "synopsis": "Height sets the height; the default is 220."
+          },
+          {
+            "name": "Inspect",
+            "signature": "Inspect(x float64, on bool) ChartView",
+            "synopsis": "Inspect shows the values at x, or ends the inspection, as a program says: with ChartView.OnInspect two charts that are given the same x and set it when it changes inspect together, a pointer over either showing the moment in both."
           },
           {
             "name": "Inspection",
@@ -806,6 +854,11 @@
             "name": "OnVisibleChange",
             "signature": "OnVisibleChange(fn func(lo, hi float64)) ChartView",
             "synopsis": "OnVisibleChange sets the function called when the visible range of the x axis changes by zooming or dragging, with the range it moves to."
+          },
+          {
+            "name": "Stacking",
+            "signature": "Stacking(s Stacking) ChartView",
+            "synopsis": "Stacking sets how the bars and the areas of several series share an x: Stacked by default, as in Swift Charts, or Normalized, Grouped or Unstacked."
           },
           {
             "name": "TimeAxis",
@@ -866,6 +919,11 @@
             "name": "YTitle",
             "signature": "YTitle(s string) ChartView",
             "synopsis": "YTitle sets the title of the y axis, above it."
+          },
+          {
+            "name": "ZoomY",
+            "signature": "ZoomY(b bool) ChartView",
+            "synopsis": "ZoomY lets the zoom take the y axis as well: a pinch scales both axes, a range dragged with the mouse is a rectangle, and a zoomed chart is dragged in any direction."
           },
           {
             "name": "Zoomable",
@@ -1003,7 +1061,7 @@
         ]
       },
       "Mark": {
-        "synopsis": "Mark is what a chart draws: a LineMark, AreaMark, BarMark, ScatterMark, RuleMark or BandMark, the building blocks of Swift Charts.",
+        "synopsis": "Mark is what a chart draws: a LineMark, AreaMark, BarMark, ScatterMark, RuleMark, BandMark, AnnotationMark or SectorMark, the building blocks of Swift Charts.",
         "decl": "type Mark interface {\n\n}// contains filtered or unexported methods\n",
         "constructors": [],
         "methods": []
@@ -1011,6 +1069,12 @@
       "Point": {
         "synopsis": "Point is one value of a series: Y at X. A Y that is NaN or infinite is a missing value, where a line breaks; see Missing.",
         "decl": "type Point struct{ X, Y float64 }",
+        "constructors": [],
+        "methods": []
+      },
+      "Position": {
+        "synopsis": "Position is where an annotation stands of its point.",
+        "decl": "type Position uint8",
         "constructors": [],
         "methods": []
       },
@@ -1102,6 +1166,49 @@
           }
         ]
       },
+      "SectorMark": {
+        "synopsis": "SectorMark is a slice of a pie or a ring, the counterpart of Swift Charts' SectorMark: the share of one category of a whole.",
+        "decl": "type SectorMark struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Sector",
+            "signature": "Sector(value float64) SectorMark",
+            "synopsis": "Sector returns a slice of value; a value that is not positive is left out."
+          }
+        ],
+        "methods": [
+          {
+            "name": "AngularInset",
+            "signature": "AngularInset(px float32) SectorMark",
+            "synopsis": "AngularInset leaves px pixels between this slice and the next."
+          },
+          {
+            "name": "Color",
+            "signature": "Color(c ui.Color) SectorMark",
+            "synopsis": "Color sets the colour; see LineMark.Color."
+          },
+          {
+            "name": "InnerRadius",
+            "signature": "InnerRadius(f float32) SectorMark",
+            "synopsis": "InnerRadius makes the slice part of a ring: f is the share of the radius that is left empty, 0.6 for a typical donut."
+          },
+          {
+            "name": "Label",
+            "signature": "Label(s string) SectorMark",
+            "synopsis": "Label writes s in the slice."
+          },
+          {
+            "name": "Name",
+            "signature": "Name(s string) SectorMark",
+            "synopsis": "Name names the slice in the legend and in the inspection."
+          },
+          {
+            "name": "Percent",
+            "signature": "Percent(b bool) SectorMark",
+            "synopsis": "Percent writes the share of the slice in it, as a percentage."
+          }
+        ]
+      },
       "Series": {
         "synopsis": "Series is the data of a mark: a *Data in memory, a *Source that is asked for what the chart shows, or a Func.",
         "decl": "type Series interface {\n\n}// contains filtered or unexported methods\n",
@@ -1129,6 +1236,12 @@
       "SourceConfig": {
         "synopsis": "SourceConfig says where a Source gets its points.",
         "decl": "type SourceConfig struct {\n\tExtent func(ctx context.Context) (lo, hi float64, err error)\n\tPoints func(ctx context.Context, r Request) (iter.Seq[Point], error)\n\tTime   bool\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Stacking": {
+        "synopsis": "Stacking is how bars and areas of several series share an x, the counterpart of Swift Charts' MarkStackingMethod and of grouping bars with its position modifier.",
+        "decl": "type Stacking uint8",
         "constructors": [],
         "methods": []
       }

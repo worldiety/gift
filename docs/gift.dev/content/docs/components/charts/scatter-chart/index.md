@@ -17,8 +17,12 @@ a band.
 charts.Chart(
 	charts.Scatter(press).Name("Press"),
 	charts.BandY(40, 55).Label("Normal"),
-).XTitle("Load %").YTitle("°C").Zoomable(false)
+).XTitle("Load %").YTitle("°C").ZoomY(true)
 ```
+
+`ZoomY(true)` lets a zoom take the y axis as well, which a cloud of dots wants: two fingers scale both axes, the
+mouse drags out a rectangle, and a zoomed chart is dragged any way. Until it is zoomed the y axis fits what is
+visible, as without.
 
 `Size` sets the diameter of the dots, 7 by default. A scatter of more points than the chart has pixel columns does
 not draw them all: it shows the [M4](../chart-zoom/#too-many-points) points of each column, the first, the last,

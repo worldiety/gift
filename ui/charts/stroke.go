@@ -226,6 +226,14 @@ func (m *mesh) area(ps []pt, base float64, fill func(y float64) render.Color) {
 	}
 }
 
+// band fills between two polylines of the same xs, a stacked area between
+// the one below it and its own top.
+func (m *mesh) band(top, bottom []pt, c render.Color) {
+	for i := 1; i < len(top) && i < len(bottom); i++ {
+		m.quad(top[i-1], top[i], bottom[i], bottom[i-1], c, c, c, c)
+	}
+}
+
 func (m *mesh) trapezoid(a, b pt, base float64, fill func(y float64) render.Color) {
 	fb := fill(base)
 	m.quad(a, b, pt{b.x, base}, pt{a.x, base}, fill(a.y), fill(b.y), fb, fb)

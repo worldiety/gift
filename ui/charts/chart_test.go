@@ -368,3 +368,119 @@ func TestTheTimeAxisLabelsHoursAndTheDay(t *testing.T) {
 	h.AssertExists(gifttest.ByText("30 Oct"))
 	h.AssertExists(gifttest.ByText("12:00"))
 }
+
+func TestStackedBarsCarryTheirValues(t *testing.T) {
+	a := charts.XY([]float64{0, 1}, []float64{98, 112})
+	b := charts.XY([]float64{0, 1}, []float64{31, 38})
+	h := mount(t, func(*gift.Context) gift.View {
+		return charts.Chart(charts.Bar(a).ValueLabels(true), charts.Bar(b).ValueLabels(true)).Categories("Mon", "Tue")
+	})
+	for _, v := range []string{"98", "112", "31", "38"} {
+		h.AssertExists(gifttest.ByText(v))
+	}
+	// Two stacks of two segments.
+	h.AssertOps("segments", 4, func(op render.Op) bool { return op.Kind == render.OpFillRoundRect })
+}
+
+func TestANormalizedChartShowsShares(t *testing.T) {
+	a := charts.XY([]float64{0}, []float64{1})
+	b := charts.XY([]float64{0}, []float64{3})
+	h := mount(t, func(*gift.Context) gift.View {
+		return charts.Chart(charts.Bar(a).ValueLabels(true), charts.Bar(b).ValueLabels(true)).Stacking(charts.Normalized)
+	})
+	h.AssertExists(gifttest.ByText("25 %"))
+	h.AssertExists(gifttest.ByText("75 %"))
+	h.AssertExists(gifttest.ByText("100 %"))
+}
+
+func TestAPieShowsSharesAndASliceUnderThePointer(t *testing.T) {
+	h := mount(t, func(*gift.Context) gift.View {
+		return charts.Chart(
+			charts.Sector(75).Name("Coffee").Percent(true),
+			charts.Sector(25).Name("Tea").Percent(true),
+		)
+	})
+	h.AssertExists(gifttest.ByText("75 %"))
+	h.AssertExists(gifttest.ByText("25 %"))
+	h.AssertCount(gifttest.ByText("Coffee"), 1)
+	// The first slice runs clockwise from twelve to nine o'clock: to the
+	// right of the middle is in it.
+	plot := h.Find(gifttest.ByKey("plot")).Bounds()
+	pie := h.Find(gifttest.ByText("75 %")).Bounds()
+	h.MoveTo(geom.Pt(pie.Min.X+pie.Width()/2, pie.Min.Y+pie.Height()/2))
+	h.Settle()
+	h.AssertExists(gifttest.ByText("75"))
+	h.AssertCount(gifttest.ByText("Coffee"), 2)
+	h.MoveTo(geom.Pt(plot.Max.X+20, plot.Max.Y+20))
+	h.Settle()
+	h.AssertNone(gifttest.ByText("75"))
+}
+
+func TestAnAnnotationStandsAtItsPoint(t *testing.T) {
+	d := ramp(11)
+	h := mount(t, func(*gift.Context) gift.View {
+		return charts.Chart(charts.Line(d), charts.Annotation(5, 5, "Gate open").Position(charts.Bottom))
+	})
+	h.AssertCount(gifttest.ByText("Gate open"), 1)
+	note := h.Find(gifttest.ByText("Gate open")).Bounds()
+	plot := h.Find(gifttest.ByKey("plot")).Bounds()
+	if mid := plot.Min.Y + plot.Height()/2; note.Min.Y < mid-20 || note.Min.Y > mid+40 {
+		t.Fatalf("the annotation of the middle stands at %v of a plot %v", note, plot)
+	}
+}
+
+func TestZoomYTakesARectangle(t *testing.T) {
+	d := ramp(1001)
+	h := mount(t, func(*gift.Context) gift.View { return charts.Chart(charts.Scatter(d)).ZoomY(true) })
+	h.AssertExists(gifttest.ByText("1k"))
+	plot := h.Find(gifttest.ByKey("plot")).Bounds()
+	at := func(fx, fy float32) geom.Point {
+		return geom.Pt(plot.Min.X+plot.Width()*fx, plot.Min.Y+plot.Height()*fy)
+	}
+	h.MoveTo(at(0.3, 0.2))
+	h.PressAt(at(0.3, 0.2))
+	for f := float32(0.25); f <= 0.4; f += 0.05 {
+		h.MoveTo(at(0.3+f/2, f))
+		h.Frame()
+	}
+	h.ReleaseAt(at(0.5, 0.4))
+	h.Advance(time.Second)
+	h.Settle()
+	h.AssertNone(gifttest.ByText("1k"))
+	h.AssertExists(gifttest.ByKey("charts.reset"))
+	h.Find(gifttest.ByKey("charts.reset")).Click()
+	h.Advance(time.Second)
+	h.Settle()
+	h.AssertExists(gifttest.ByText("1k"))
+}
+
+func TestTwoChartsInspectTogether(t *testing.T) {
+	a, b := ramp(11), ramp(11)
+	h := gifttest.New(t, gifttest.Options{Root: func(ctx *gift.Context) gift.View {
+		in := ctx.State("in", [2]float64{})
+		ctx.Read(in)
+		link := func(c charts.ChartView) charts.ChartView {
+			return c.Inspect(in.Get()[0], in.Get()[1] == 1).OnInspect(func(x float64, on bool) {
+				if on {
+					in.Set([2]float64{x, 1})
+				} else {
+					in.Set([2]float64{})
+				}
+			})
+		}
+		return ui.VStack(
+			link(charts.Chart(charts.Line(a).Name("A"))).Height(140).Key("top"),
+			link(charts.Chart(charts.Line(b).Name("B"))).Height(140).Key("bottom"),
+		)
+	}, Size: geom.Sz(600, 300), Font: ui.MustFont(ui.FontQuery{Family: inter.Family}), Theme: ui.LightTheme()})
+	h.Settle()
+	top := h.Find(gifttest.ByKey("top")).Bounds()
+	h.MoveTo(geom.Pt(top.Min.X+top.Width()*0.3, top.Min.Y+40))
+	h.Settle()
+	// Both callouts name their series; B's is in the chart below.
+	h.AssertExists(gifttest.ByText("A"))
+	bottom := h.Find(gifttest.ByKey("bottom"))
+	if bottom.Find(gifttest.ByText("B")).IsZero() {
+		t.Fatal("the chart below does not inspect")
+	}
+}

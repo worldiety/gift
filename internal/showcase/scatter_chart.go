@@ -9,7 +9,7 @@ import (
 
 func init() {
 	register(Demo{Name: "scatter-chart", Group: "charts", Title: "Scatter Chart",
-		Summary: "A dot for every point, for two measurements against each other.",
+		Summary: "A dot for every point, for two measurements against each other, zoomed in both axes.",
 		Width:   640, Height: 320}, scatterChartDemo)
 }
 
@@ -34,6 +34,6 @@ func scatterChartDemo(ctx *gift.Context) gift.View {
 		charts.Scatter(press).Name("Press"),
 		charts.Scatter(lathe).Name("Lathe").Size(6),
 		charts.BandY(40, 55).Label("Normal"),
-	).XTitle("Load %").YTitle("°C").Zoomable(false).Height(280).Width(600)
+	).XTitle("Load %").YTitle("°C").ZoomY(true).Height(280).Width(600)
 	// snippet:end
 }

@@ -31,7 +31,12 @@ type ChartView struct {
 	yFormat        func(float64) string
 	loc            *time.Location
 	cats           []string
+	stacking       Stacking
 	still          bool
+	zoomY          bool
+	inspect        [2]float64
+	hasInspect     bool
+	center         gift.View
 	visible        [2]float64
 	hasVisible     bool
 	onVisible      func(lo, hi float64)
@@ -122,6 +127,32 @@ func (v ChartView) Location(loc *time.Location) ChartView { v.loc = loc; return 
 //
 //	charts.Chart(charts.Bar(charts.XY([]float64{0, 1, 2}, sales))).Categories("Tea", "Coffee", "Cocoa")
 func (v ChartView) Categories(names ...string) ChartView { v.cats = names; return v }
+
+// Stacking sets how the bars and the areas of several series share an x:
+// [Stacked] by default, as in Swift Charts, or [Normalized], [Grouped] or
+// [Unstacked]. Lines are never stacked.
+func (v ChartView) Stacking(s Stacking) ChartView { v.stacking = s; return v }
+
+// ZoomY lets the zoom take the y axis as well: a pinch scales both axes, a
+// range dragged with the mouse is a rectangle, and a zoomed chart is dragged
+// in any direction. Until it is zoomed the y axis fits what is visible, as
+// without.
+func (v ChartView) ZoomY(b bool) ChartView { v.zoomY = b; return v }
+
+// Inspect shows the values at x, or ends the inspection, as a program
+// says: with [ChartView.OnInspect] two charts that are given the same x and
+// set it when it changes inspect together, a pointer over either showing
+// the moment in both.
+func (v ChartView) Inspect(x float64, on bool) ChartView {
+	v.inspect, v.hasInspect = [2]float64{x, 0}, true
+	if on {
+		v.inspect[1] = 1
+	}
+	return v
+}
+
+// Center puts content in the middle of a ring of sectors: the total, say.
+func (v ChartView) Center(content gift.View) ChartView { v.center = content; return v }
 
 // Zoomable sets whether the chart can be zoomed and dragged; it can by
 // default.
@@ -290,9 +321,18 @@ type state struct {
 	errText     string
 
 	plan        plan
+	pie         []slice
+	bars        []bar
+	sums        map[stackKey][2]float64
+	normal      bool
+	values      []valueLabel
+	builtValues []valueLabel
+	yvp         viewport
+	givenIn     [2]float64
+	hasGivenIn  bool
 	legendAt    []geom.Rect
 	callout     geom.Rect
-	calloutRows []geom.Rect
+	calloutAt   []geom.Rect
 
 	in   inspection
 	drag dragState
@@ -303,11 +343,14 @@ type state struct {
 // markCache is what a mark showed in the last layout: its points, reduced
 // for the visible range and the width of the plot.
 type markCache struct {
-	pts        []Point
-	key        cacheKey
-	color      render.Color
-	nearest    Point
-	hasNearest bool
+	pts []Point
+	// lower and upper are the edges of a stacked area at each of pts.
+	lower, upper []float64
+	stacked      bool
+	key          cacheKey
+	color        render.Color
+	nearest      Point
+	hasNearest   bool
 }
 
 type cacheKey struct {
@@ -340,6 +383,14 @@ func (v ChartView) body(ctx *gift.Context) gift.View {
 	if v.hasVisible && (!st.hasGiven || st.given != v.visible) {
 		st.given, st.hasGiven = v.visible, true
 		st.vp.show(v.visible[0], v.visible[1])
+	}
+	if v.hasInspect && (!st.hasGivenIn || st.givenIn != v.inspect) {
+		st.givenIn, st.hasGivenIn = v.inspect, true
+		// The chart's own inspection, coming back, keeps what it knows:
+		// a finger that holds it, say.
+		if on := v.inspect[1] == 1; st.in.on != on || on && st.in.x != v.inspect[0] {
+			st.in = inspection{on: on, x: v.inspect[0]}
+		}
 	}
 	st.fetch()
 	st.inspectValues()
@@ -469,8 +520,11 @@ func (st *state) fetch() {
 // starts.
 type plan struct {
 	x, y, legend, labels, callout [2]int
+	values, notes                 [2]int
 	xTitle, yTitle, surface       int
-	reset, status                 int
+	reset, status, center         int
+	// noteOf is the mark of each annotation text.
+	noteOf []int
 	// labelOf is the mark of each rule or band label.
 	labelOf []int
 	// legendOf is the mark of each legend entry.
@@ -483,9 +537,12 @@ const (
 )
 
 func (st *state) children() []gift.View {
+	if st.polar() {
+		return st.polarChildren()
+	}
 	v := st.v
 	var kids []gift.View
-	p := plan{xTitle: -1, yTitle: -1, surface: -1, reset: -1, status: -1}
+	p := plan{xTitle: -1, yTitle: -1, surface: -1, reset: -1, status: -1, center: -1}
 	group := func(r *[2]int, add func()) {
 		r[0] = len(kids)
 		add()
@@ -528,24 +585,22 @@ func (st *state) children() []gift.View {
 	group(&p.labels, func() {
 		for i, m := range v.marks {
 			s := m.spec()
-			if s.label != "" && s.kind >= kindRuleX {
+			if s.label != "" && s.kind >= kindRuleX && s.kind <= kindBandY {
 				p.labelOf = append(p.labelOf, i)
 				kids = append(kids, ui.Text(s.label).FontSize(labelSize).Foreground(ui.ColorSecondaryLabel).MaxLines(1))
 			}
 		}
 	})
+	group(&p.values, func() { kids = append(kids, st.valueViews()...) })
+	group(&p.notes, func() { kids = append(kids, st.noteViews(&p)...) })
 	group(&p.callout, func() {
 		if !st.in.on {
 			return
 		}
 		kids = append(kids, ui.Text(v.formatX(st.in.at, st.hi-st.lo)).FontSize(labelSize).Foreground(ui.ColorSecondaryLabel).MaxLines(1))
-		for i, m := range v.marks {
-			s := m.spec()
-			c := &st.cache[i]
-			if s.kind > kindScatter || !c.hasNearest {
-				continue
-			}
-			name := s.name
+		for _, row := range st.calloutRows() {
+			c := &st.cache[row.mark]
+			name := row.name
 			if name == "" {
 				name = "Value"
 			}
@@ -558,7 +613,7 @@ func (st *state) children() []gift.View {
 	})
 	p.surface = len(kids)
 	kids = append(kids, surface{n: st.node})
-	if !v.still && st.vp.zoomed && len(v.cats) == 0 {
+	if !v.still && (st.vp.zoomed || st.yvp.zoomed) && len(v.cats) == 0 {
 		p.reset = len(kids)
 		kids = append(kids, ui.Button(ui.Icon(outline.ZoomOut).Size(16).Foreground(ui.ColorLabel), st.resetZoom).
 			Background(ui.Fade(ui.ColorSurface, 0.9)).Border(ui.Border{Width: 1, Color: ui.ColorSeparator}).
@@ -600,6 +655,36 @@ func (st *state) statusText() string {
 	return ""
 }
 
+// calloutRow is a series in the inspection: its first mark and its name.
+type calloutRow struct {
+	mark int
+	name string
+}
+
+// calloutRows are the series the inspection lists, each once: an area with
+// its line on top is one series, named by whichever of the two has a name.
+func (st *state) calloutRows() []calloutRow {
+	var rows []calloutRow
+	seen := map[Series]int{}
+	for i, m := range st.v.marks {
+		s := m.spec()
+		if s.kind > kindScatter || !st.cache[i].hasNearest {
+			continue
+		}
+		if _, isFunc := s.data.(Func); !isFunc {
+			if k, ok := seen[s.data]; ok {
+				if rows[k].name == "" {
+					rows[k].name = s.name
+				}
+				continue
+			}
+			seen[s.data] = len(rows)
+		}
+		rows = append(rows, calloutRow{mark: i, name: s.name})
+	}
+	return rows
+}
+
 // resetZoom shows the whole chart again.
 func (st *state) resetZoom() {
 	lo, hi, ok := st.extent()
@@ -607,7 +692,16 @@ func (st *state) resetZoom() {
 		return
 	}
 	st.vp.animateTo(st.vp.now, lo, hi, false)
+	if st.yZoomed() {
+		// The y axis glides back from the zoom to the fit.
+		ylo, yhi, _ := st.yvp.at(st.vp.now)
+		st.yvp.zoomed, st.yvp.moving = false, false
+		st.ys.from2(st.vp.now, ylo, yhi)
+	}
 	st.visibleChanged(lo, hi)
+	if st.node != nil && st.node.invalidate != nil {
+		st.node.invalidate()
+	}
 	st.bump()
 }
 

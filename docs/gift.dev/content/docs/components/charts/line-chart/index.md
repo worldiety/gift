@@ -8,7 +8,7 @@ axes fit the data, the legend names the series, and a pointer over the chart sho
 is missing breaks the line: the sensor in the yard below was off for an hour and a half, and the chart shows the
 hole instead of a straight line across it.
 
-{{< gallery-shot alt="Two lines of temperatures over a day, Hall 2 at about 20 °C and Yard from 5 to 13 °C with a gap after one o'clock, under a dashed limit at 23 °C, with hours on the x axis and a legend" >}}
+{{< gallery-shot alt="Two lines of temperatures over a day, Hall 2 at about 20 °C with a dot and the note Gate open at half past five, and Yard from 5 to 13 °C with a gap after one o'clock, under a dashed limit at 23 °C, with hours on the x axis and a legend" >}}
 
 {{< gallery-code >}}
 
@@ -47,6 +47,12 @@ that never overshoots its points, for a measurement), and `StepAfter`, `StepBefo
 until the next one, the state of a switch). Where there are several points to a pixel column, the line is their
 [M4](../chart-zoom/#too-many-points) and the interpolation has nothing to do.
 
+## Annotations
+
+`charts.Annotation(x, y, text)`, or `AnnotationTime` on a time axis, writes a text at a point with a dot on it:
+what happened then. `Position` puts the text above, below, before or after the point, and the annotation leaves
+the plot when its point does. Rules take a `Label` of their own.
+
 ## Inspection
 
 A mouse over the chart, a finger that rests on it or taps it, shows a line at the nearest point and a box with the
@@ -61,7 +67,10 @@ time and the value of every series there. `OnInspect` hears of it, to show the s
 
 {{< api pkg="charts" type="RuleMark" >}}
 
+{{< api pkg="charts" type="AnnotationMark" >}}
+
 ## Related
 
 - [Area Chart](../area-chart/) fills the area under a line.
 - [Chart Zoom](../chart-zoom/) zooms into a line of millions of points.
+- [Linked Charts](../linked-charts/) inspect and zoom together.

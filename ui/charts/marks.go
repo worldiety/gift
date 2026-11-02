@@ -8,9 +8,9 @@ import (
 )
 
 // Mark is what a chart draws: a [LineMark], [AreaMark], [BarMark],
-// [ScatterMark], [RuleMark] or [BandMark], the building blocks of Swift
-// Charts. The marks of a chart are drawn in the order they are given, all on
-// the same axes.
+// [ScatterMark], [RuleMark], [BandMark], [AnnotationMark] or [SectorMark],
+// the building blocks of Swift Charts. The marks of a chart are drawn in the
+// order they are given, all on the same axes; sectors make a pie instead.
 type Mark interface{ spec() markSpec }
 
 type kind uint8
@@ -24,6 +24,8 @@ const (
 	kindRuleY
 	kindBandX
 	kindBandY
+	kindSector
+	kindNote
 )
 
 // markSpec is the declaration of a mark of any kind; each kind uses the
@@ -44,6 +46,16 @@ type markSpec struct {
 	radius   float32
 	a, b     float64
 	label    string
+	// values labels each bar with its value; percent labels a sector with
+	// its share.
+	values  bool
+	percent bool
+	inner   float32
+	inset   float32
+	pos     Position
+	nodot   bool
+	// opaque says that Opacity was set.
+	opaque bool
 }
 
 // Interpolation is how a line or an area runs from one point to the next.
@@ -131,8 +143,12 @@ func (m AreaMark) Name(s string) AreaMark { m.s.name = s; return m }
 func (m AreaMark) Color(c ui.Color) AreaMark { m.s.color, m.s.hasColor = c, true; return m }
 
 // Opacity sets how opaque the area is, 0.3 by default, so that a line on it
-// and the grid behind it show.
-func (m AreaMark) Opacity(f float32) AreaMark { m.s.opacity = min(max(f, 0), 1); return m }
+// and the grid behind it show; stacked areas do not lie on each other and
+// are 0.85 by default.
+func (m AreaMark) Opacity(f float32) AreaMark {
+	m.s.opacity, m.s.opaque = min(max(f, 0), 1), true
+	return m
+}
 
 // Gradient fades the area out towards zero.
 func (m AreaMark) Gradient(b bool) AreaMark { m.s.gradient = b; return m }
@@ -175,6 +191,11 @@ func (m BarMark) Width(f float32) BarMark { m.s.width = min(max(f, 0.05), 1); re
 
 // CornerRadius rounds the corners of the bars; the default is 2.
 func (m BarMark) CornerRadius(px float32) BarMark { m.s.radius = max(px, 0); return m }
+
+// ValueLabels writes its value on every bar: above it, or in it when the
+// bars are stacked. A label that does not fit is left out, and so are all
+// of them when the bars are too many to read.
+func (m BarMark) ValueLabels(b bool) BarMark { m.s.values = b; return m }
 
 func (m BarMark) spec() markSpec { return m.s }
 
@@ -262,6 +283,86 @@ func (m BandMark) Color(c ui.Color) BandMark { m.s.color, m.s.hasColor = c, true
 func (m BandMark) Opacity(f float32) BandMark { m.s.opacity = min(max(f, 0), 1); return m }
 
 func (m BandMark) spec() markSpec { return m.s }
+
+// --- sector --------------------------------------------------------------------
+
+// SectorMark is a slice of a pie or a ring, the counterpart of Swift Charts'
+// SectorMark: the share of one category of a whole. A chart with sectors
+// shows them as a circle, clockwise from twelve o'clock in the order they
+// are given, without axes; a pointer over a slice shows its value.
+type SectorMark struct{ s markSpec }
+
+// Sector returns a slice of value; a value that is not positive is left
+// out.
+//
+//	charts.Chart(
+//		charts.Sector(42).Name("Tea").Percent(true),
+//		charts.Sector(58).Name("Coffee").Percent(true),
+//	)
+func Sector(value float64) SectorMark { return SectorMark{markSpec{kind: kindSector, a: value}} }
+
+// Name names the slice in the legend and in the inspection.
+func (m SectorMark) Name(s string) SectorMark { m.s.name = s; return m }
+
+// Color sets the colour; see [LineMark.Color].
+func (m SectorMark) Color(c ui.Color) SectorMark { m.s.color, m.s.hasColor = c, true; return m }
+
+// InnerRadius makes the slice part of a ring: f is the share of the radius
+// that is left empty, 0.6 for a typical donut.
+func (m SectorMark) InnerRadius(f float32) SectorMark { m.s.inner = min(max(f, 0), 0.95); return m }
+
+// AngularInset leaves px pixels between this slice and the next.
+func (m SectorMark) AngularInset(px float32) SectorMark { m.s.inset = max(px, 0); return m }
+
+// Label writes s in the slice.
+func (m SectorMark) Label(s string) SectorMark { m.s.label = s; return m }
+
+// Percent writes the share of the slice in it, as a percentage.
+func (m SectorMark) Percent(b bool) SectorMark { m.s.percent = b; return m }
+
+func (m SectorMark) spec() markSpec { return m.s }
+
+// --- annotation ------------------------------------------------------------------
+
+// Position is where an annotation stands of its point.
+type Position uint8
+
+const (
+	// Top puts the text above the point.
+	Top Position = iota
+	// Bottom puts it below.
+	Bottom
+	// Leading puts it before.
+	Leading
+	// Trailing puts it after.
+	Trailing
+)
+
+// AnnotationMark is a text at a point of the plot, with a dot on the point:
+// what happened then, the counterpart of the annotation modifier of a Swift
+// Charts mark.
+type AnnotationMark struct{ s markSpec }
+
+// Annotation returns text at x and y.
+func Annotation(x, y float64, text string) AnnotationMark {
+	return AnnotationMark{markSpec{kind: kindNote, a: x, b: y, label: text}}
+}
+
+// AnnotationTime returns text at t and y, on a time axis.
+func AnnotationTime(t time.Time, y float64, text string) AnnotationMark {
+	return Annotation(Seconds(t), y, text)
+}
+
+// Position sets where the text stands; the default is [Top].
+func (m AnnotationMark) Position(p Position) AnnotationMark { m.s.pos = p; return m }
+
+// Color sets the colour of the dot; the default is that of text.
+func (m AnnotationMark) Color(c ui.Color) AnnotationMark { m.s.color, m.s.hasColor = c, true; return m }
+
+// Dot sets whether a dot marks the point; it does by default.
+func (m AnnotationMark) Dot(b bool) AnnotationMark { m.s.nodot = !b; return m }
+
+func (m AnnotationMark) spec() markSpec { return m.s }
 
 // --- colours -----------------------------------------------------------------
 

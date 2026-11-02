@@ -222,10 +222,12 @@ HEVC in software or, with `HW`, in hardware. Try it with
 
 ### Charts
 
-`ui/charts` draws charts after Swift Charts: lines, areas, bars, dots, rules and
-bands on axes that fit the data, with a legend and the values under the
-pointer. A missing value (NaN) breaks a line, and every chart with a
-continuous x axis zooms: pinch, double tap, a range dragged with the mouse.
+`ui/charts` draws charts after Swift Charts: lines, areas, bars, dots, rules,
+bands and annotations on axes that fit the data, bars and areas stacked or
+grouped, pies and rings, with a legend and the values under the pointer. A
+missing value (NaN) breaks a line, and every chart with a continuous x axis
+zooms: pinch, double tap, a range dragged with the mouse; linked charts zoom
+and inspect together.
 
 ```go
 temps := charts.Times(times, values) // github.com/worldiety/gift/ui/charts

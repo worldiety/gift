@@ -12,11 +12,15 @@
 //
 // A chart is made of marks, drawn in the order they are given: [Line],
 // [Area], [Bar] and [Scatter] draw a series, [RuleY] and [RuleX] a line at
-// one value, [BandY] and [BandX] a shaded range. They are Swift Charts'
-// LineMark, AreaMark, BarMark, PointMark, RuleMark and RectangleMark. The
-// axes, the grid and the legend follow from the marks; [ChartView] has the
-// modifiers of the chart as a whole, from [ChartView.XDomain] to
-// [ChartView.Categories].
+// one value, [BandY] and [BandX] a shaded range, [Annotation] a text at a
+// point. They are Swift Charts' LineMark, AreaMark, BarMark, PointMark,
+// RuleMark, RectangleMark and the annotation modifier. The axes, the grid
+// and the legend follow from the marks; [ChartView] has the modifiers of the
+// chart as a whole, from [ChartView.XDomain] to [ChartView.Categories].
+//
+// Bars and areas of several series stack, as in Swift Charts, or stand side
+// by side; see [ChartView.Stacking]. A chart of [Sector] marks is a pie, or a
+// ring with [SectorMark.InnerRadius], instead of a pair of axes.
 //
 // # Data
 //
@@ -34,9 +38,12 @@
 // into, and the wheel zooms with the control or command key held. A zoomed
 // chart is dragged with a finger, scrolled sideways on a trackpad and moved
 // with the arrow keys, and a button in its corner, the 0 key and the Home
-// key show all of it again. The y axis fits what is visible. A program sets
-// the visible range with [ChartView.Visible] and learns of it through
-// [ChartView.OnVisibleChange], which is how two charts zoom together.
+// key show all of it again. The y axis fits what is visible; with
+// [ChartView.ZoomY] the zoom takes it as well. A program sets the visible
+// range with [ChartView.Visible] and the inspected x with
+// [ChartView.Inspect], and learns of them through
+// [ChartView.OnVisibleChange] and [ChartView.OnInspect], which is how two
+// charts zoom and inspect together.
 //
 // # Too many points
 //

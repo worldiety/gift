@@ -1,6 +1,6 @@
 ---
 title: Chart Zoom
-weight: 5
+weight: 6
 ---
 
 Every chart with a continuous x axis can be zoomed into, and however many points it has, it draws no more than its
@@ -28,8 +28,11 @@ at, as it is zoomed into, the way a map asks for tiles.
 The y axis fits what is visible and glides to it. A finger that drags up or down a chart that is not zoomed goes on
 to the scroll view around it, and so does the wheel without a key, so a chart in a long page does not trap it.
 
+`ZoomY(true)` lets the zoom take the y axis as well: two fingers scale both axes, the mouse drags out a rectangle,
+and a zoomed chart is dragged any way.
+
 `Visible(lo, hi)` sets the visible range and `OnVisibleChange` hears of it: two charts that are given the same range
-and set it when either changes zoom together. `MinSpan` sets how far a zoom goes, by default down to eight points
+and set it when either changes zoom together, as [Linked Charts](../linked-charts/) shows. `MinSpan` sets how far a zoom goes, by default down to eight points
 of the densest data; `Zoomable(false)` turns zooming off.
 
 ## Too many points

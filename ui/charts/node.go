@@ -2,6 +2,7 @@ package charts
 
 import (
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/worldiety/gift"
@@ -99,6 +100,10 @@ func (n *plotNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size
 	}
 	size := c.Constrain(geom.Sz(w, v.height))
 	st.size, st.density = size, ctx.Density()
+	if st.polar() {
+		n.layoutPolar(ctx, size)
+		return size
+	}
 	p := st.plan
 
 	if lo, hi, ok := st.extent(); ok {
@@ -152,11 +157,19 @@ func (n *plotNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size
 
 	n.reduce(ctx, lo, hi)
 	ylo, yhi, yMoving := st.ys.at(now)
+	if st.yZoomed() {
+		ylo, yhi, yMoving = st.yvp.at(now)
+	}
 	st.ylo, st.yhi = ylo, yhi
 
 	xt := st.xTicks(lo, hi, plot.Width())
-	yt := numberTicks(ylo, yhi, plot.Height(), 36, v.yFormat)
-	if !sameTicks(xt, st.builtX) || !sameTicks(yt, st.builtY) {
+	yf := v.yFormat
+	if st.normal && yf == nil {
+		yf = func(y float64) string { return strconv.Itoa(int(math.Round(y*100))) + " %" }
+	}
+	yt := numberTicks(ylo, yhi, plot.Height(), 36, yf)
+	st.valueLabels()
+	if !sameTicks(xt, st.builtX) || !sameTicks(yt, st.builtY) || !sameValues(st.values, st.builtValues) {
 		st.xt, st.yt = xt, yt
 		ctx.RequestBuild()
 	}
@@ -206,6 +219,8 @@ func (n *plotNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size
 		st.legendAt = append(st.legendAt, r)
 	}
 	n.placeMarkLabels(ctx, plot)
+	n.placeValues(ctx, plot)
+	n.placeNotes(ctx, plot)
 	n.placeCallout(ctx, plot)
 	if p.reset >= 0 {
 		ctx.Measure(p.reset, loose)
@@ -254,6 +269,13 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 		}
 	}
 	zero := v.zero
+	areas := 0
+	for _, m := range v.marks {
+		if m.spec().kind == kindArea {
+			areas++
+		}
+	}
+	areaStack := areas > 1 && (v.stacking == Stacked || v.stacking == Normalized)
 	empty, busy, fetch := true, false, false
 	st.errText = ""
 	// Every series takes the next colour, and marks of the same series, an
@@ -278,12 +300,17 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 			c.color = col
 		case s.kind == kindRuleX || s.kind == kindRuleY:
 			c.color = ui.ResolveColor(ui.ColorSecondaryLabel)
+		case s.kind == kindNote:
+			c.color = ui.ResolveColor(ui.ColorLabel)
 		default:
 			c.color = ui.ResolveColor(ui.ColorAccent)
 		}
 		switch s.kind {
 		case kindRuleY:
 			take(s.a)
+			continue
+		case kindNote:
+			take(s.b)
 			continue
 		case kindBandY:
 			take(s.a)
@@ -334,15 +361,40 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 		default:
 			continue
 		}
+		// Bars and stacked areas are fitted below, as they are stacked.
+		own := s.kind != kindBar && !(s.kind == kindArea && areaStack)
 		for _, p := range c.pts {
 			if p.X >= lo && p.X <= hi {
-				take(p.Y)
+				if own {
+					take(p.Y)
+				}
 				if !Missing(p.Y) {
 					empty = false
 				}
 			}
 		}
 	}
+	st.layoutBars(lo, hi)
+	for _, b := range st.bars {
+		if b.x1 >= lo && b.x0 <= hi {
+			take(b.y0)
+			take(b.y1)
+		}
+	}
+	st.stackAreas()
+	for i := range v.marks {
+		c := &st.cache[i]
+		if !c.stacked {
+			continue
+		}
+		for k, p := range c.pts {
+			if p.X >= lo && p.X <= hi {
+				take(c.lower[k])
+				take(c.upper[k])
+			}
+		}
+	}
+	st.normal = v.stacking == Normalized && (len(st.bars) > 0 || areaStack)
 	if fetch {
 		ctx.RequestBuild()
 	}
@@ -356,6 +408,8 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 
 	var tlo, thi float64
 	switch {
+	case st.normal:
+		tlo, thi = 0, 1
 	case v.hasY:
 		tlo, thi = v.ydom[0], v.ydom[1]
 	case math.IsInf(ymin, 1):
@@ -452,7 +506,7 @@ func (n *plotNode) placeCallout(ctx *gift.LayoutContext, plot geom.Rect) {
 	st := n.st
 	p := st.plan
 	st.callout = geom.Rect{}
-	st.calloutRows = st.calloutRows[:0]
+	st.calloutAt = st.calloutAt[:0]
 	if p.callout[1] == p.callout[0] {
 		return
 	}
@@ -483,7 +537,7 @@ func (n *plotNode) placeCallout(ctx *gift.LayoutContext, plot geom.Rect) {
 		s := sizes[k]
 		at := geom.Pt(box.Min.X+inset, y)
 		if k > 0 {
-			st.calloutRows = append(st.calloutRows, geom.Rect{Min: at, Max: at.Add(geom.Pt(s.W, s.H))})
+			st.calloutAt = append(st.calloutAt, geom.Rect{Min: at, Max: at.Add(geom.Pt(s.W, s.H))})
 			at.X += 14
 			ctx.Measure(i, geom.Constraints{Min: geom.Sz(w-2*inset-14, 0), Max: geom.Sz(w-2*inset-14, s.H)})
 		}
@@ -497,6 +551,10 @@ func (n *plotNode) placeCallout(ctx *gift.LayoutContext, plot geom.Rect) {
 func (n *plotNode) Paint(ctx *gift.PaintContext) {
 	st := n.st
 	v := st.v
+	if st.polar() {
+		n.paintPolar(ctx)
+		return
+	}
 	b := ctx.Bounds()
 	db := ctx.DeviceBounds()
 	at := func(r geom.Rect) geom.Rect { return r.Translate(b.Min) }
@@ -566,6 +624,10 @@ func (n *plotNode) Paint(ctx *gift.PaintContext) {
 				n.symbols(ctx, c, ox, oy, 6)
 			}
 		case kindArea:
+			if c.stacked {
+				n.stackedArea(ctx, s, c, ox, oy, plot)
+				continue
+			}
 			base := n.baseline(oy)
 			top := scale(c.color, s.opacity)
 			fill := func(float64) render.Color { return top }
@@ -590,7 +652,7 @@ func (n *plotNode) Paint(ctx *gift.PaintContext) {
 			})
 			m.emit(ctx, plot, top)
 		case kindBar:
-			n.bars(ctx, s, c, ox, oy, plot)
+			n.paintBars(ctx, i, s, c, ox, oy, plot)
 		case kindScatter:
 			n.symbols(ctx, c, ox, oy, s.width)
 		case kindRuleY, kindRuleX:
@@ -610,10 +672,15 @@ func (n *plotNode) Paint(ctx *gift.PaintContext) {
 			m.emit(ctx, plot, c.color)
 		}
 	}
+	n.paintNotes(ctx, ox, oy, plot)
 	n.paintInspection(ctx, ox, oy, plot)
 	if d := st.drag; d.brushing {
 		x0, x1 := float32(ox+st.plotX(min(d.b0, d.b1))), float32(ox+st.plotX(max(d.b0, d.b1)))
 		r := geom.Rc(x0, plot.Min.Y, x1, plot.Max.Y)
+		if v.zoomY {
+			r.Min.Y, r.Max.Y = float32(oy+st.plotY(max(d.c0, d.c1))), float32(oy+st.plotY(min(d.c0, d.c1)))
+			ctx.Add(render.Op{Kind: render.OpStrokeRoundRect, Bounds: r, Color: ui.ResolveColor(ui.ColorAccent), StrokeWidth: hair})
+		}
 		accent := ui.ResolveColor(ui.ColorAccent)
 		ctx.Add(render.Op{Kind: render.OpFillRect, Bounds: r, Color: scale(accent, 0.15)})
 		ctx.Add(render.Op{Kind: render.OpFillRect, Bounds: geom.Rc(x0-hair/2, plot.Min.Y, x0+hair/2, plot.Max.Y), Color: accent})
@@ -634,16 +701,10 @@ func (n *plotNode) Paint(ctx *gift.PaintContext) {
 		ctx.Add(render.Op{Kind: render.OpShadow, Bounds: box.Translate(geom.Pt(0, 2)), Color: render.RGBA(0, 0, 0, 40), CornerRadius: 8, Blur: 8})
 		ctx.Add(render.Op{Kind: render.OpFillRoundRect, Bounds: box, Color: ui.ResolveColor(ui.ColorSurface), CornerRadius: 8})
 		ctx.Add(render.Op{Kind: render.OpStrokeRoundRect, Bounds: box, Color: grid, CornerRadius: 8, StrokeWidth: hair})
-		k := 0
-		for i, mk := range v.marks {
-			s := mk.spec()
-			if s.kind > kindScatter || !st.cache[i].hasNearest {
-				continue
+		for k, row := range st.calloutRows() {
+			if k < len(st.calloutAt) {
+				n.swatch(ctx, at(st.calloutAt[k]), v.marks[row.mark].spec().kind, st.cache[row.mark].color)
 			}
-			if k < len(st.calloutRows) {
-				n.swatch(ctx, at(st.calloutRows[k]), s.kind, st.cache[i].color)
-			}
-			k++
 		}
 	}
 	ctx.PaintChildren()
@@ -774,35 +835,68 @@ func (n *plotNode) symbols(ctx *gift.PaintContext, c *markCache, ox, oy float64,
 	}
 }
 
-// bars draws the bars of a mark: as wide as their share of the distance
-// between the points, or, when that is less than two device pixels, as the
-// highest and the lowest bar of each pixel column.
-func (n *plotNode) bars(ctx *gift.PaintContext, s markSpec, c *markCache, ox, oy float64, plot geom.Rect) {
+// paintBars draws the bars of mark i as layoutBars worked them out.
+func (n *plotNode) paintBars(ctx *gift.PaintContext, i int, s markSpec, c *markCache, ox, oy float64, plot geom.Rect) {
 	st := n.st
-	unit := st.barStep(s, c)
-	bw := float32(unit * float64(s.width) * float64(plot.Width()) / (st.hi - st.lo))
-	thin := bw*st.density < 2
-	if thin {
-		bw = 1 / st.density
-	}
-	base := float32(n.baseline(oy))
-	for _, p := range c.pts {
-		if Missing(p.Y) {
+	hair := 1 / st.density
+	for _, b := range st.bars {
+		if b.mark != i {
 			continue
 		}
-		x := float32(ox + st.plotX(p.X))
-		if x < plot.Min.X-bw || x > plot.Max.X+bw {
+		x0, x1 := float32(ox+st.plotX(b.x0)), float32(ox+st.plotX(b.x1))
+		if x1 < plot.Min.X || x0 > plot.Max.X {
 			continue
 		}
-		y := float32(oy + st.plotY(p.Y))
-		r := geom.Rc(x-bw/2, min(y, base), x+bw/2, max(y, base))
-		if thin {
+		y0, y1 := float32(oy+st.plotY(b.y1)), float32(oy+st.plotY(b.y0))
+		if b.thin {
+			x0 = float32(math.Round(float64(x0*st.density))) / st.density
+			r := geom.Rc(x0, y0, x0+hair, max(y1, y0+hair))
 			ctx.Add(render.Op{Kind: render.OpFillRect, Bounds: r, Color: c.color})
 			continue
 		}
-		rad := min(s.radius, bw/4, r.Height()/2)
+		// Stacked segments and grouped bars are kept a hair apart.
+		r := geom.Rc(x0, y0, x1, y1)
+		if st.v.stacking != Unstacked {
+			r = geom.Rc(x0+hair/2, y0+hair/2, x1-hair/2, y1-hair/2)
+		}
+		if r.Width() <= 0 || r.Height() <= 0 {
+			continue
+		}
+		rad := min(s.radius, r.Width()/4, r.Height()/2)
 		ctx.Add(render.Op{Kind: render.OpFillRoundRect, Bounds: r, Color: c.color, CornerRadius: rad})
 	}
+}
+
+// stackedArea fills a stacked area between its lower and its upper edge.
+func (n *plotNode) stackedArea(ctx *gift.PaintContext, s markSpec, c *markCache, ox, oy float64, plot geom.Rect) {
+	st := n.st
+	m := &n.mesh
+	col := scale(c.color, 0.85)
+	if s.opaque {
+		col = scale(c.color, s.opacity)
+	}
+	var top, bottom []pt
+	flush := func() {
+		m.band(top, bottom, col)
+		top, bottom = top[:0], bottom[:0]
+	}
+	prev := math.NaN()
+	for k, p := range c.pts {
+		if Missing(p.Y) || k >= len(c.upper) || Missing(c.upper[k]) {
+			flush()
+			prev = math.NaN()
+			continue
+		}
+		if s.maxGap > 0 && !math.IsNaN(prev) && p.X-prev > s.maxGap {
+			flush()
+		}
+		prev = p.X
+		x := finite(ox + st.plotX(p.X))
+		top = append(top, pt{x, finite(oy + st.plotY(c.upper[k]))})
+		bottom = append(bottom, pt{x, finite(oy + st.plotY(c.lower[k]))})
+	}
+	flush()
+	m.emit(ctx, plot, col)
 }
 
 // barStep is the distance between two bars in x: one category, the step of
@@ -836,7 +930,7 @@ func (n *plotNode) swatch(ctx *gift.PaintContext, r geom.Rect, k kind, c render.
 	cy := r.Min.Y + r.Height()/2
 	sw := geom.Rc(r.Min.X+1, cy-4, r.Min.X+9, cy+4)
 	rad := float32(4)
-	if k == kindBar || k == kindArea {
+	if k == kindBar || k == kindArea || k == kindSector {
 		rad = 2
 	}
 	ctx.Add(render.Op{Kind: render.OpFillRoundRect, Bounds: sw, Color: c, CornerRadius: rad})
@@ -856,7 +950,7 @@ func (n *plotNode) paintInspection(ctx *gift.PaintContext, ox, oy float64, plot 
 	ring := ui.ResolveColor(ui.ColorSurface)
 	for i, mk := range st.v.marks {
 		c := &st.cache[i]
-		if mk.spec().kind > kindScatter || !c.hasNearest || Missing(c.nearest.Y) {
+		if k := mk.spec().kind; k > kindScatter || k == kindBar || c.stacked || !c.hasNearest || Missing(c.nearest.Y) {
 			continue
 		}
 		px, py := float32(ox+st.plotX(c.nearest.X)), float32(oy+st.plotY(c.nearest.Y))

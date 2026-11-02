@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/worldiety/gift"
+	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/ui/gesture"
 	"github.com/worldiety/gift/ui/motion"
 )
@@ -66,9 +67,14 @@ func (vp *viewport) jump(lo, hi float64, zoomed bool) {
 	vp.zoomed = zoomed && vp.isZoomed(lo, hi)
 }
 
-// show shows a range the program gives.
+// show shows a range the program gives: at once when it is a step of a
+// zoom or a drag, which a chart linked to another follows frame by frame,
+// and in a glide when it is somewhere else.
 func (vp *viewport) show(lo, hi float64) {
-	if !vp.valid {
+	cl, ch, _ := vp.at(vp.now)
+	span, old := hi-lo, ch-cl
+	step := old > 0 && math.Abs(span/old-1) < 0.25 && math.Abs((lo+hi)/2-(cl+ch)/2) < old/4
+	if !vp.valid || step {
 		vp.jump(lo, hi, true)
 		return
 	}
@@ -140,6 +146,12 @@ func (e *eased2) set(now time.Duration, lo, hi float64) {
 	}
 }
 
+// from lets the axis glide to where it is going from [lo, hi], the range a
+// zoom of the y axis showed.
+func (e *eased2) from2(now time.Duration, lo, hi float64) {
+	e.from, e.t0, e.moving = [2]float64{lo, hi}, now, true
+}
+
 func (e *eased2) at(now time.Duration) (lo, hi float64, moving bool) {
 	if !e.moving {
 		return e.to[0], e.to[1], false
@@ -165,6 +177,10 @@ type inspection struct {
 	at     float64
 	touch  bool // a finger holds it: it ends when the finger lifts
 	sticky bool // a tap set it: it stays until the next tap
+	// sector is the slice of a pie that is inspected, and pos where the
+	// pointer is, for the box beside it.
+	sector int
+	pos    geom.Point
 }
 
 // dragState is a drag under way: a pan, a pinch or a range dragged with the
@@ -172,10 +188,13 @@ type inspection struct {
 type dragState struct {
 	brushing bool
 	b0, b1   float64
+	c0, c1   float64 // the y of a rectangle, when the y axis zooms
 	panning  bool
 	base     [2]float64
+	ybase    [2]float64
 	pinching bool
 	anchor   float64
+	yanchor  float64
 }
 
 // --- input -------------------------------------------------------------------------
@@ -215,7 +234,7 @@ func (n *plotNode) input(ctx *gift.EventContext, e gift.Event) bool {
 // zoomable reports whether the chart zooms at all.
 func (n *plotNode) zoomable() bool {
 	st := n.st
-	return !st.v.still && len(st.v.cats) == 0 && st.vp.hasFull && st.plot.Width() > 0
+	return !st.v.still && len(st.v.cats) == 0 && st.vp.hasFull && st.plot.Width() > 0 && !st.polar()
 }
 
 // xAt returns the x under the local position px.
@@ -233,15 +252,43 @@ func (n *plotNode) moved() {
 	n.st.bump()
 }
 
-// zoomAbout scales the visible range by f about x, at once.
-func (n *plotNode) zoomAbout(x, f float64) {
+// zoomAbout scales the visible range by f about the local position at, at
+// once.
+func (n *plotNode) zoomAbout(at geom.Point, f float64) {
 	st := n.st
+	x := n.xAt(at.X)
 	lo, hi, _ := st.vp.at(st.vp.now)
 	lo, hi = x-(x-lo)*f, x+(hi-x)*f
 	st.vp.jump(lo, hi, true)
+	if st.v.zoomY {
+		y := n.yAt(at.Y)
+		ylo, yhi := st.yRange()
+		st.yvp.jump(y-(y-ylo)*f, y+(yhi-y)*f, true)
+	}
 	st.visibleChanged(st.vp.lo, st.vp.hi)
 	n.moved()
 }
+
+// yAt returns the y under the local position py.
+func (n *plotNode) yAt(py float32) float64 {
+	st := n.st
+	return st.yhi - float64(py-st.plot.Min.Y)/float64(st.plot.Height())*(st.yhi-st.ylo)
+}
+
+// yRange returns the visible range of the y axis, and when it is not zoomed
+// yet makes the axis it fits now the whole of a zoom of it.
+func (st *state) yRange() (float64, float64) {
+	if !st.yvp.zoomed && !st.yvp.moving {
+		st.yvp.full, st.yvp.hasFull = [2]float64{st.ylo, st.yhi}, true
+		st.yvp.minSpan = (st.yhi - st.ylo) * 1e-6
+		st.yvp.lo, st.yvp.hi, st.yvp.valid = st.ylo, st.yhi, true
+	}
+	lo, hi, _ := st.yvp.at(st.vp.now)
+	return lo, hi
+}
+
+// yZoomed reports whether the y axis shows a zoom rather than the fit.
+func (st *state) yZoomed() bool { return st.yvp.zoomed || st.yvp.moving }
 
 func (n *plotNode) onMagnify(v gesture.MagnifyValue) {
 	if !n.zoomable() {
@@ -253,12 +300,24 @@ func (n *plotNode) onMagnify(v gesture.MagnifyValue) {
 	if v.Phase == gesture.Began || !d.pinching {
 		lo, hi, _ := st.vp.at(st.vp.now)
 		d.pinching, d.base = true, [2]float64{lo, hi}
-		d.anchor = n.xAt(v.Common.Local(v.StartAnchor).X)
+		start := v.Common.Local(v.StartAnchor)
+		d.anchor = n.xAt(start.X)
+		if st.v.zoomY {
+			ylo, yhi := st.yRange()
+			d.ybase, d.yanchor = [2]float64{ylo, yhi}, n.yAt(start.Y)
+		}
 	}
-	span := (d.base[1] - d.base[0]) / math.Max(v.Magnification, 1e-6)
+	mag := math.Max(v.Magnification, 1e-6)
+	span := (d.base[1] - d.base[0]) / mag
 	f := float64(at.X-st.plot.Min.X) / float64(st.plot.Width())
 	lo := d.anchor - f*span
 	st.vp.jump(lo, lo+span, true)
+	if st.v.zoomY {
+		yspan := (d.ybase[1] - d.ybase[0]) / mag
+		g := float64(st.plot.Max.Y-at.Y) / float64(st.plot.Height())
+		ylo := d.yanchor - g*yspan
+		st.yvp.jump(ylo, ylo+yspan, true)
+	}
 	if v.Phase == gesture.Ended {
 		d.pinching = false
 		st.visibleChanged(st.vp.lo, st.vp.hi)
@@ -276,8 +335,11 @@ func (n *plotNode) dragBegins(v gesture.DragValue) bool {
 	case v.Device == gift.PointerMouse:
 		return true
 	}
-	// A finger drags a zoomed chart sideways; anything else goes on to a
-	// scroll view around it.
+	// A finger drags a zoomed chart sideways, or any way when the y axis
+	// zooms; anything else goes on to a scroll view around it.
+	if st.v.zoomY && (st.vp.zoomed || st.yvp.zoomed) {
+		return true
+	}
 	return st.vp.zoomed && math.Abs(float64(v.Translation.X)) > math.Abs(float64(v.Translation.Y))
 }
 
@@ -291,19 +353,28 @@ func (n *plotNode) onDrag(v gesture.DragValue) {
 	case v.Device == gift.PointerMouse:
 		if !d.brushing {
 			d.brushing = true
-			d.b0 = n.xAt(v.Common.Local(v.StartLocation).X)
+			start := v.Common.Local(v.StartLocation)
+			d.b0, d.c0 = n.xAt(start.X), n.yAt(start.Y)
 		}
-		d.b1 = n.xAt(at.X)
+		d.b1, d.c1 = n.xAt(at.X), n.yAt(at.Y)
 		n.inspect(0, false)
 		n.moved()
 	default:
 		if !d.panning {
 			lo, hi, _ := st.vp.at(st.vp.now)
 			d.panning, d.base = true, [2]float64{lo, hi}
+			if st.v.zoomY {
+				ylo, yhi := st.yRange()
+				d.ybase = [2]float64{ylo, yhi}
+			}
 		}
 		k := (d.base[1] - d.base[0]) / float64(st.plot.Width())
 		dx := float64(v.Translation.X) * k
 		st.vp.jump(d.base[0]-dx, d.base[1]-dx, true)
+		if st.v.zoomY && st.yZoomed() {
+			dy := float64(v.Translation.Y) * (d.ybase[1] - d.ybase[0]) / float64(st.plot.Height())
+			st.yvp.jump(d.ybase[0]+dy, d.ybase[1]+dy, true)
+		}
 		n.moved()
 	}
 }
@@ -319,6 +390,13 @@ func (n *plotNode) onDragEnd(v gesture.DragValue) {
 		if px := (b - a) / (hi - lo) * float64(st.plot.Width()); px >= 8 {
 			st.vp.animateTo(st.vp.now, a, b, true)
 			st.visibleChanged(st.vp.lo, st.vp.hi)
+		}
+		if st.v.zoomY {
+			ca, cb := min(d.c0, d.c1), max(d.c0, d.c1)
+			ylo, yhi := st.yRange()
+			if px := (cb - ca) / (yhi - ylo) * float64(st.plot.Height()); px >= 8 {
+				st.yvp.animateTo(st.vp.now, ca, cb, true)
+			}
 		}
 		n.moved()
 	case d.panning:
@@ -343,9 +421,15 @@ func (n *plotNode) onDoubleTap(v gesture.TapValue) {
 		return
 	}
 	st := n.st
-	x := n.xAt(v.Common.Local(v.Location).X)
+	at := v.Common.Local(v.Location)
+	x := n.xAt(at.X)
 	lo, hi, _ := st.vp.at(st.vp.now)
 	st.vp.animateTo(st.vp.now, x-(x-lo)/2, x+(hi-x)/2, true)
+	if st.v.zoomY {
+		y := n.yAt(at.Y)
+		ylo, yhi := st.yRange()
+		st.yvp.animateTo(st.vp.now, y-(y-ylo)/2, y+(yhi-y)/2, true)
+	}
 	st.visibleChanged(st.vp.lo, st.vp.hi)
 	n.moved()
 }
@@ -356,6 +440,11 @@ func (n *plotNode) onTap(v gesture.TapValue) {
 		return
 	}
 	at := v.Common.Local(v.Location)
+	if st.polar() {
+		k, ok := st.sectorAt(at)
+		n.inspectSector(k, at, ok && !(st.in.on && st.in.sector == k))
+		return
+	}
 	if st.in.on && st.in.sticky {
 		n.inspect(0, false)
 		return
@@ -372,6 +461,11 @@ func (n *plotNode) onLongPress(v gesture.LongPressValue) {
 		return
 	}
 	at := v.Common.Local(v.Location)
+	if st.polar() {
+		k, ok := st.sectorAt(at)
+		n.inspectSector(k, at, ok)
+		return
+	}
 	n.inspect(n.xAt(at.X), true)
 	st.in.touch = true
 }
@@ -382,6 +476,11 @@ func (n *plotNode) onHover(v gesture.HoverValue) {
 		return
 	}
 	at := v.Common.Local(v.Location)
+	if st.polar() {
+		k, ok := st.sectorAt(at)
+		n.inspectSector(k, at, ok && v.Inside)
+		return
+	}
 	if v.Inside && st.plot.Contains(at) {
 		n.inspect(n.xAt(at.X), true)
 		return
@@ -404,6 +503,16 @@ func (n *plotNode) inspect(x float64, on bool) {
 	n.moved()
 }
 
+// inspectSector shows the slice k of a pie, or ends the inspection.
+func (n *plotNode) inspectSector(k int, at geom.Point, on bool) {
+	st := n.st
+	if st.in.on == on && (!on || st.in.sector == k && st.in.pos == at) {
+		return
+	}
+	st.in = inspection{on: on, sector: k, pos: at}
+	n.moved()
+}
+
 // wheelNotch is the factor of one notch of a wheel turned with the control
 // or command key held.
 const wheelNotch = 1.25
@@ -417,12 +526,22 @@ func (n *plotNode) onWheel(v gesture.WheelValue) bool {
 	zoomMod := v.Mods.Has(gift.ModControl) || v.Mods.Has(gift.ModMeta)
 	switch {
 	case zoomMod && v.Precise:
-		n.zoomAbout(n.xAt(at.X), math.Exp2(-float64(v.Delta.Y)*0.05))
+		n.zoomAbout(at, math.Exp2(-float64(v.Delta.Y)*0.05))
 	case zoomMod:
 		if v.Delta.Y == 0 {
 			return false
 		}
-		n.zoomAbout(n.xAt(at.X), math.Pow(wheelNotch, -float64(v.Delta.Y)))
+		n.zoomAbout(at, math.Pow(wheelNotch, -float64(v.Delta.Y)))
+	case v.Precise && st.v.zoomY && (st.vp.zoomed || st.yvp.zoomed):
+		// A trackpad drags a chart zoomed in both axes any way.
+		lo, hi, _ := st.vp.at(st.vp.now)
+		dx := float64(v.Delta.X*gift.DefaultScrollPreciseWheelStep) * (hi - lo) / float64(st.plot.Width())
+		st.vp.jump(lo-dx, hi-dx, true)
+		ylo, yhi := st.yRange()
+		dy := float64(v.Delta.Y*gift.DefaultScrollPreciseWheelStep) * (yhi - ylo) / float64(st.plot.Height())
+		st.yvp.jump(ylo+dy, yhi+dy, true)
+		st.visibleChanged(st.vp.lo, st.vp.hi)
+		n.moved()
 	case v.Precise && st.vp.zoomed && math.Abs(float64(v.Delta.X)) > math.Abs(float64(v.Delta.Y)):
 		// A trackpad drags a zoomed chart sideways, the content following
 		// the fingers.
@@ -449,6 +568,16 @@ func (n *plotNode) key(e gift.Event) bool {
 		st.vp.animateTo(st.vp.now, lo-step, hi-step, true)
 	case gift.KeyRight:
 		st.vp.animateTo(st.vp.now, lo+step, hi+step, true)
+	case gift.KeyUp, gift.KeyDown:
+		if !st.v.zoomY {
+			return false
+		}
+		ylo, yhi := st.yRange()
+		dy := (yhi - ylo) / 5
+		if e.Key == gift.KeyDown {
+			dy = -dy
+		}
+		st.yvp.animateTo(st.vp.now, ylo+dy, yhi+dy, true)
 	case gift.KeyHome:
 		st.resetZoom()
 		return true

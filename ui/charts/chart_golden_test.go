@@ -21,7 +21,7 @@ func TestEveryChartLooksTheWayItLooks(t *testing.T) {
 		name string
 		t    ui.Theme
 	}{{"light", ui.LightTheme()}, {"dark", ui.DarkTheme()}} {
-		for _, name := range []string{"line-chart", "area-chart", "bar-chart", "scatter-chart"} {
+		for _, name := range []string{"line-chart", "area-chart", "bar-chart", "scatter-chart", "pie-chart", "linked-charts"} {
 			d, ok := showcase.Lookup(name)
 			if !ok {
 				t.Fatalf("no demo %q", name)
@@ -30,7 +30,7 @@ func TestEveryChartLooksTheWayItLooks(t *testing.T) {
 				Root: func(ctx *gift.Context) gift.View {
 					return ui.Window(ui.VStack(d.View(ctx)).Padding(20))
 				},
-				Size:  geom.Sz(640, 320),
+				Size:  geom.Sz(float32(d.Width)+40, float32(d.Height)+40),
 				Theme: theme.t,
 				Font:  ui.MustFont(ui.FontQuery{Family: inter.Family}),
 			})
