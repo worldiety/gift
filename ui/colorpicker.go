@@ -166,12 +166,15 @@ type ColorPickerView struct {
 // with an opacity slider, the colour and its hex code below them.
 //
 //	c := ctx.State("c", ui.RGB(0, 122, 255))
-//	ui.ColorPicker(c.Get(), c.Set)
+//	ui.ColorPicker(ctx.Read(c), c.Set)
 //
 // It is controlled like a [Slider]: it shows the colour it is given and
 // reports a new one to onChange, with every move of a finger over the
-// spectrum or a slider. The hex field takes "#RRGGBB" and "#RRGGBBAA" as they
-// are typed. [ColorWell] puts the picker in a popover behind a swatch.
+// spectrum or a slider. Read the colour with [gift.Context.Read], not with
+// [gift.State.Get]: only a build that read the state runs again when it
+// changes, and a picker nobody builds again shows the old colour, as if it
+// took no tap. The hex field takes "#RRGGBB" and "#RRGGBBAA" as they are
+// typed. [ColorWell] puts the picker in a popover behind a swatch.
 func ColorPicker(value Color, onChange func(Color)) ColorPickerView {
 	return ColorPickerView{value: value, onChange: onChange}
 }
@@ -352,11 +355,8 @@ func (n *colorGridNode) Paint(ctx *gift.PaintContext) {
 }
 
 func (n *colorGridNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
-	switch e.Kind {
-	case gift.EventPointerDown, gift.EventPointerMove:
-		if e.Kind == gift.EventPointerMove && !ctx.Interaction().Pressed {
-			return false
-		}
+	handled, follow := pickerPointer(ctx, e)
+	if follow {
 		b := ctx.DeviceBounds()
 		col := int((e.Pos.X - b.Min.X) / b.Width() * pickerColumns)
 		row := int((e.Pos.Y - b.Min.Y) / b.Height() * pickerRows)
@@ -367,14 +367,40 @@ func (n *colorGridNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 			a = 1
 		}
 		n.g.v.set(fromStraight(r, g, bb, a))
-		if e.Kind == gift.EventPointerMove {
-			ctx.StealPointer()
-		}
-		return true
-	case gift.EventPointerUp, gift.EventPointerCancel:
-		return true
 	}
-	return false
+	return handled
+}
+
+// pickerPointer is the pointer half of the grid, the spectrum and a channel
+// slider. It reports whether e belongs to a press the area took, and whether
+// the colour follows e.Pos: on the press and on every move until the release,
+// wherever the pointer has wandered. The press is kept in the control state,
+// as [Slider] keeps it, and not read from Interaction().Pressed, which clears
+// when the pointer leaves the area: the move then went up to an enclosing
+// scroll view, which took the pointer, so that a drag past the edge of the
+// spectrum scrolled the page instead of holding the colour at the edge.
+func pickerPointer(ctx *gift.EventContext, e gift.Event) (handled, follow bool) {
+	st := ctx.ControlState()
+	switch e.Kind {
+	case gift.EventPointerDown:
+		st.Grabbed = true
+		ctx.SetControlState(st)
+		return true, true
+	case gift.EventPointerMove:
+		if !st.Grabbed {
+			return false, false
+		}
+		ctx.StealPointer()
+		return true, true
+	case gift.EventPointerUp, gift.EventPointerCancel:
+		if !st.Grabbed {
+			return false, false
+		}
+		st.Grabbed = false
+		ctx.SetControlState(st)
+		return true, false
+	}
+	return false, false
 }
 
 // --- spectrum ---------------------------------------------------------------------
@@ -458,11 +484,8 @@ func (n *colorSpectrumNode) Paint(ctx *gift.PaintContext) {
 }
 
 func (n *colorSpectrumNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
-	switch e.Kind {
-	case gift.EventPointerDown, gift.EventPointerMove:
-		if e.Kind == gift.EventPointerMove && !ctx.Interaction().Pressed {
-			return false
-		}
+	handled, follow := pickerPointer(ctx, e)
+	if follow {
 		b := ctx.DeviceBounds()
 		fx := max(0, min((e.Pos.X-b.Min.X)/b.Width(), 0.9999))
 		fy := max(0, min((e.Pos.Y-b.Min.Y)/b.Height(), 1))
@@ -472,14 +495,8 @@ func (n *colorSpectrumNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bo
 			a = 1
 		}
 		n.s.v.set(fromStraight(r, g, bb, a))
-		if e.Kind == gift.EventPointerMove {
-			ctx.StealPointer()
-		}
-		return true
-	case gift.EventPointerUp, gift.EventPointerCancel:
-		return true
 	}
-	return false
+	return handled
 }
 
 // --- channel slider -----------------------------------------------------------------
@@ -589,22 +606,18 @@ func paintChecker(ctx *gift.PaintContext, b geom.Rect, r float32) {
 
 func (n *colorSliderNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	set := func(f float32) { n.s.v.set(n.s.with(f)) }
-	switch e.Kind {
-	case gift.EventPointerDown, gift.EventPointerMove:
-		if e.Kind == gift.EventPointerMove && !ctx.Interaction().Pressed {
-			return false
-		}
+	if handled, follow := pickerPointer(ctx, e); handled {
 		if e.Kind == gift.EventPointerDown {
 			ctx.RequestFocus()
-		} else {
-			ctx.StealPointer()
 		}
-		b := ctx.DeviceBounds()
-		r := b.Height() / 2
-		set((e.Pos.X - b.Min.X - r) / (b.Width() - 2*r))
+		if follow {
+			b := ctx.DeviceBounds()
+			r := b.Height() / 2
+			set((e.Pos.X - b.Min.X - r) / (b.Width() - 2*r))
+		}
 		return true
-	case gift.EventPointerUp, gift.EventPointerCancel:
-		return true
+	}
+	switch e.Kind {
 	case gift.EventKeyDown:
 		step := float32(1) / 255
 		if n.s.channel == 3 {
@@ -689,7 +702,7 @@ type ColorWellView struct {
 // [Popover] when it is tapped. Put a label next to it, as a form row does.
 //
 //	c := ctx.State("tint", ui.RGB(255, 149, 0))
-//	ui.HStack(ui.Text("Tint").Flex(1), ui.ColorWell(c.Get(), c.Set))
+//	ui.HStack(ui.Text("Tint").Flex(1), ui.ColorWell(ctx.Read(c), c.Set))
 func ColorWell(value Color, onChange func(Color)) ColorWellView {
 	return ColorWellView{value: value, onChange: onChange}
 }

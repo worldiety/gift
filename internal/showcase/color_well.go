@@ -20,7 +20,7 @@ func colorWellDemo(ctx *gift.Context) gift.View {
 	return ui.VStack(
 		ui.HStack(
 			ui.Text("Accent colour").Flex(1),
-			ui.ColorWell(tint.Get(), tint.Set).SupportsOpacity(false).Label("Accent colour"),
+			ui.ColorWell(ctx.Read(tint), tint.Set).SupportsOpacity(false).Label("Accent colour"),
 		).Align(geom.Center),
 	).Padding(30)
 	// snippet:end

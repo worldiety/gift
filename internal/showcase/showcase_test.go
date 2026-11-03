@@ -50,3 +50,35 @@ func TestEveryDemoBuildsAndDraws(t *testing.T) {
 		})
 	}
 }
+
+// TestTheColourDemosShowTheColourTheyChoose taps the black swatch of the
+// colour picker and of the picker behind the colour well. A demo that reads
+// its colour with State.Get instead of Context.Read stores the new colour and
+// never builds again, so the picker went on showing the old one, as if it
+// took no tap.
+func TestTheColourDemosShowTheColourTheyChoose(t *testing.T) {
+	font := ui.MustFont(ui.FontQuery{Family: inter.Family})
+	for _, name := range []string{"color-picker", "color-well"} {
+		t.Run(name, func(t *testing.T) {
+			d, ok := showcase.Lookup(name)
+			if !ok {
+				t.Fatalf("no demo %q", name)
+			}
+			h := gifttest.New(t, gifttest.Options{
+				Root: func(ctx *gift.Context) gift.View { return ui.Window(d.View(ctx)) },
+				Size: geom.Sz(float32(d.Width), float32(d.Height)), Font: font, Theme: ui.LightTheme(),
+			})
+			h.Settle()
+			if name == "color-well" {
+				h.Find(gifttest.ByKey("color-well")).Tap()
+				h.AdvanceTicks(30, gifttest.FrameInterval)
+			}
+			g := h.Find(gifttest.ByKey("color-grid")).Bounds()
+			h.TapAt(geom.Pt(g.Max.X-5, g.Min.Y+5))
+			h.Settle()
+			if hex := h.Find(gifttest.ByKey("color-hex")).Value(); hex[:7] != "#000000" {
+				t.Fatalf("after a tap on black the picker shows %s", hex)
+			}
+		})
+	}
+}

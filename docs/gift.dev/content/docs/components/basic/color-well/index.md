@@ -15,7 +15,7 @@ opens a [Color Picker](../color-picker/) in a [Popover](../../dialogs/popover/) 
 tint := ctx.State("tint", ui.RGB(52, 199, 89))
 ui.HStack(
 	ui.Text("Accent colour").Flex(1),
-	ui.ColorWell(tint.Get(), tint.Set).Label("Accent colour"),
+	ui.ColorWell(ctx.Read(tint), tint.Set).Label("Accent colour"),
 )
 ```
 

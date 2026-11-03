@@ -2721,10 +2721,18 @@ Punkt 9 der iOS-Liste.
 - `ui.ColorWell` wie das Feld von SwiftUIs ColorPicker: Farbe in einem Ring
   aus 24 Boegen aller Farbtoene, oeffnet den Waehler im Popover.
 - `ui.HexColor` und `ui.ParseHexColor` fuer #RGB, #RRGGBB, #RRGGBBAA.
+- Nachgezogen: Die Demos von Waehler und Feld lasen ihre Farbe beim Bauen mit
+  `State.Get` statt `ctx.Read`, abonnierten sie also nicht; `c.Set` speicherte
+  die neue Farbe, aber nichts baute neu, der Waehler wirkte tot. Demos und
+  Beispiele lesen jetzt mit `ctx.Read`. Raster, Spektrum und Kanalregler
+  merken sich den Griff wie `ui.Slider` in `ControlState.Grabbed` statt
+  `Interaction().Pressed` zu lesen, das ausserhalb erlischt: die Bewegung ging
+  dann an die umgebende Scroll-Ansicht, die den Zeiger nahm und scrollte.
 
 Offen: gespeicherte Farben und Pipette von iOS, Display-P3, Spektrum fuer
 Farben, die weder volle Helligkeit noch volle Saettigung haben (die Lupe
-steht dann naeherungsweise).
+steht dann naeherungsweise). Deckkraft 0 verliert den Farbton (`#00000000`),
+weil `Color` vormultipliziert ist; iOS behaelt ihn.
 
 ## 36. Neue Kitchen Sink, Showcase und Video mit Dateiauswahl
 

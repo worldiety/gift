@@ -42,7 +42,7 @@ type StepperView struct {
 // the value next to it, as iOS does:
 //
 //	n := ctx.State("tickets", 1.0)
-//	ui.HStack(ui.Text(fmt.Sprintf("%v tickets", n.Get())).Flex(1),
+//	ui.HStack(ui.Text(fmt.Sprintf("%v tickets", ctx.Read(n))).Flex(1),
 //		ui.Stepper(n.Get(), n.Set).Range(1, 10))
 //
 // A tap steps once, as soon as the finger is down; held, it steps again after

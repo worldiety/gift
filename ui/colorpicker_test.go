@@ -171,3 +171,61 @@ func TestAColorWellOpensThePickerInAPopover(t *testing.T) {
 	h.AdvanceTicks(30, gifttest.FrameInterval)
 	h.AssertNone(gifttest.ByKey("color-grid"))
 }
+
+// TestADragPastTheEdgeKeepsTheColourAtTheEdge drags over the spectrum and
+// the red slider of a picker in a scroll view, out past their edges. The
+// colour stays at the edge, and the page does not move: a move outside used
+// to go up to the scroll view, which took the pointer and scrolled instead.
+func TestADragPastTheEdgeKeepsTheColourAtTheEdge(t *testing.T) {
+	got := new(ui.Color)
+	root := func(ctx *gift.Context) gift.View {
+		c := ctx.State("c", ui.RGB(10, 20, 30))
+		*got = ctx.Read(c)
+		return ui.VScroll(ui.ColorPicker(c.Get(), c.Set).Key("picker"), ui.ZStack().Frame(10, 900)).Padding(20)
+	}
+	h := gifttest.New(t, gifttest.Options{Root: root, Size: geom.Sz(400, 700), Font: loadTestFont(t), Theme: ui.LightTheme()})
+	h.Settle()
+	mode(h, 1)
+	s := h.Find(gifttest.ByKey("color-spectrum")).Bounds()
+	mid := geom.Pt(s.Min.X+s.Width()/2, s.Min.Y+s.Height()/2)
+
+	// The mouse down and out past the bottom, which is black.
+	h.PressAt(mid)
+	h.MoveTo(mid.Add(geom.Pt(0, 20)))
+	h.MoveTo(mid.Add(geom.Pt(0, s.Height()/2+40)))
+	h.MoveTo(mid.Add(geom.Pt(0, s.Height()/2+160)))
+	h.Release()
+	if b := h.Find(gifttest.ByKey("color-spectrum")).Bounds(); b != s {
+		t.Fatalf("the mouse moved the spectrum from %v to %v", s, b)
+	}
+	if c := rgb8(*got); c[0] > 4 || c[1] > 4 || c[2] > 4 {
+		t.Fatalf("the mouse down past the edge made %v, want black", c)
+	}
+
+	// A finger up and out past the top, which is white.
+	h.Advance(time.Second)
+	h.TouchDownAt(mid)
+	h.TouchMoveTo(mid.Add(geom.Pt(0, -20)))
+	h.TouchMoveTo(mid.Add(geom.Pt(0, -s.Height()/2-40)))
+	h.TouchMoveTo(mid.Add(geom.Pt(0, -s.Height()/2-160)))
+	h.TouchUpAt(mid.Add(geom.Pt(0, -s.Height()/2-160)))
+	if b := h.Find(gifttest.ByKey("color-spectrum")).Bounds(); b != s {
+		t.Fatalf("the finger moved the spectrum from %v to %v", s, b)
+	}
+	if c := rgb8(*got); c[0] < 250 || c[1] < 250 || c[2] < 250 {
+		t.Fatalf("the finger up past the edge made %v, want white", c)
+	}
+
+	// The mouse along red and out past its end, and below the slider.
+	h.Advance(time.Second)
+	mode(h, 2)
+	red := h.Find(gifttest.ByKey("color-red")).Bounds()
+	at := geom.Pt(red.Min.X+red.Width()/2, (red.Min.Y+red.Max.Y)/2)
+	h.PressAt(at)
+	h.MoveTo(at.Add(geom.Pt(30, 0)))
+	h.MoveTo(geom.Pt(red.Max.X+60, red.Max.Y+120))
+	h.Release()
+	if c := rgb8(*got); c[0] != 255 {
+		t.Fatalf("a drag of red past its end made %v", c)
+	}
+}

@@ -15,12 +15,13 @@ swatch.
 
 ```go
 c := ctx.State("c", ui.RGB(0, 122, 255))
-ui.ColorPicker(c.Get(), c.Set)
+ui.ColorPicker(ctx.Read(c), c.Set)
 ```
 
 The picker is controlled, like a [Slider](../slider/): it shows the colour it is given and reports a new one to
-`onChange`, with every move of a finger over the spectrum or a slider. `SupportsOpacity(false)` hides the opacity
-slider and keeps every colour opaque.
+`onChange`, with every move of a finger over the spectrum or a slider. Read the state with `ctx.Read`, not with
+`Get`: only a build that read it runs again when it changes, and a picker nobody builds again keeps showing the old
+colour. `SupportsOpacity(false)` hides the opacity slider and keeps every colour opaque.
 
 ## The three views
 

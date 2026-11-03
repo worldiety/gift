@@ -16,6 +16,6 @@ func init() {
 func colorPickerDemo(ctx *gift.Context) gift.View {
 	// snippet:begin
 	c := ctx.State("c", ui.RGBA(255, 149, 0, 230))
-	return ui.Card(ui.ColorPicker(c.Get(), c.Set)).Padding(16)
+	return ui.Card(ui.ColorPicker(ctx.Read(c), c.Set)).Padding(16)
 	// snippet:end
 }
