@@ -3678,6 +3678,36 @@ Syntaxfarben, den das Typst-Beispiel nutzt und der Fehlerzeilen rot markiert.
   in beide Richtungen synchron.
 - Offen: Undo, Tabstopps, Bilder und Pakete fuer Typst, Caret im Viewer,
   Hugo-Build der Seite nicht geprueft (hugo fehlt auf dem Mac).
+- Nachgezogen (03.11.2026), Anforderung: von einem leeren Dokument aus darf
+  nichts, was Seite und Werkzeugleiste koennen, kaputtes Typst erzeugen;
+  vorgegebener Quelltext darf es. Ein Zufallstest (`robust_test.go`) tippt,
+  klickt, loescht, fuegt ein und formatiert von leer an und setzt nach jedem
+  Schritt; eine zweite Fassung laesst die Seiten nachhinken wie beim schnellen
+  Tippen und prueft jeden Zwischenstand mit einer eigenen Engine. Gefunden
+  und behoben:
+  - Fett/Kursiv nur noch als `#strong[]`/`#emph[]`: Sterne kippen, sobald ein
+    Buchstabe sie beruehrt (`x*a*`) oder ein Absatz sie trennt.
+  - Kleiner Strukturleser (`structure.go`): Inhaltsbloecke, Sterne-Gruppen,
+    Ausdrucks- und Anweisungsenden, Kommentare, Raw, Strings, Marken.
+  - Nahtpruefung nach jeder Bearbeitung: `//`, `*/`, `-?` maskiert; `(`, `[`,
+    `.` hinter einem Aufruf maskiert (`#strong[x](y)` ist ein Fehler); Text
+    hinter `#set …` bekommt eine eigene Zeile (sonst „expected semicolon“);
+    Marken am Zeilenanfang (auch nach Enter und an Zellanfaengen) maskiert.
+    Sterne einer vorgegebenen Quelle, die eine Bearbeitung in ein Wort
+    stellen wuerde, werden vorher zum Aufruf.
+  - Enter, Einfuegen mit Leerzeile: Fett/Kursiv am Caret wird geschlossen und
+    nach dem Umbruch wieder geoeffnet.
+  - Entf loeschte vor `\*` nur den Backslash; Escapes sind jetzt eine Einheit
+    (auch `\\`, `\u{…}`, Paritaet der Backslashes).
+  - Typst meldet als Laenge einer Glyphe die des gesetzten Textes: `"` als
+    „““ hat drei Bytes und reichte in die folgende Quelle. Der Index kuerzt
+    auf das Quell-Token (Anfuehrungszeichen, `~`, `--`, Minus).
+  - Ueberschrift/Liste in einer Tabellenzelle beginnt am Zellanfang; nach
+    einer Tabelle auf derselben Zeile mit Zeilenumbruch. Tabelle immer unter
+    dem Absatz der obersten Ebene. Backspace/Entf ueber Code (Zellgrenze,
+    `#set`-Zeile) tun nichts.
+  - Caret startet am Ende, Alles-Auswaehlen nimmt den gezeigten Text (nicht
+    die `#set`-Zeile davor).
 
 ## 42. Kiosk: gift als Betriebssystem-Oberflaeche eines Geraets
 

@@ -5993,7 +5993,7 @@
           {
             "name": "NewDocument",
             "signature": "NewDocument(src string) *Document",
-            "synopsis": "NewDocument returns a document of src and starts setting it."
+            "synopsis": "NewDocument returns a document of src and starts setting it, with the caret at its end."
           },
           {
             "name": "Use",

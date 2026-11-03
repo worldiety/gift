@@ -440,7 +440,7 @@ func (n *docPageNode) key(e gift.Event) bool {
 		if !shortcut {
 			return false
 		}
-		d.SetSelection(0, len(d.src))
+		d.selectAll()
 	case gift.KeyC, gift.KeyX:
 		if !shortcut {
 			return false

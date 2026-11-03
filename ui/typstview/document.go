@@ -51,6 +51,9 @@ type Document struct {
 	goalX          float32
 	hasGoal        bool
 	compiledSource string
+	track          []int // offsets an edit in progress keeps, moved with the text like the caret
+	hold           bool  // pages that were set wait until it is cleared; tests lag with it
+	dirty          bool  // the source changed since it was last handed to the worker
 
 	// What the pages of an editor share: whether one of them has the
 	// focus, whether one is to take it back from a toolbar button, a drag
@@ -89,10 +92,13 @@ type result struct {
 	took time.Duration
 }
 
-// NewDocument returns a document of src and starts setting it.
+// NewDocument returns a document of src and starts setting it, with the
+// caret at its end.
 func NewDocument(src string) *Document {
 	d := &Document{
 		src:      src,
+		caret:    len(src),
+		anchor:   len(src),
 		work:     make(chan job, 1),
 		ready:    make(chan struct{}),
 		watchers: map[string]func(){},
@@ -181,6 +187,9 @@ func (d *Document) submit() {
 // poll takes the result the worker left, if there is one, and reports
 // whether there was.
 func (d *Document) poll() bool {
+	if d.hold {
+		return false
+	}
 	d.mu.Lock()
 	r := d.next
 	d.next = nil
@@ -270,6 +279,7 @@ func (d *Document) SetSource(src string) {
 		s++
 	}
 	d.replace(p, len(d.src)-s, src[p:len(src)-s], false)
+	d.flush()
 }
 
 // OnChange sets the function called with the source after every edit made
@@ -357,9 +367,9 @@ func (d *Document) SetSelection(anchor, caret int) {
 	d.changed()
 }
 
-// replace changes the source, records the edit for carrying it over to the
-// pages and sets the source. With caretAfter the caret goes after the
-// inserted text; otherwise caret and anchor keep their place in the text
+// replace changes the source and records the edit for carrying it over to
+// the pages; [Document.flush] sets it. With caretAfter the caret goes after
+// the inserted text; otherwise caret and anchor keep their place in the text
 // around the change. It does not call OnChange: an edit made through the
 // document does that once it is complete, see [Document.edited].
 func (d *Document) replace(lo, hi int, s string, caretAfter bool) {
@@ -372,9 +382,24 @@ func (d *Document) replace(lo, hi int, s string, caretAfter bool) {
 	} else {
 		d.caret, d.anchor = shiftOff(d.caret, lo, hi, len(s)), shiftOff(d.anchor, lo, hi, len(s))
 	}
+	for i, off := range d.track {
+		d.track[i] = shiftOff(off, lo, hi, len(s))
+	}
 	d.hasGoal = false
-	d.submit()
+	d.dirty = true
 	d.changed()
+}
+
+// flush hands the source to the worker if it changed. An edit made of
+// several replacements flushes once, at its end: a source half way through
+// one, strong text whose closing bracket is gone and whose opening one is
+// not yet, can still set, and then as text the brackets of a table cell
+// stand in, which pages set from it would let a deletion take.
+func (d *Document) flush() {
+	if d.dirty {
+		d.dirty = false
+		d.submit()
+	}
 }
 
 // shiftOff moves an offset over the replacement of lo..hi by ins bytes: one

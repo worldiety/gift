@@ -63,9 +63,9 @@ func (d *Document) idx() *index {
 				if g.Source < 0 {
 					continue
 				}
-				s, e := escapeSpan(d.compiledSource, g.Source, g.Source+g.Len)
+				s, e := sourceSpan(d.compiledSource, g.Source, g.Source+g.Len)
 				for _, ed := range d.edits {
-					s, e = carry(s, e, ed)
+					s, e, _ = carry(s, e, ed)
 				}
 				if e <= s || e > len(d.src) {
 					continue
@@ -104,7 +104,11 @@ func (d *Document) idx() *index {
 	var typed [][2]int
 	for _, ed := range d.edits {
 		for i := range typed {
-			typed[i][0], typed[i][1] = carry(typed[i][0], typed[i][1], ed)
+			var rest [2]int
+			typed[i][0], typed[i][1], rest = carry(typed[i][0], typed[i][1], ed)
+			if rest[0] < rest[1] {
+				typed = append(typed, rest)
+			}
 		}
 		if ed.typed && ed.ins > 0 {
 			typed = append(typed, [2]int{ed.at, ed.at + ed.ins})
@@ -131,6 +135,34 @@ func (d *Document) idx() *index {
 	return ix
 }
 
+// sourceSpan is the source s..e of a glyph, made to fit the source: Typst
+// gives the length of the text the glyph shows, which for an escape, a smart
+// quote or a dash is not the length of its source.
+func sourceSpan(src string, s, e int) (int, int) {
+	if s < 0 || s >= len(src) {
+		return s, e
+	}
+	switch {
+	case src[s] == '\\':
+		return escapeSpan(src, s, e)
+	case src[s] == '"' || src[s] == '\'' || src[s] == '~':
+		return s, s + 1
+	case strings.HasPrefix(src[s:], "---"):
+		return s, s + 3
+	case strings.HasPrefix(src[s:], "--"):
+		return s, s + 2
+	case src[s] == '-' && s+1 < len(src) && src[s+1] >= '0' && src[s+1] <= '9':
+		return s, s + 1 // a minus sign
+	}
+	// Text never runs into markup.
+	for k := s + 1; k < min(e, len(src)); k++ {
+		if strings.IndexByte("\\#[]*_$`<>@~\"'\n", src[k]) >= 0 {
+			return s, k
+		}
+	}
+	return s, min(e, len(src))
+}
+
 // escapeSpan widens the source s..e of a glyph that Typst points at the
 // backslash of an escape, such as \#, to the whole escape: deleting the
 // glyph deletes both, and typing after it goes after both.
@@ -147,11 +179,33 @@ func escapeSpan(src string, s, e int) (int, int) {
 	return s, s + 1 + n
 }
 
-// carry moves the source s..e of a glyph over an edit. Text inserted where
-// the glyph starts goes before it, text inserted where it ends after it, and
-// a glyph whose text was deleted comes out empty.
-func carry(s, e int, ed edit) (int, int) {
+// carry moves the source s..e of a glyph, or of typed text, over an edit.
+// Text typed where it starts goes before it, text typed where it ends after
+// it, and a glyph whose text was deleted comes out empty. Markup an edit puts
+// inside it, the brackets that make part of typed text strong say, cuts it
+// in two: s..e is the part before, rest the part after.
+func carry(s, e int, ed edit) (int, int, [2]int) {
 	lo, hi := ed.at, ed.at+ed.del
+	var rest [2]int
+	if !ed.typed && ed.ins > 0 {
+		switch {
+		case e <= lo:
+			return s, e, rest
+		case s >= lo:
+			ns, ne := lo+ed.ins, lo+ed.ins
+			if s >= hi {
+				ns = s + ed.ins - ed.del
+			}
+			if e >= hi {
+				ne = e + ed.ins - ed.del
+			}
+			return ns, max(ns, ne), rest
+		}
+		if e > hi {
+			rest = [2]int{lo + ed.ins, e + ed.ins - ed.del}
+		}
+		return s, lo, rest
+	}
 	switch {
 	case s >= hi:
 		s += ed.ins - ed.del
@@ -165,7 +219,7 @@ func carry(s, e int, ed edit) (int, int) {
 	default:
 		e = lo
 	}
-	return s, e
+	return s, e, rest
 }
 
 // caret is where the caret for off is drawn: at the left edge of the glyph
@@ -279,6 +333,16 @@ func (ix *index) after(off int) ([2]int, bool) {
 		}
 	}
 	return best, ok
+}
+
+// covers reports whether the pages show, or will show, the byte at off.
+func (ix *index) covers(off int) bool {
+	for _, s := range ix.spans {
+		if s[0] <= off && off < s[1] {
+			return true
+		}
+	}
+	return false
 }
 
 // shown are the stretches of lo..hi the pages show as text, or will show,

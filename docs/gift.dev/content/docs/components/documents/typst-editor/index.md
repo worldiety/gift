@@ -52,14 +52,25 @@ gift draws the glyphs Typst positions from the very same file, so a font of a do
 
 Typed characters that Typst would read as markup, such as `#`, `*` or `$`, are escaped, so that the page shows
 what was typed. Deleting removes what the page shows and keeps the markup around it: a selection that starts in
-strong text and ends outside it does not take the star that closes it along. At the start of a heading or a list
-item, backspace turns the line into a paragraph.
+strong text and ends outside it does not take the bracket that closes it along. At the start of a heading or a list
+item, backspace turns the line into a paragraph; at the start of a table cell it does nothing. Enter in strong or
+emphasised text closes it before the break and opens it again after it.
+
+Where an edit puts two pieces of the source next to each other, it checks what Typst makes of them: a slash after a
+slash, which would start a comment, a parenthesis right after a call, which would continue it, a dash or a number
+that now starts a line, which would make a list, and text right after a set rule, which needs a line of its own.
+Starting from an empty document, nothing done on the page or with the toolbar leaves a source Typst cannot set. A
+source handed to the document may hold markup the editor does not know, and an edit there can still leave an error,
+which the toolbar then reports.
 
 ### The toolbar
 
 The toolbar makes the selection, or the word at the caret, strong or emphasised, and plain again; it turns the line
-of the caret into a heading of the first or second level, a paragraph, or an item of a bulleted or numbered list;
-and it inserts a table below the paragraph of the caret. At its right end it says how many pages the document has,
+of the caret into a heading of the first or second level, a paragraph, or an item of a bulleted or numbered list,
+in a table cell the text of the cell; and it inserts a table below the paragraph of the caret. Strong and emphasised
+text is written as a call, `#strong[…]` and `#emph[…]`, which holds inside a word and across paragraphs, where stars
+and underscores would not; stars a source already has become such a call where an edit would make a letter touch
+them. At its right end it says how many pages the document has,
 or the first error that keeps it from being set. `Toolbar(false)` hides it, for a program with a toolbar of its
 own, which calls `ToggleStrong`, `ToggleEmphasis`, `SetHeading`, `ToggleList` and `InsertTable` of the document.
 

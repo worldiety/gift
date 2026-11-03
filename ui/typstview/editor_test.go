@@ -88,14 +88,14 @@ func TestAClickPutsTheCaretAndTypingGoesThere(t *testing.T) {
 	}
 	h.Find(gifttest.ByText("Strong")).Click()
 	h.AdvanceTicks(4, gifttest.FrameInterval)
-	if got := body(d); got != "= Title\n\nDear *Ann* and XYBob,\n\nmore." {
+	if got := body(d); got != "= Title\n\nDear #strong[Ann] and XYBob,\n\nmore." {
 		t.Fatalf("%q", got)
 	}
 	// The page took the focus back from the toolbar: the arrow collapses
 	// the selection to its end, and typing goes on there.
 	h.Key(gift.KeyRight)
 	h.TypeText("!")
-	if got := body(d); !strings.Contains(got, "*Ann!*") {
+	if got := body(d); !strings.Contains(got, "#strong[Ann!]") {
 		t.Fatalf("typing after the toolbar: %q", got)
 	}
 }

@@ -126,7 +126,7 @@ func TestStrongWrapsAWordAndUnwrapsIt(t *testing.T) {
 	d := doc(t, "one two")
 	at(t, d, "tw", true)
 	d.ToggleStrong()
-	if got := body(d); got != "one *two*" {
+	if got := body(d); got != "one #strong[two]" {
 		t.Fatalf("%q", got)
 	}
 	settle(t, d)
@@ -196,5 +196,54 @@ func TestArrowsMoveThroughTheTextThePageShows(t *testing.T) {
 	d.move(0, 1, false)
 	if got := d.src[d.caret:]; !strings.HasPrefix(got, "ef") && !strings.HasPrefix(got, "f") && got != "" {
 		t.Fatalf("down lands before %q", got)
+	}
+}
+
+// TestEditsThatOnceBrokeTheDocument are edits that left a source Typst did
+// not set, each with the source it has to leave now.
+func TestEditsThatOnceBrokeTheDocument(t *testing.T) {
+	for _, c := range []struct {
+		name, src, at string // the caret goes before the first occurrence of at
+		edit          func(d *Document)
+		want          string
+	}{
+		{"enter in strong text closes it and opens it again", "#strong[abcd]", "cd",
+			(*Document).NewParagraph, "#strong[ab]\n\n#strong[cd]"},
+		{"enter in strong text in stars, too", "*abcd*", "cd",
+			(*Document).NewParagraph, "*ab*\n\n*cd*"},
+		{"delete before an escaped star deletes the escape with it", `a\*b`, `\*`,
+			(*Document).DeleteForward, "ab"},
+		{"backspace after an escaped backslash deletes both", `a\\x`, `x`,
+			(*Document).DeleteBackward, "ax"},
+		{"a letter typed before strong text in stars makes it a call", "x *a*", "*a",
+			func(d *Document) { d.DeleteBackward() }, "x#strong[a]"},
+		{"a parenthesis after a call is escaped", "#strong[a] (b)", "(b",
+			(*Document).DeleteBackward, `#strong[a]\(b)`},
+		{"a slash after a slash is escaped", "a/ /b", "/b",
+			(*Document).DeleteBackward, `a/\/b`},
+		{"a heading in a table cell starts in the cell", "#table(columns: 1, [cell])", "ell",
+			func(d *Document) { d.SetHeading(1) }, "#table(columns: 1, [= cell])"},
+		{"a list item after a table on its line gets a line of its own", "#table(\n  columns: 1,\n  [x],\n) after", "after",
+			func(d *Document) { d.ToggleList(false) }, "#table(\n  columns: 1,\n  [x],\n)\n-  after"},
+		{"backspace at the start of a table cell does nothing", "#table(columns: 2, [ab], [cd])", "cd",
+			(*Document).DeleteBackward, "#table(columns: 2, [ab], [cd])"},
+		{"backspace after a smart quote deletes the quote", `say "#strong[x]`, "#strong",
+			(*Document).DeleteBackward, "say #strong[x]"},
+		{"strong across a heading and a paragraph wraps each", "= Head\n\nbody", "",
+			func(d *Document) { d.selectAll(); d.ToggleStrong() }, "= #strong[Head]\n\n#strong[body]"},
+		{"a dash that enter puts at the start of a line stays a dash", "a - b", "- b",
+			(*Document).NewParagraph, "a \n\n\\- b"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := doc(t, c.src)
+			if c.at != "" {
+				at(t, d, c.at, false)
+			}
+			c.edit(d)
+			if got := body(d); got != c.want {
+				t.Fatalf("%q", got)
+			}
+			settle(t, d)
+		})
 	}
 }
