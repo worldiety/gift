@@ -134,7 +134,9 @@ func root(ctx *gift.Context, fonts [][]byte) gift.View {
 		marks = append(marks, ui.CodeMark{Start: g.Start, End: g.End})
 	}
 
-	line := saved.Get()
+	// Read, not Get: the button below sets it, and only a build that read it
+	// runs again, which shows what the button did.
+	line := ctx.Read(saved)
 	switch {
 	case doc.Err() != nil:
 		line = doc.Err().Error()
