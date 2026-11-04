@@ -3528,6 +3528,14 @@ ueber das Ende hinaus und bleibt dort viel zu lange.
   der alte `ScrollElasticityController.mm`; Chromium
   `elastic_overscroll_controller_exponential.cc`; Apple-Doku zu
   `NSEvent.phase` und `momentumPhase`; GLFW-Issue 1429.
+- Nachgezogen (04.11.2026): Ebiten v2.10.1 -> v2.10.5. Auf einem M1-MacBook
+  stuerzte die Kitchensink beim Start mit einem Stapelueberlauf ab:
+  `updateTrackingAreas` der GLFW-Content-View ruft super ueber puregos
+  `SendSuper`, das von der Laufzeitklasse aus sucht; macht KVO die View zu
+  einer Unterklasse (dort vermutlich die Touch Bar oder ein Helfer im
+  Prozess), findet super dieselbe Methode wieder. v2.10.5 ruft super relativ
+  zur definierenden Klasse. Mit einem KVO-Beobachter auf der View nachgestellt:
+  v2.10.1 stuerzt ab, v2.10.5 nicht.
 
 ## 39. Listen: Auswahl, Hover und Trennstriche
 
