@@ -36,6 +36,8 @@ type nodeData struct {
 	// hit test reads them without an interface dispatch and the dispatcher
 	// writes hover and press without touching the view.
 	interactor Interactor
+	// dropTarget is [Element.DropTarget]; see drop.go.
+	dropTarget Interactor
 	focusable  bool
 	disabled   bool
 	clip       bool
@@ -187,6 +189,7 @@ func (nd *nodeData) release() {
 	nd.painter = nil
 	nd.label = ""
 	nd.interactor = nil
+	nd.dropTarget = nil
 	nd.focusable = false
 	nd.disabled = false
 	nd.clip = false

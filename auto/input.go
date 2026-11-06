@@ -104,6 +104,17 @@ type Step struct {
 	// Forward is the direction of the "focus" op.
 	Forward *bool `json:"forward,omitempty"`
 
+	// Kinds are the kinds a "dragOver" step carries: "file", "text", "url".
+	// Empty is a drag whose kinds the platform did not report.
+	Kinds []string `json:"kinds,omitempty"`
+
+	// Files, URLs and DropText are what a "drop" step drops: absolute paths,
+	// web addresses and one piece of text, in that order. See
+	// [gift.App.Drop].
+	Files    []string `json:"files,omitempty"`
+	URLs     []string `json:"urls,omitempty"`
+	DropText string   `json:"dropText,omitempty"`
+
 	// PNG asks the "capture" op to include the pixels of every captured
 	// frame, base64 encoded, and not only their hashes and their counts of
 	// changed pixels.
@@ -289,6 +300,7 @@ func changedPixels(a, b *image.RGBA) int {
 //	keyDown, keyUp, key
 //	text
 //	focus
+//	dragOver, drop, dragLeave
 //	waitMs, waitFrames, waitTicks
 //	capture
 func (d *driver) runStep(s Step) error {
@@ -368,6 +380,23 @@ func (d *driver) runStep(s Step) error {
 			}
 		}
 		return nil
+	case "dragOver":
+		kinds, err := parseDropKinds(s.Kinds)
+		if err != nil {
+			return err
+		}
+		return d.do(func(app *gift.App) { app.DragOver(d.at(s), kinds) })
+	case "drop":
+		data := gift.DropFiles(s.Files...)
+		for _, u := range s.URLs {
+			data.Items = append(data.Items, gift.DropItem{Kind: gift.DropURL, URL: u})
+		}
+		if s.DropText != "" {
+			data.Items = append(data.Items, gift.DropItem{Kind: gift.DropText, Text: s.DropText})
+		}
+		return d.do(func(app *gift.App) { app.Drop(d.at(s), data) })
+	case "dragLeave":
+		return d.do(func(app *gift.App) { app.DragLeave() })
 	case "focus":
 		forward := true
 		if s.Forward != nil {
@@ -418,4 +447,23 @@ func parseMods(names []string) (gift.Mods, error) {
 		m |= v
 	}
 	return m, nil
+}
+
+// dropKinds are the names of [Step.Kinds].
+var dropKinds = map[string]gift.DropKind{
+	"file": gift.DropFile,
+	"text": gift.DropText,
+	"url":  gift.DropURL,
+}
+
+func parseDropKinds(names []string) (gift.DropKind, error) {
+	var k gift.DropKind
+	for _, n := range names {
+		v, ok := dropKinds[n]
+		if !ok {
+			return 0, fmt.Errorf("unknown drop kind %q", n)
+		}
+		k |= v
+	}
+	return k, nil
 }

@@ -3078,9 +3078,34 @@
             "synopsis": "DismissSoftKeyboard puts gift's on-screen keyboard away by blurring whatever asked for it, and reports whether there was a keyboard up."
           },
           {
+            "name": "DragLeave",
+            "signature": "DragLeave()",
+            "synopsis": "DragLeave ends the drag session: the drag left the window or was given up."
+          },
+          {
+            "name": "DragOver",
+            "signature": "DragOver(pos geom.Point, kinds DropKind)",
+            "synopsis": "DragOver reports that a drag from outside the application is over the window at pos, in device space, carrying kinds — zero when the platform does not say."
+          },
+          {
             "name": "DrainPosts",
             "signature": "DrainPosts()",
             "synopsis": "DrainPosts runs everything posted since the last update, outside a frame."
+          },
+          {
+            "name": "Drop",
+            "signature": "Drop(pos geom.Point, data DropData) bool",
+            "synopsis": "Drop reports that content was dropped at pos, in device space, and reports whether a target took it."
+          },
+          {
+            "name": "DropAccepted",
+            "signature": "DropAccepted() bool",
+            "synopsis": "DropAccepted reports whether the drag session currently has a target that accepts it."
+          },
+          {
+            "name": "DropCapabilities",
+            "signature": "DropCapabilities() DropCapabilities",
+            "synopsis": "DropCapabilities is what App.SetDropCapabilities last said."
           },
           {
             "name": "Focus",
@@ -3091,6 +3116,11 @@
             "name": "FocusVisible",
             "signature": "FocusVisible() bool",
             "synopsis": "FocusVisible reports whether the current focus should be shown as a ring, which is the case when it was installed by the keyboard rather than by a pointer; see Interaction.FocusVisible."
+          },
+          {
+            "name": "HasDropTargets",
+            "signature": "HasDropTargets() bool",
+            "synopsis": "HasDropTargets reports whether a mounted, enabled node declares Element.DropTarget."
           },
           {
             "name": "HitTest",
@@ -3158,6 +3188,11 @@
             "synopsis": "NodeDeviceBounds returns the rectangle of the node in device space: its layout bounds mapped through the transforms of its ancestors, which today means through the scroll offsets above it."
           },
           {
+            "name": "NodeDropTargeted",
+            "signature": "NodeDropTargeted(r NodeRef) bool",
+            "synopsis": "NodeDropTargeted reports whether r is the current, accepting target of a drag session; see Interaction.DropTargeted."
+          },
+          {
             "name": "NodeFocusable",
             "signature": "NodeFocusable(r NodeRef) bool",
             "synopsis": "NodeFocusable reports whether the node may currently hold the keyboard focus, that is whether it would be visited by App.MoveFocus."
@@ -3171,6 +3206,11 @@
             "name": "NodeInteractive",
             "signature": "NodeInteractive(r NodeRef) bool",
             "synopsis": "NodeInteractive reports whether the node takes part in hit testing, that is whether its element carried an Interactor."
+          },
+          {
+            "name": "NodeIsDropTarget",
+            "signature": "NodeIsDropTarget(r NodeRef) bool",
+            "synopsis": "NodeIsDropTarget reports whether r declares an Element.DropTarget, enabled or not."
           },
           {
             "name": "NodeKey",
@@ -3303,6 +3343,11 @@
             "synopsis": "SetDensity sets the device density, that is how many physical pixels one logical pixel of the layout covers along each axis."
           },
           {
+            "name": "SetDropCapabilities",
+            "signature": "SetDropCapabilities(c DropCapabilities)",
+            "synopsis": "SetDropCapabilities tells the application what the platform can drop; see BuildContext.DropCapabilities."
+          },
+          {
             "name": "SetImages",
             "signature": "SetImages(im render.Images)",
             "synopsis": "SetImages installs the image resource service a painter reaches through PaintContext.Images."
@@ -3372,6 +3417,11 @@
         "constructors": [],
         "methods": [
           {
+            "name": "DropCapabilities",
+            "signature": "DropCapabilities() DropCapabilities",
+            "synopsis": "DropCapabilities reports what the platform can drop into this application."
+          },
+          {
             "name": "SoftKeyboardRequested",
             "signature": "SoftKeyboardRequested() bool",
             "synopsis": "SoftKeyboardRequested reports whether the focused node asked for an on-screen keyboard."
@@ -3383,6 +3433,11 @@
         "decl": "type Context struct {\n\t// Has unexported fields.\n}",
         "constructors": [],
         "methods": [
+          {
+            "name": "DropCapabilities",
+            "signature": "DropCapabilities() DropCapabilities",
+            "synopsis": "DropCapabilities reports what the platform can drop into this application; see BuildContext.DropCapabilities."
+          },
           {
             "name": "Key",
             "signature": "Key() string",
@@ -3427,9 +3482,77 @@
         "constructors": [],
         "methods": []
       },
+      "DropCapabilities": {
+        "synopsis": "DropCapabilities is what the platform under the backend can do.",
+        "decl": "type DropCapabilities struct {\n\tKinds DropKind\n\tLive  bool\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "DropData": {
+        "synopsis": "DropData is what a drop delivered.",
+        "decl": "type DropData struct{ Items []DropItem }",
+        "constructors": [
+          {
+            "name": "DropFiles",
+            "signature": "DropFiles(paths ...string) DropData",
+            "synopsis": "DropFiles is a DropData of files, for tests and demos."
+          },
+          {
+            "name": "DropTextData",
+            "signature": "DropTextData(s string) DropData",
+            "synopsis": "DropTextData is a DropData of one piece of text."
+          },
+          {
+            "name": "DropURLData",
+            "signature": "DropURLData(urls ...string) DropData",
+            "synopsis": "DropURLData is a DropData of web addresses."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Files",
+            "signature": "Files() []string",
+            "synopsis": "Files returns the paths of the DropFile items, in order."
+          },
+          {
+            "name": "Kinds",
+            "signature": "Kinds() DropKind",
+            "synopsis": "Kinds is the set of kinds among the items."
+          }
+        ]
+      },
+      "DropInfo": {
+        "synopsis": "DropInfo is what EventDragEnter, EventDragOver and EventDrop carry; see EventContext.Drop.",
+        "decl": "type DropInfo struct {\n\tKinds DropKind\n\tData  DropData\n\tLive  bool\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "DropItem": {
+        "synopsis": "DropItem is one dropped thing.",
+        "decl": "type DropItem struct {\n\tKind DropKind\n\tPath string\n\tDir  bool\n\tText string\n\tURL  string\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "DropKind": {
+        "synopsis": "DropKind is a set of the kinds of content a drag carries.",
+        "decl": "type DropKind uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Has",
+            "signature": "Has(k DropKind) bool",
+            "synopsis": "Has reports whether every kind in k is in s."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": "String names the kinds, joined by \"+\", or \"none\"."
+          }
+        ]
+      },
       "Element": {
         "synopsis": "Element is the description of one retained node.",
-        "decl": "type Element struct {\n\tKey            string\n\tLabel          string\n\tLayouter       Layouter\n\tPainter        Painter\n\tChildren       []View\n\tFlex           float32\n\tInteractor     Interactor\n\tFocusable      bool\n\tDisabled       bool\n\tObstructs      bool\n\tClip           bool\n\tClipRadius     float32\n\tTransform      *geom.Affine2D\n\tScroll         *ScrollSpec\n\tHidden         bool\n\tLayer          bool\n\tFocusTrap      bool\n\tTransition     TransitionSpec\n\tKeyFallback    bool\n\tOverlay        View\n\tOverlayExit    time.Duration\n\tMultiTouch     bool\n\tPreservesFocus bool\n}",
+        "decl": "type Element struct {\n\tKey            string\n\tLabel          string\n\tLayouter       Layouter\n\tPainter        Painter\n\tChildren       []View\n\tFlex           float32\n\tInteractor     Interactor\n\tDropTarget     Interactor\n\tFocusable      bool\n\tDisabled       bool\n\tObstructs      bool\n\tClip           bool\n\tClipRadius     float32\n\tTransform      *geom.Affine2D\n\tScroll         *ScrollSpec\n\tHidden         bool\n\tLayer          bool\n\tFocusTrap      bool\n\tTransition     TransitionSpec\n\tKeyFallback    bool\n\tOverlay        View\n\tOverlayExit    time.Duration\n\tMultiTouch     bool\n\tPreservesFocus bool\n}",
         "constructors": [],
         "methods": []
       },
@@ -3444,6 +3567,11 @@
         "decl": "type Event struct {\n\tKind    EventKind\n\tPointer PointerID\n\tDevice  PointerKind\n\tPos     geom.Point\n\tDelta   geom.Point\n\tPrecise bool\n\tPhase   WheelPhase\n\tInside  bool\n\tDragged bool\n\tKey     Key\n\tMods    Mods\n\tRune    rune\n\tRepeat  bool\n\tTime    time.Duration\n}",
         "constructors": [],
         "methods": [
+          {
+            "name": "IsDrag",
+            "signature": "IsDrag() bool",
+            "synopsis": "IsDrag reports whether e is one of the four drag events of a drop target."
+          },
           {
             "name": "IsPointer",
             "signature": "IsPointer() bool",
@@ -3495,6 +3623,11 @@
             "name": "DismissSoftKeyboard",
             "signature": "DismissSoftKeyboard() bool",
             "synopsis": "DismissSoftKeyboard puts the on-screen keyboard away from inside an event handler, by blurring whatever asked for it, and reports whether there was one up."
+          },
+          {
+            "name": "Drop",
+            "signature": "Drop() (DropInfo, bool)",
+            "synopsis": "Drop returns what the drag event being handled carries, and false for every other event."
           },
           {
             "name": "Interaction",
@@ -3606,7 +3739,7 @@
       },
       "Interaction": {
         "synopsis": "Interaction is the presentation state gift maintains for an interactive node.",
-        "decl": "type Interaction struct {\n\tHover        bool\n\tPressed      bool\n\tFocused      bool\n\tFocusVisible bool\n\tDisabled     bool\n}",
+        "decl": "type Interaction struct {\n\tHover        bool\n\tPressed      bool\n\tFocused      bool\n\tFocusVisible bool\n\tDisabled     bool\n\tDropTargeted bool\n}",
         "constructors": [],
         "methods": []
       },
@@ -4241,6 +4374,21 @@
             "synopsis": "Diagnostics returns the counter snapshot of the application, for the tests whose subject is the frame path itself — \"this hover rebuilt nothing\" is an assertion about gift.Diagnostics.Builds."
           },
           {
+            "name": "DragLeave",
+            "signature": "DragLeave()",
+            "synopsis": "DragLeave ends the drag session without a drop: the drag left the window."
+          },
+          {
+            "name": "DragOverAt",
+            "signature": "DragOverAt(p geom.Point, kinds gift.DropKind)",
+            "synopsis": "DragOverAt reports a drag carrying kinds over p, in one tick, and settles."
+          },
+          {
+            "name": "DropAt",
+            "signature": "DropAt(p geom.Point, d gift.DropData) bool",
+            "synopsis": "DropAt drops d at p and reports whether a target took it."
+          },
+          {
             "name": "Dump",
             "signature": "Dump() string",
             "synopsis": "Dump returns the retained tree as indented text: type, key, label, bounds and the input flags of every node."
@@ -4473,6 +4621,11 @@
             "synopsis": "AssertDrawsImage fails when the node draws no picture in the most recent frame."
           },
           {
+            "name": "AssertDropTargeted",
+            "signature": "AssertDropTargeted() Node",
+            "synopsis": "AssertDropTargeted fails when the drop target the node belongs to — the node itself or its nearest ancestor that declares gift.Element.DropTarget — is not the accepting target of the current drag."
+          },
+          {
             "name": "AssertEnabled",
             "signature": "AssertEnabled() Node",
             "synopsis": "AssertEnabled fails when the node is disabled."
@@ -4501,6 +4654,11 @@
             "name": "AssertMaterial",
             "signature": "AssertMaterial(want render.MaterialKind) Node",
             "synopsis": "AssertMaterial fails unless the node paints a material of kind want."
+          },
+          {
+            "name": "AssertNotDropTargeted",
+            "signature": "AssertNotDropTargeted() Node",
+            "synopsis": "AssertNotDropTargeted is the opposite of Node.AssertDropTargeted."
           },
           {
             "name": "AssertNotFocused",
@@ -4598,9 +4756,19 @@
             "synopsis": "Drag presses the mouse on this node, moves it to the centre of dst in several steps and releases it there."
           },
           {
+            "name": "DragOver",
+            "signature": "DragOver(kinds gift.DropKind) Node",
+            "synopsis": "DragOver drags kinds over the centre of the node; see Harness.DragOverAt."
+          },
+          {
             "name": "DragTo",
             "signature": "DragTo(p geom.Point) Node",
             "synopsis": "DragTo presses the mouse on this node, moves it to the device space point p in several steps and releases it there."
+          },
+          {
+            "name": "DropOnto",
+            "signature": "DropOnto(d gift.DropData) bool",
+            "synopsis": "DropOnto drops d on the centre of the node and reports whether a target took it; see Harness.DropAt."
           },
           {
             "name": "Find",
@@ -7576,6 +7744,71 @@
             "name": "Thickness",
             "signature": "Thickness(f float32) DividerView",
             "synopsis": "Thickness sets the height of the line in logical pixels."
+          }
+        ]
+      },
+      "DropDestinationView": {
+        "synopsis": "DropDestinationView is content that takes files, text or web addresses dragged in from another application.",
+        "decl": "type DropDestinationView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "DropDestination",
+            "signature": "DropDestination(content gift.View) DropDestinationView",
+            "synopsis": "DropDestination returns content that accepts what is dragged onto it from outside the application — a file from the Finder, the Explorer, Nautilus or Dolphin, and where the platform reports them, text and web addresses — the counterpart of SwiftUI's .dropDestination(for:action:isTargeted:)."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Accepts",
+            "signature": "Accepts(kinds gift.DropKind) DropDestinationView",
+            "synopsis": "Accepts limits the destination to kinds."
+          },
+          {
+            "name": "CornerRadius",
+            "signature": "CornerRadius(r float32) DropDestinationView",
+            "synopsis": "CornerRadius rounds the corners of the highlight, to match content with rounded corners."
+          },
+          {
+            "name": "Disabled",
+            "signature": "Disabled(d bool) DropDestinationView",
+            "synopsis": "Disabled takes the drop destination away; the content stays as it is."
+          },
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) DropDestinationView",
+            "synopsis": "Flex sets the share of the free space of a stack this view takes."
+          },
+          {
+            "name": "Highlight",
+            "signature": "Highlight(on bool) DropDestinationView",
+            "synopsis": "Highlight switches the built-in highlight on, the default, or off, for a destination that shows the drag itself through OnTargeted."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) DropDestinationView",
+            "synopsis": "Key sets the reconciliation key."
+          },
+          {
+            "name": "OnDrop",
+            "signature": "OnDrop(fn func(DropInfo) bool) DropDestinationView",
+            "synopsis": "OnDrop sets what happens with a drop."
+          },
+          {
+            "name": "OnTargeted",
+            "signature": "OnTargeted(fn func(bool)) DropDestinationView",
+            "synopsis": "OnTargeted is told true when a drag the destination accepts arrives over it and false when that drag leaves, is dropped or is given up, or the destination is hidden or disabled under it; the two come in pairs while the destination stays mounted."
+          }
+        ]
+      },
+      "DropInfo": {
+        "synopsis": "DropInfo is what a DropDestinationView hands its OnDrop.",
+        "decl": "type DropInfo struct {\n\tItems    []gift.DropItem\n\tLocation geom.Point\n}",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Files",
+            "signature": "Files() []string",
+            "synopsis": "Files returns the paths of the dropped files and folders."
           }
         ]
       },

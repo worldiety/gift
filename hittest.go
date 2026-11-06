@@ -104,7 +104,7 @@ func (a *App) hitTest(p geom.Point) scene.Handle {
 	if a.root == nil || !a.store.Valid(a.root.node) {
 		return scene.Handle{}
 	}
-	return a.hitNode(a.root.node, p, unboundedClip, geom.Identity(), 0)
+	return a.hitNodeFor(a.root.node, p, unboundedClip, geom.Identity(), 0, false)
 }
 
 // unboundedClip is the device space rectangle that contains every plausible
@@ -113,7 +113,9 @@ func (a *App) hitTest(p geom.Point) scene.Handle {
 // would turn every intersection into a NaN.
 var unboundedClip = geom.Rc(-1e30, -1e30, 1e30, 1e30)
 
-func (a *App) hitNode(h scene.Handle, p geom.Point, clip geom.Rect, m geom.Affine2D, depth int) scene.Handle {
+// drag also counts a node with an [Element.DropTarget] as a hit target; see
+// [App.dragHit].
+func (a *App) hitNodeFor(h scene.Handle, p geom.Point, clip geom.Rect, m geom.Affine2D, depth int, drag bool) scene.Handle {
 	if depth > scene.MaxDepth {
 		return scene.Handle{}
 	}
@@ -147,12 +149,12 @@ func (a *App) hitNode(h scene.Handle, p geom.Point, clip geom.Rect, m geom.Affin
 	}
 
 	for i := len(nd.children) - 1; i >= 0; i-- {
-		if hit := a.hitNode(nd.children[i], p, clip, a.childXform(nd, m), depth+1); !hit.IsZero() {
+		if hit := a.hitNodeFor(nd.children[i], p, clip, a.childXform(nd, m), depth+1, drag); !hit.IsZero() {
 			return hit
 		}
 	}
 
-	if nd.interactor == nil {
+	if nd.interactor == nil && (!drag || nd.dropTarget == nil) {
 		// Transparent to input. See [Interactor] for why this is the
 		// permissive default and not the nil painter trap.
 		return scene.Handle{}

@@ -37,3 +37,4 @@ Basic components display one piece of content or take one input. All of them liv
 - [Stepper](stepper/): a minus and a plus button that change a number a step at a time.
 - [Search Field](search-field/): a text field with a magnifying glass and a clear button.
 - [Page Control](page-control/): a row of dots that shows and turns the current page.
+- [Drop Destination](drop-destination/): takes files, text and web addresses dragged in from other applications.
