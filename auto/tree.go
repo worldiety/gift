@@ -53,6 +53,11 @@ type Node struct {
 	Focused     bool `json:"focused,omitempty"`
 	Disabled    bool `json:"disabled,omitempty"`
 
+	// DropTarget says the node declares [gift.Element.DropTarget], and
+	// DropTargeted that it is the accepting target of the current drag.
+	DropTarget   bool `json:"dropTarget,omitempty"`
+	DropTargeted bool `json:"dropTargeted,omitempty"`
+
 	// Overflow is by how much the content of this node exceeds the size it
 	// reported, or nil when it fits.
 	Overflow *[2]float32 `json:"overflow,omitempty"`
@@ -119,6 +124,7 @@ func buildNode(app *gift.App, r gift.NodeRef, path string, depth, maxDepth int) 
 	n.Focusable = app.NodeFocusable(r)
 	ia := app.NodeInteraction(r)
 	n.Hover, n.Pressed, n.Focused, n.Disabled = ia.Hover, ia.Pressed, ia.Focused, ia.Disabled
+	n.DropTarget, n.DropTargeted = app.NodeIsDropTarget(r), ia.DropTargeted
 	if over, ok := app.NodeOverflow(r); ok {
 		n.Overflow = &[2]float32{over.W, over.H}
 	}

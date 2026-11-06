@@ -4401,6 +4401,631 @@ Anlass (02.11.2026): SwiftUIs DisclosureGroup fehlte, ebenso ein Akkordeon.
 Offen: die Liste blendet Trennlinien um eine gedrueckte Gruppenzeile nicht
 aus, weil sie nur ihre direkten Kinder fragt.
 
+## 48. Dateien und Inhalte von aussen ablegen (Drag and Drop)
+
+Anlass (05.11.2026): Dateien aus dem Finder, dem Explorer, Nautilus oder
+Dolphin in ein Fenster von gift ziehen, und die Anwendung reagiert darauf;
+wo es geht, auch Text und Web-Adressen. Zielsysteme sind macOS, Windows,
+Linux GNOME und Linux KDE. Auf jedem anderen System (js/wasm, Android,
+iOS, BSDs) tut die Funktion nichts: eine Ablageflaeche ist dort eine
+gewoehnliche View, `DropCapabilities` ist der Nullwert, und es gibt, wie
+bei der Zwischenablage, einmal eine Debug-Zeile, sobald ein Ziel gebaut
+wird. Status: umgesetzt (M1 bis M7, 05.11.2026); siehe "Ergebnisse" am
+Ende des Abschnitts.
+
+Kein eigenes Paket: Ablegen ist Eingabe wie das Kontextmenue. Der Kern
+(`gift`) bekommt Sitzung und Ereignisse, `ui` die View, `backend/ebiten`
+die Quellen und die nativen Schichten.
+
+### Was Ebitengine 2.10.5 liefert
+
+Geprueft im Quelltext (`E` = Modulcache `ebiten/v2@v2.10.5`):
+
+- `ebiten.DroppedFiles() fs.FS` (`E/run.go:793`) auf allen drei
+  Plattformen. Es ist genau einen Tick sichtbar und wird dann geleert
+  (`E/internal/ui/input.go:311`). Ein Drop geht nicht verloren, weckt gift
+  aber nicht: auf dem reinen Ebiten-Pfad kommt er bis zu 1/IdleTPS spaeter
+  an. Fenster im Hintergrund bekommen Drops (`SetRunnableOnUnfocused`
+  ist standardmaessig an).
+- Ebitens Cursor kommt nur aus dem Abfragen pro Frame
+  (`E/internal/ui/ui_glfw.go:1397`: `mouseLocationOutsideOfEventStream`,
+  `GetCursorPos`, `XQueryPointer`). Ebiten setzt keinen Cursor-Callback;
+  die Punkte aus XdndPosition, `performDragOperation:` und
+  `DragQueryPoint` erreichen `CursorPositionF` nie
+  (`E/internal/glfw/input.go:103-114`, `:324`). Unter macOS, Windows und
+  echtem X11 folgt der abgefragte Zeiger einem fremden Drag. Unter
+  XWayland ist das fuer Bewegung und Drop unbelegt.
+- Es fehlen Betreten und Verlassen, Text, Web-Adressen, versprochene
+  Dateien (Fotos) und virtuelle Dateien (Outlook).
+- macOS (`E/internal/glfw/cocoa_window_darwin.go:869-921`, `:1124`): nur
+  `public.url` registriert, nur Datei-URLs gelesen, `draggingEntered:`
+  antwortet immer Generic, `performDragOperation:` immer YES. Die
+  View-Klasse heisst `GLFWContentView`. `draggingUpdated:`,
+  `draggingExited:`, `concludeDragOperation:` und `draggingEnded:` fehlen.
+  `performDragOperation:` und `concludeDragOperation:` laufen im selben
+  `PollEvents` vor allen Ticks des Frames (`ui_glfw.go:1382`,
+  `E/internal/ui/context.go:219`); ein nativer Drop und Ebitens `fs.FS`
+  landen also im selben Tick.
+- Windows (`E/internal/glfw/win32_window_windows.go:1216-1236`,
+  `:1299-1309`, `:1383`): `DragAcceptFiles` und `WM_DROPFILES`, nur
+  `CF_HDROP`, kein OLE. Fuer erhoehte Prozesse sind `WM_DROPFILES`,
+  `WM_COPYDATA` und `WM_COPYGLOBALDATA` freigegeben.
+- Linux (`E/internal/glfw/x11_window_linbsd.go:1530-1677`): reines X11,
+  XDND 5, nur `text/uri-list`, kein `XdndLeave`. Nicht-`file:`-URIs (KDE
+  `smb:`) werden zu Pfaden unter dem Arbeitsverzeichnis, deren `os.Stat`
+  scheitert (`E/internal/glfw/init_linbsd.go:17-56`).
+- Native Handles gibt Ebiten nicht heraus. `RunOnMainThread` wirkt erst,
+  wenn das Fenster existiert (`E/internal/ui/ui_desktop.go:391`), und gift
+  laeuft im Mehrthread-Modus (`backend/ebiten/run.go:487-497`), der Aufruf
+  aus Update verklemmt also nicht. Native Schichten werden deshalb im
+  ersten Update eingerichtet, nicht in `Run`.
+- Das virtuelle `fs.FS` (`E/internal/file/file_notjs.go`) legt
+  Zwischenverzeichnisse an, wenn die Pfade aus verschiedenen Ordnern
+  kommen. Ein Zwischenverzeichnis hat als `DirEntry` ein `Info().Sys() ==
+  nil` (`virtualDirFileInfo`, `:449`); ein abgelegter Eintrag hat die
+  `FileInfo` aus Ebitens `os.Stat`. Beide implementieren `AbsPather`.
+  `virtualDir.ReadDir(-1)` bricht beim ersten gescheiterten `os.Stat` ab
+  und liefert dahinter nil-Eintraege (`:398-413`).
+
+### Wie es andere machen
+
+SDL3 (`DROP_BEGIN/POSITION/FILE/TEXT/COMPLETE`, unter Windows OLE mit
+Rueckfall auf `WM_DROPFILES`), Qt, Tauri, Avalonia, Compose Desktop und
+Flutters `desktop_drop` haben eine Sitzung aus Betreten, Bewegen, Verlassen
+und Ablegen. GLFW hat nur den Drop; Enter ist dort seit Jahren offen
+(glfw#1898). Fyne (`Window.SetOnDropped`) und Wails liefern nur den Drop
+mit Position, fensterweit; Gio kennt keine Drops von aussen. Vorbild der
+API ist SwiftUI, `dropDestination(for:action:isTargeted:)`: ein Ziel pro
+View, Position lokal, `isTargeted` fuer die Hervorhebung. Uebernommen:
+Verlassen kommt immer, auch nach dem Drop (SDL `COMPLETE`); das innerste
+passende Ziel bekommt den Drop, eine Ablehnung geht an die Eltern
+(`desktop_drop`).
+
+### Der gemeinsame Nenner
+
+| Faehigkeit                         | macOS   | Windows | GNOME              | KDE                |
+|------------------------------------|---------|---------|--------------------|--------------------|
+| Dateien und Ordner ablegen         | ja (M3) | ja (M3) | ja (M3)            | ja (M3)            |
+| Position des Drops                 | ja      | ja      | X11 ja, Wayland unbelegt | X11 ja, Wayland unbelegt |
+| Live: Betreten, Bewegen, Verlassen | ja (M4) | ja (M5) | nein               | nein               |
+| Text und Web-Adressen              | ja (M4) | ja (M5) | nein               | nein               |
+| Zeiger zeigt Annehmen/Ablehnen     | ja (M4) | ja (M5) | immer an           | immer an           |
+| Erhoeht laufender Prozess          | –       | nur Dateien, nicht live (M3-Pfad) | – | – |
+
+GNOME und KDE meinen jeweils die Wayland-Sitzung (gift unter XWayland) und
+die X11-Sitzung. Andere Linux-Desktops und der Kiosk (labwc) bekommen
+dasselbe wie GNOME, ohne Zusage: es haengt am X11-Pfad, nicht am Desktop,
+und wird nicht abgeschaltet.
+
+Was gift verspricht:
+- Ein Drop erreicht das innerste sichtbare, aktivierte Ziel unter der
+  Position, das eine der abgelegten Arten annimmt; lehnt es ab, das
+  naechste darueber. Ein aktives Modal (`FocusTrap`) begrenzt die Suche auf
+  seinen Teilbaum; Ziele dahinter bekommen nichts. Popover und Menues der
+  oberen Ebene sind nie Ziel.
+- Jede Live-Sitzung endet mit Verlassen: nach dem Drop, beim Abbruch, und
+  wenn das Ziel versteckt oder deaktiviert wird. Einzige Ausnahme: ein
+  ausgehaengtes Ziel bekommt nichts mehr. Ohne Live-Sitzung (Linux,
+  M3-Pfad) kommt nur der Drop; die Hervorhebung erscheint dann nie.
+- Liegt die Position eines Drops ausserhalb des Fensters (veralteter
+  Zeiger unter XWayland), geht er an das aeusserste Ziel, das das ganze
+  Fenster bedeckt; gibt es keins, wird er mit einer Debug-Zeile verworfen.
+- Dateien sind absolute Pfade. gift oeffnet keine Datei; nur Ebiten
+  stat-et die abgelegten Pfade. Ein Drop verschiebt den Fokus nicht und
+  aktiviert das Fenster nicht. `Items` gehoeren dem Empfaenger.
+- Nur Kopieren; kein Verschieben, keine Verknuepfung.
+
+### API
+
+Kern, Paket `gift`:
+
+```go
+type DropKind uint8 // Bitmenge
+const (
+	DropFile DropKind = 1 << iota // Datei oder Ordner, als Pfad
+	DropText                      // Klartext
+	DropURL                       // Web-Adresse, kein file:
+)
+
+type DropItem struct {
+	Kind DropKind
+	Path string // DropFile: absolut
+	Dir  bool   // DropFile: ein Ordner
+	Text string // DropText
+	URL  string // DropURL, unveraendert
+}
+
+type DropData struct{ Items []DropItem }
+func (d DropData) Kinds() DropKind
+func (d DropData) Files() []string
+func DropFiles(paths ...string) DropData // Dir per os.Stat; fuer Tests und Demos
+func DropTextData(s string) DropData
+
+// Was EventDragEnter, EventDragOver und EventDrop tragen.
+type DropInfo struct {
+	// Waehrend des Drags die gemeldeten Arten, 0 = unbekannt.
+	// Bei EventDrop gleich Data.Kinds().
+	Kinds DropKind
+	Data  DropData // nur bei EventDrop
+}
+func (c *EventContext) Drop() (DropInfo, bool) // false bei anderen Ereignissen
+
+// Was die Plattform kann; Nullwert = nichts.
+type DropCapabilities struct {
+	Kinds DropKind
+	Live  bool // Betreten, Bewegen, Verlassen waehrend des Drags
+}
+func (b *BuildContext) DropCapabilities() DropCapabilities // nil-sicher
+func (c *Context) DropCapabilities() DropCapabilities
+
+// Neue EventKinds nach EventContextMenu; Event bleibt ohne Zeiger.
+EventDragEnter, EventDragOver, EventDragLeave, EventDrop
+func (e Event) IsDrag() bool // IsPointer bleibt, wie es ist
+
+// Element: ein eigener Interactor nur fuer Drag-Ereignisse. Ein Knoten
+// mit nil-Interactor und gesetztem DropTarget bleibt fuer Zeiger
+// durchsichtig, Hover und Druck der Eltern bleiben also erhalten.
+DropTarget Interactor
+// Interaction:
+DropTargeted bool // dieser Knoten ist das aktuelle, annehmende Ziel
+
+// Eintrittspunkte fuer Backends, gifttest und giftauto (Eingabephase):
+func (a *App) DragOver(pos geom.Point, kinds DropKind)
+func (a *App) DragLeave()                // ohne Sitzung: nichts
+func (a *App) Drop(pos geom.Point, d DropData) (accepted bool)
+func (a *App) DropAccepted() bool        // nimmt das Sitzungsziel an?
+func (a *App) HasDropTargets() bool      // sichtbare, aktivierte Ziele
+func (a *App) SetDropCapabilities(DropCapabilities) // Invalidate bei Aenderung
+func (a *App) NodeDropTargeted(NodeRef) bool        // fuer gifttest und /tree
+```
+
+UI, Paket `ui`, Datei `ui/drop.go`:
+
+```go
+type DropDestinationView struct{ ... } // RegisterType("ui.DropDestination")
+func DropDestination(content gift.View) DropDestinationView
+// Modifier mit Wert-Empfaenger: Key, Flex, CornerRadius,
+// Accepts(gift.DropKind) /* 0 = alle */, OnDrop(func(DropInfo) bool),
+// OnTargeted(func(bool)), Highlight(bool) /* Feld noHighlight */,
+// Disabled(bool) /* nimmt nur das Ziel weg, nicht den Inhalt */
+
+type DropInfo struct {
+	Items    []gift.DropItem // nur die angenommenen Arten
+	Location geom.Point      // logische Pixel, lokal zur Flaeche
+}
+func (d DropInfo) Files() []string
+```
+
+- Annehmen: `Kinds == 0` oder `Kinds & accepts != 0`. `OnDrop` bekommt
+  nur die Items der angenommenen Arten; liefert es false, gilt das als
+  Ablehnung, und der Drop geht hinauf.
+- Hervorhebung, gemalt aus `Interaction.DropTargeted` nach den Kindern,
+  ohne Neuaufbau: Rand 2 px in `ColorAccent`, Flaeche `Fade(ColorAccent,
+  0.12)`, Ecken aus `CornerRadius`.
+- Eine fensterweite Ablage ist eine `DropDestination` um die Wurzel.
+
+### Sitzung im Kern
+
+- Zustand in `inputState`: aktiv, Position, Arten, Ziel, ein `DropInfo`
+  fuer `EventContext.Drop`.
+- `DragOver` ruft das Backend in jedem Tick einer Live-Sitzung. Der Kern
+  macht jedes Mal den Treffertest, mit dem Praedikat `interactor != nil ||
+  dropTarget != nil` und denselben Regeln fuer Clip, Hidden und
+  Ueberlagerung (`hittest.go:116`). Von dort geht es die Eltern hinauf zum
+  ersten Knoten mit `DropTarget`, nicht deaktiviert, innerhalb von
+  `a.focusRoot()` (`focus.go:226`). Er bekommt `EventDragEnter` oder
+  `EventDragOver` direkt. `true` heisst annehmen; lehnt er ab, kommt der
+  naechste. Bei einem Zielwechsel bekommt das alte Ziel `EventDragLeave`.
+  `Over` geht nur bei geaenderter Position, Art oder Ziel hinaus. Die
+  Pflege von `DropTargeted` und `markNeedsPaint` folgt `updateHover`
+  (`input.go:1680`). Ohne Allokation, geprueft mit `testing.AllocsPerRun`.
+- Waehrend einer Live-Sitzung ruht der gewoehnliche Hover: `clearHover`
+  fuer die Maus, `updateHover` setzt aus, und nach dem Verlassen bringt
+  der naechste `PointerMove` ihn zurueck. Ohne Live-Sitzung (Linux) bleibt
+  der Hover, das steht in der Doku.
+- `Drop`: der Kern macht einen `DragOver`, wenn keine Sitzung aktiv ist,
+  dann geht `EventDrop` an das Ziel. Lehnt es ab, wird weiter hinauf
+  gesucht. Ein Vorfahre, der den Drop annimmt, bekommt nur `EventDrop` und
+  keine Betreten/Verlassen. Danach immer `DragLeave`. Bei einer Position
+  ausserhalb des Fensters gilt die Regel oben.
+- Versteckt (`applyHidden`, `reconcile.go:286`) oder deaktiviert
+  (`applyElement`): `DropTargeted` loeschen, neu malen und
+  `deferNotice(ziel, noticeDragLeave)`. Dafuer kommt eine neue Notice-Art
+  in `pending.go`. Ausgehaengt (`forgetNode`, `input.go:1888`): vergessen,
+  ohne Ereignis.
+- Zaehler `a.in.dropTargets` fuer `HasDropTargets`, nach dem Muster von
+  `applyKeyFallback` (`reconcile.go:369`): erhoeht und verringert bei einem
+  Wechsel in `applyElement` und `applyHidden`, verringert im Unmount neben
+  `a.keyFallbacks--` (`reconcile.go:610`).
+- `EventDrop` ist wie die Zwischenablage von der Allokationsregel
+  ausgenommen (`input.go:525`).
+
+### Backend: Quellen und Dateien
+
+Dateien in `backend/ebiten`:
+- `drops_on.go` (`(darwin && !ios) || windows || (linux && !android)`)
+  setzt `inputBridge.dropped = eb.DroppedFiles`.
+- `drops_off.go` (die Verneinung) laesst es nil. Ebiten im Browser liefert
+  auch Drops; die werden bewusst nicht gelesen.
+- `drop_darwin.go` (`darwin && !ios`) und `drop_windows.go`
+  (`windows && (amd64 || arm64)`) sind die nativen Schichten.
+- `drop_native_other.go` (der Rest) liefert nil.
+
+Ablauf:
+- `pollDrops()` laeuft in `poll()` (`input.go:254`) nach `pollMouse`
+  (`:340`). Es liest den Cursor selbst und haengt nicht davon ab, ob
+  `pollMouse` lief.
+- Bei `Config.NoInput` gibt es keine Bruecke und damit keine Drops. Bei
+  `NoMouse` werden Drops zugestellt, Live-Ereignisse nicht. Eine geparkte
+  Touch-Emulation aendert nichts. Drag-Ereignisse setzen `Pos` und
+  `Inside` selbst, nie aus `p.pos`.
+- Ebiten-Pfad:
+  - Position ist `logical(CursorPositionF)`.
+  - Pfade nur ueber `fs.ReadDir` ab `"."`, nie ueber `Open`. Ein Eintrag
+    mit `Info().Sys() == nil` ist ein Zwischenverzeichnis und wird
+    durchlaufen. Jeder andere ist abgelegt: Pfad aus `AbsPath()`, `Dir`
+    aus `IsDir()`.
+  - Liefert `ReadDir` einen Fehler, gelten die Eintraege bis zum ersten
+    nil, und es gibt einmal eine Debug-Zeile. Dass die Eintraege dahinter
+    verloren gehen, ist Ebitens Grenze und steht in der Doku.
+- Native Schichten:
+  - Einrichtung im ersten Update ueber `eb.RunOnMainThread`, einmal
+    (`sync.Once`).
+  - Sie liefern Art, Position, Verlassen und Daten in eine Mutex-Queue,
+    rufen `game.wake()` und werden in `pollDrops` geleert. Das folgt
+    `wheelphase_darwin.go:130` und `evdev_linux.go:180`; die Queue nutzt
+    ihren Slice wieder.
+  - Die Position rechnen sie in Ebitens Cursor-Einheit um und reichen sie
+    dann durch `logical()`. Die Tests vergleichen sie mit
+    `CursorPositionF`.
+  - Misslingt die Einrichtung, bleibt der Ebiten-Pfad, und es gibt eine
+    Debug-Zeile. `GIFT_DROP_NATIVE=0` schaltet beide Schichten ab, als
+    Notausgang.
+- Eine Quelle der Wahrheit: ist eine native Schicht aktiv, liefert sie
+  auch die Dateien. `pollDrops` leert zuerst die native Queue. Ein
+  `fs.FS` von Ebiten wird verworfen, wenn im selben oder in den zwei
+  vorigen Updates ein nativer Drop kam; sonst wird es sofort zugestellt
+  (Sicherung, etwa fuer `WM_DROPFILES` einer Nicht-OLE-Quelle).
+- Antwort an das System: macOS `NSDragOperation` und Windows `pdwEffect`
+  verlangen eine synchrone Antwort, gifts Baum lebt aber auf der
+  UI-Goroutine.
+  - Nach jedem `app.Update` schreibt das Backend `DropAccepted()` in ein
+    Atomic. Die Schicht antwortet damit, einen Frame spaet; vor der ersten
+    Antwort gilt `HasDropTargets()`.
+  - Die Antwort ist Copy, und zwar nur, wenn die Quelle Copy erlaubt
+    (macOS `draggingSourceOperationMask`, Windows das eingehende
+    `*pdwEffect`). Sonst lautet sie None.
+- `SetDropCapabilities` ruft `Run` mit Dateien auf den drei Plattformen
+  auf. Ist eine native Schicht aktiv, folgen im ersten Update Text,
+  Adressen und `Live`.
+- Ein Leerlauf-Tick ohne Drop allokiert nichts (`AllocsPerRun` auf
+  `poll`).
+
+### macOS (M4)
+
+- Die Klasse kommt von `objc.GetClass("GLFWContentView")`, nie von
+  `object_getClass` der View, weil KVO deren Klasse austauscht (Commit
+  39a4e6c). Mit purego `Class.AddMethod` und `NewIMP` kommen hinzu:
+  `draggingUpdated:` (`Q@:@`), `draggingExited:`, `concludeDragOperation:`
+  und `draggingEnded:` (`v@:@`). Liefert `AddMethod` false, hat Ebiten die
+  Methode inzwischen selbst: dann nichts installieren und beim Ebiten-Pfad
+  bleiben.
+- Die View ist die Content-View des Fensters aus `NSApp.windows`, geprueft
+  mit `isKindOfClass:`. Sobald `HasDropTargets()` zum ersten Mal wahr ist,
+  ruft gift `registerForDraggedTypes:` mit der vollen Liste
+  `public.file-url`, `public.url` und `public.utf8-plain-text` auf. Die UTIs
+  stehen als Literale wie in `clipboard_darwin.go:58`. Vorher bleibt es bei
+  Ebitens `public.url`, weil Ebitens `draggingEntered:` alles mit Generic
+  beantwortet und eine App ohne Ziel sonst Text-Drags anzeigen wuerde.
+- `draggingUpdated:` liest die Arten aus `[[info draggingPasteboard]
+  types]` und die Position aus `draggingLocation`, umgerechnet mit
+  `convertPoint:fromView:nil` und auf die Hoehe gespiegelt. Beides geht in
+  die Queue, die Antwort kommt aus dem Atomic. Das erste Update nach der
+  Ruhe gilt als Betreten.
+- `concludeDragOperation:` kommt, weil Ebitens `performDragOperation:`
+  immer YES liefert. Es liest `readObjectsForClasses:[NSURL]`; Pfade kommen
+  ueber `fileSystemRepresentation` wie bei Ebiten `:908`, weil der Finder
+  File-Reference-URLs liefert. Vorrang:
+  - Sind Datei-URLs da, nur `DropFile`.
+  - Sonst Adressen, und den Text nur, wenn er getrimmt keiner Adresse
+    gleicht.
+  - Sonst `DropText`.
+
+  Dieselbe Regel gilt waehrend des Drags fuer die Arten. So landet ein
+  Finder-Drag, der auch Text traegt, beim Dateiziel.
+- `draggingExited:` und `draggingEnded:` legen Verlassen in die Queue. Die
+  Queue fasst Folgen von Verlassen zusammen.
+- Nicht umgesetzt: versprochene Dateien (`NSFilePromiseReceiver`) und
+  Sandbox-Bookmarks. Ein Drag aus Fotos wird wie bisher abgelehnt.
+- Aufwand etwa 300 Zeilen.
+
+### Windows (M5)
+
+- Auf dem Main-Thread:
+  - Ist das Token erhoeht (`TokenElevation`), nichts tun. OLE ueber
+    Integritaetsstufen geht nicht, Ebitens `WM_DROPFILES` schon.
+  - Sonst `OleInitialize`. `S_OK` und `S_FALSE` sind in Ordnung,
+    `RPC_E_CHANGED_MODE` oder ein anderer Fehler heisst Ebiten-Pfad.
+- HWND per `EnumThreadWindows(GetCurrentThreadId())`, Klasse `GLFW30` und
+  `WS_EX_ACCEPTFILES`. Das schliesst GLFWs verstecktes Nachrichtenfenster
+  gleicher Klasse aus (`win32_window_windows.go:1382`).
+- `RegisterDragDrop(hwnd, target)`. Das `IDropTarget` ist in reinem Go
+  geschrieben, mit statischer Vtable aus `windows.NewCallback` wie in
+  `notify/platform_windows.go:625`. `QueryInterface` beantwortet
+  `IID_IUnknown` und `IID_IDropTarget`. `POINTL` kommt auf amd64 und arm64
+  als ein Register (x unten, y oben).
+- `DragEnter` und `DragOver` lesen die Arten per
+  `IDataObject::QueryGetData` fuer `CF_HDROP`, `CF_UNICODETEXT` und
+  `UniformResourceLocatorW`. Die Position ergibt sich aus `ScreenToClient`
+  geteilt durch `eb.Monitor().DeviceScaleFactor()`.
+- `DragLeave` meldet Verlassen. `Drop` holt die Daten per `GetData`: Pfade
+  per `DragQueryFileW`, Text per `GlobalLock`, danach `ReleaseStgMedium`.
+  Fuer die Arten gilt derselbe Vorrang wie unter macOS.
+- Beim Beenden `RevokeDragDrop` und `OleUninitialize`.
+- Strukturgroessen werden zur Kompilierzeit geprueft: `FORMATETC` 32,
+  `STGMEDIUM` 24, `POINTL` 8 Bytes, mit dem Muster
+  `var _ [unsafe.Sizeof(x) - N]byte` und der Umkehrung.
+- Optional am Ende: `IDropTargetHelper`, damit das Drag-Bild des Explorers
+  ueber dem Fenster sichtbar bleibt. Faellt weg, wenn es Aerger macht.
+- Nicht umgesetzt: virtuelle Dateien (`CFSTR_FILEDESCRIPTORW`, Outlook).
+- Aufwand etwa 600 Zeilen.
+
+### Linux: Ergebnis der Recherche, keine eigene Schicht
+
+Ein XdndProxy auf einem eigenen Fenster wuerde Verlassen und Text bringen,
+aber nur in X11-Sitzungen. In den Standard-Sitzungen beider Desktops sind
+die Quellen Wayland-nativ. Die Bruecke des Compositors schickt dort jede
+XDND-Nachricht direkt an das Fenster und kennt keinen Proxy: Mutter
+`src/wayland/meta-xwayland-dnd.c`, KWin `src/xwayland/drag_wl.cpp` (Klasse
+`Xvisit`). Eine zweite X-Verbindung sieht diese Nachrichten nie, nur der
+Ersteller des Fensters sieht sie, also GLFW.
+
+Ohne Fork bleibt Linux deshalb bei Dateien und der abgefragten Position.
+Verlassen, Text und eine Position aus XdndPosition gehoeren in Ebitens
+Go-Port von GLFW (`x11_window_linbsd.go:1530`), als Beitrag upstream und
+nicht in diesem Plan.
+
+Die bekannten Fehler der Bruecken liegen ausserhalb von gift: Mutter 3.34
+und 41, KWin 437406 und 448867. Die Abnahme prueft aktuelle Versionen.
+
+### Tests ausserhalb von gifttest
+
+- Die Fenstertests liegen im neuen Testpaket `backend/ebiten/droptest`,
+  das nur aus `_test.go` besteht. Das Vorbild ist
+  `tray/tray_darwin_test.go:25`: `init` sperrt den Main-Thread, und
+  `main_test.go` hat ein eigenes `TestMain`.
+  - Ist `GIFT_DROP_X11`, `GIFT_DROP_MACOS` oder `GIFT_DROP_WINDOWS` gesetzt,
+    laeuft `backend.Run` auf dem Main-Thread. Die App ist ein
+    `DropDestination` um die Wurzel (400x300), darin ein inneres Textziel.
+    `OnDrop` und `OnTargeted` schreiben in einen Kanal.
+  - `m.Run` laeuft in einer Goroutine und endet mit `os.Exit`.
+  - Jede Erwartung hat ein Zeitlimit von 10 s.
+  - Ohne Variable laeuft nur `m.Run`.
+- X11 im Container. Die XDND-Quelle ist eine eigene purego-Bindung nur
+  fuer den Test, in `droptest/xdnd_source_linux_test.go`; `clipboard` wird
+  dafuer nicht umgebaut. Gebunden sind `XOpenDisplay`, `XInternAtom`,
+  `XCreateSimpleWindow`, `XSetSelectionOwner`, `XSendEvent`, `XNextEvent`,
+  `XChangeProperty`, `XQueryTree`, `XGetWindowProperty`, `XWarpPointer` und
+  `XFlush`, mit `XEvent` als `[192]byte` wie in `clipboard_x11.go`.
+  - Die Quelle findet gifts Fenster als Kind der Wurzel mit `XdndAware`.
+    Xvfb hat keinen Fenstermanager.
+  - Sie setzt den Zeiger per `XWarpPointer` und schickt dann Enter (Typen
+    inline), Position und Drop. Sie wartet auf `XdndStatus`, beantwortet
+    `SelectionRequest` mit der URI-Liste und wartet auf `XdndFinished`.
+  - Die URIs: ein Name mit Leerzeichen, einer mit Umlaut
+    (prozentkodiert), ein Ordner, eine Datei in einem anderen Ordner und
+    `smb://host/share/x`. Die echten Dateien kommen an, `smb:` nicht.
+  - Ein zweiter Fall ohne `XWarpPointer`, mit dem Zeiger ausserhalb des
+    Fensters, prueft die Regel fuer das fensterweite Ziel.
+  - Aufruf, der erlaubte Downloads einschliesst (Image und apt):
+
+  ```
+  docker run --rm --platform linux/arm64 -v "$PWD":/src \
+    -v "$(go env GOMODCACHE)":/go/pkg/mod:ro -w /src \
+    -e GOFLAGS=-mod=mod -e GOPROXY=off -e GOTOOLCHAIN=local \
+    -e CGO_ENABLED=0 -e GIFT_DROP_X11=1 golang:1.27-bookworm sh -c \
+    'apt-get update -qq && apt-get install -y -qq xvfb xauth libgl1 \
+     libgl1-mesa-dri libx11-6 libxcursor1 libxext6 libxi6 libxinerama1 \
+     libxrandr2 libxrender1 && xvfb-run -a -s "-screen 0 1024x768x24" \
+     go test ./backend/ebiten/droptest -run X11 -v -count=1'
+  ```
+
+  - Zuerst kommt ein Rauchtest im selben Container mit einem bestehenden
+    Test, `go test -tags giftgpu ./backend/ebiten -run <ein GPU-Test>`.
+  - Scheitert fakecgo, wird mit `CGO_ENABLED=1` wiederholt, und das wird
+    festgehalten.
+  - Gibt es `golang:1.27-bookworm` nicht, nimmt der Test `golang:1.27`.
+- macOS, `GIFT_DROP_MACOS=1 go test ./backend/ebiten/droptest -v
+  -count=1`:
+  - Ein Fake-`NSDraggingInfo` ist eine per `objc.RegisterClass`
+    angelegte NSObject-Unterklasse. Sie bietet `draggingPasteboard`,
+    `draggingLocation` (Struct-Rueckgabe, purego v0.11 auf darwin/arm64),
+    `draggingSourceOperationMask` und `draggingSequenceNumber`. Das
+    Pasteboard kommt von `pasteboardWithUniqueName` und wird danach mit
+    `releaseGlobally` freigegeben.
+  - Der Test ruft die Methoden in der Reihenfolge von AppKit auf der
+    echten View auf, mit Ebitens eigenen Methoden: `draggingEntered:`,
+    dreimal `draggingUpdated:` ueber Frames, `performDragOperation:`,
+    `concludeDragOperation:`, `draggingEnded:`. Ein zweiter Fall ist
+    `draggingUpdated:` gefolgt von `draggingExited:`.
+  - Die Faelle: Dateien; ein Finder-artiges Pasteboard mit Datei-URL und
+    Pfad als Text; Text; eine Adresse.
+  - Geprueft wird:
+    - jede Datei kommt genau einmal an;
+    - Arten, Items, Verlassen und Position;
+    - `respondsToSelector:` fuer die vier Methoden auf der echten,
+      KVO-getauschten View;
+    - `registeredDraggedTypes` enthaelt die drei UTIs.
+  - Ein M3-Fall mit `GIFT_DROP_NATIVE=0` geht ueber Ebitens
+    `performDragOperation:` allein.
+  - Optional und nie blockierend, wenn `CGPreflightPostEventAccess()` wahr
+    ist: ein Hilfsprozess startet eine echte `NSDraggingSession` aus
+    eigenem Fenster und bewegt die Maus per `CGEventPost` ueber gifts
+    Fenster. Sonst wird der Fall mit einer Meldung uebersprungen. Sind
+    Computer-Use-Werkzeuge da, kommen Finder, Safari und TextEdit dazu.
+- Windows, `//go:build windows`, `GIFT_DROP_WINDOWS=1`, beim Nutzer:
+  - Der Test ruft die Vtable-Slots von gifts Ziel direkt per
+    `syscall.SyscallN` auf, mit gepacktem `POINTL`, mit `SHCreateDataObject`
+    fuer echte Dateien und einem eigenen Text-`IDataObject`.
+  - Ein zweites `RegisterDragDrop` auf dasselbe HWND muss
+    `DRAGDROP_E_ALREADYREGISTERED` liefern.
+  - Aufruf: `set GIFT_DROP_WINDOWS=1 && go test ./backend/ebiten/droptest
+    -run Windows -v`.
+
+### Schritte
+
+| Schritt | Inhalt | Abnahme |
+|---------|--------|---------|
+| M0 | Ausgangslage, kein Commit | `go test ./...` und `go test -tags giftdebug ./...` gruen; `CGO_ENABLED=0 go build ./...` fuer linux/amd64, linux/arm64, windows/amd64, windows/arm64 und js/wasm gruen (windows/386 bricht schon heute in `weather/grib2`, kein Ziel); freebsd/amd64 mit `-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std` nur als Pruefung der Plattformgrenze, entfaellt, wenn es schon in M0 bricht |
+| M1 | Kern: Typen, `EventKind`s, `IsDrag`, `EventContext.Drop`, `Element.DropTarget`, `Interaction.DropTargeted`, Sitzung, `App.DragOver/DragLeave/Drop/DropAccepted/HasDropTargets/SetDropCapabilities/NodeDropTargeted`, `BuildContext`/`Context.DropCapabilities`, Notice `noticeDragLeave`. gifttest: `h.DragOverAt(p, kinds)`, `h.DragLeave()`, `h.DropAt(p, d) bool`, `n.DragOver(kinds)`, `n.DropOnto(d) bool`, `n.AssertDropTargeted()`, `n.AssertNotDropTargeted()` (steigen zum naechsten Knoten mit `NodeDropTargeted`, je `beginInput` und `Settle`). giftauto in `auto/input.go`: `dragOver`, `drop`, `dragLeave` mit den Feldern `kinds`, `files`, `urls`, `dropText`; `dropTargeted` in `/tree` | Tests: innerstes Ziel gewinnt; Ablehnung geht hinauf; Vorfahre bekommt nur `EventDrop`; Modal-Scrim und Sheet ueber Wurzelziel lehnen ab; Popover ist kein Ziel; versteckt und deaktiviert waehrend des Drags bekommen Verlassen; ausgehaengt ohne Ereignis; Verlassen nach Drop und bei Abbruch; Drop ohne Sitzung; Position ausserhalb des Fensters; Hover ruht waehrend der Sitzung; Scrollen unter stehendem Drag wechselt das Ziel; Zielknoten ohne Zeiger-Interactor laesst Hover der Eltern; `DragOver` ohne Allokation; `auto/server_test.go` fuer die drei Schritte |
+| M2 | `ui.DropDestination` mit allen Modifiern, Hervorhebung, Showcase `internal/showcase/drop_destination.go` (`Name: "drop-destination"`, `Group: "basic"`, `Input` mit `dragOver` auf das innere Ziel) | Tests in `ui/drop_test.go`: Arten filtern; Finder-artiger Drop mit Datei und Text landet beim aeusseren Dateiziel; lokale Position; `OnTargeted` paarig; `Disabled`. Golden `drop-destination-targeted-light` und `-dark`: erzeugen mit `GIFT_UPDATE_GOLDEN=1 go test -tags giftgpu ./ui -run DropDestination`, pruefen ohne Variable. Die bestehenden Kitchen-Sink-Tests laufen unveraendert mit einer `DropDestination` um die Wurzel |
+| M3 | Backend: `drops_on/off.go`, `pollDrops`, Pfade aus dem `fs.FS`, Fensterregel, `SetDropCapabilities`, Testpaket `droptest` mit `TestMain` | Bruecken-Test in `backend/ebiten` mit echtem Ebiten-`fs.FS` (Dateien aus zwei Ordnern, ein Ordner, ein `os.Stat`-Fehler in der Mitte); `AllocsPerRun` auf `poll` ohne Drop; X11-Ende-zu-Ende im Container wie oben; `GIFT_DROP_MACOS=1 ... -run MacEbitenPath` |
+| M4 | `drop_darwin.go` | macOS-Test wie oben, alle Faelle; M1 bis M3 weiter gruen |
+| M5 | `drop_windows.go`, Test `droptest/windows_test.go` | `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./backend/ebiten/...` und dasselbe fuer arm64; `GOOS=windows GOARCH={amd64,arm64} go test -c -o /dev/null ./backend/ebiten ./backend/ebiten/droptest`; Laufzeittest beim Nutzer |
+| M6 | `cmd/example-drop` (zeigt `DropCapabilities`, die letzten Drops mit Art, Pfad, Groesse, und ein inneres Textziel); System-Seite `cmd/example-kitchensink/drop.go` nach `tray.go`; Doku `content/docs/components/basic/drop-destination/index.md`, `content/docs/concepts/drag-and-drop.md`, `content/docs/examples/example-drop/index.md`; `exampleShots`-Eintrag mit einem `drop`-Schritt; `go run ./docs/apigen`; `go run ./docs/capture -only drop-destination,example-drop`; neuer Abschnitt `## Ebitengine upgrades` (Englisch) in `docs/MAINTAINING.md`; Ergebnisse in diesem Abschnitt | `go test ./docs/...` gruen; Hugo per `docker run --rm -v "$PWD/docs/gift.dev":/src -w /src hugomods/hugo:exts hugo --minify`, ein Fehlschlag nur als Notiz (wie Abschnitt 40) |
+| M7 | Gesamtpruefung | wie M0; dazu `go test -tags giftgpu ./ui ./gifttest ./backend/ebiten`, `go test -tags giftauto ./auto/...`, `GIFT_DROP_MACOS=1 go test ./backend/ebiten/droptest -v -count=1`, der Container-Test; Abnahmeliste fuer den Nutzer |
+
+Pruefpunkte fuer Ebiten-Upgrades (`docs/MAINTAINING.md`):
+- `GLFWContentView` ohne eigene `draggingUpdated:`, `draggingExited:`,
+  `concludeDragOperation:` und `draggingEnded:`;
+- `performDragOperation:` liefert YES;
+- Klasse `GLFW30` mit `WS_EX_ACCEPTFILES`, kein dauerhaftes MTA auf dem
+  Main-Thread;
+- `virtualDirFileInfo.Sys()` ist nil, und das Verhalten von
+  `virtualDir.ReadDir`;
+- `parseUriList`;
+- `RunOnMainThread` im Mehrthread-Modus.
+
+Die Reihenfolge baut von innen nach aussen:
+- Kern und View lassen sich ohne Fenster testen und legen die API fest,
+  bevor eine Plattform sie befuellt.
+- M3 bringt Dateien auf allen Systemen auf einmal; ab dort ist die
+  Funktion nutzbar.
+- macOS kommt vor Windows, weil es kleiner ist und hier geprueft werden
+  kann.
+
+Commits:
+- M0 hat keinen Commit.
+- M1 bis M6 bekommen je einen Commit: `feat(gift): …`, `feat(ui): …`,
+  `feat(backend): …`, `feat(backend): … macOS`, `feat(backend): … Windows`
+  und `docs: …`.
+- Die Commits sind englisch, mit einem Rumpf wie in b709269 und dem
+  Trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Jeder Commit fuehrt diesen Abschnitt nach. M7 endet mit `docs(plan): …`.
+- Kein Push ohne Ruecksprache.
+
+Abnahme durch den Nutzer nach M7 (hier nicht pruefbar). Gestartet wird
+jeweils mit `go run ./cmd/example-drop`.
+- macOS: Finder, ein Link aus Safari, Text aus TextEdit, hinein- und
+  wieder hinausziehen.
+- Windows 11: der Laufzeittest; Explorer, ein Link aus Edge, Text aus
+  Word; einmal als Administrator (nur Dateien, ohne Hervorhebung).
+- GNOME Wayland und Xorg mit Nautilus.
+- KDE Wayland und X11 mit Dolphin, darunter ein Ordner und eine Datei von
+  einem `smb:`-Ort.
+- Unter Wayland zusaetzlich: trifft der Drop die richtige Flaeche? Der
+  Zeiger dort ist unbelegt, siehe oben.
+
+### Entscheidungen
+
+- Kein Fork und kein Patch von Ebiten. Native Schichten ergaenzen nur,
+  wo das ohne Ersetzen von Ebitens Methoden geht: unter macOS durch
+  Hinzufuegen, unter Windows durch ein OLE-Ziel, das `WM_DROPFILES`
+  vorgeht.
+- Linux bleibt bei Dateien, siehe oben. Keine Erkennung des Desktops.
+- `Element.DropTarget` ist ein eigener Interactor und kein Bit, damit
+  eine Ablageflaeche Hover und Druck der Eltern nicht abfaengt (anders als
+  `ContextMenu`).
+- Kein Zeiger in `Event`; die Daten kommen ueber `EventContext.Drop`.
+- Pfade statt `fs.FS` in der API: ueber alle Quellen gleich.
+- Keine geratene Hervorhebung unter Linux: ohne Signal ist eine
+  Mausbewegung nicht von einem Drag zu unterscheiden.
+
+### Nicht in diesem Abschnitt
+
+- Ziehen aus gift heraus und Ziehen innerhalb der App.
+- Verschieben und Verknuepfen.
+- Versprochene und virtuelle Dateien.
+- Das Flatpak-Portal (`application/vnd.portal.filetransfer`). Ist die App
+  selbst kein Flatpak, reichen die Pfade unter `/run/user/UID/doc`.
+- Bilddaten ohne Datei (Browser).
+- Automatisches Scrollen am Rand waehrend des Drags.
+- Ablegen in `TextField` und `TextArea`.
+- Verlassen und Text unter Linux (upstream).
+
+- Quellen: glfw#1898; SDL3 `SDL_windowswindow.c`, `SDL_waylanddatamanager.c`;
+  Mutter `src/wayland/meta-xwayland-dnd.c`; KWin `src/xwayland/drag_wl.cpp`;
+  learn.microsoft.com (UIPI und Drag and Drop, Patrick Kennedy);
+  developer.apple.com (NSDraggingDestination, NSFilePromiseReceiver);
+  SwiftUI `dropDestination(for:action:isTargeted:)`; pub.dev desktop_drop.
+
+### Ergebnisse
+
+Umgesetzt in den Commits ab 39a4e6c (`git log 39a4e6c..`):
+Kern, `ui.DropDestination`, Ebiten-Pfad, macOS- und Windows-Schicht,
+Beispiel, Kitchen-Sink-Seite, Doku, dazu zwei Runden Review mit
+gegenpruefenden Agenten und deren Korrekturen.
+
+Geprueft:
+- `go test ./...` gruen; `go test -tags giftdebug ./...` bis auf
+  `ui.TestTheGateInventoryIsComplete`, das schon in M0 mit denselben zwoelf
+  Eintraegen scheiterte (nicht von diesem Abschnitt); `go test -tags
+  giftauto ./auto/...` gruen.
+- `CGO_ENABLED=0 go build ./...` fuer linux/amd64, linux/arm64,
+  windows/amd64, windows/arm64 und js/wasm, freebsd/amd64 mit dem
+  fakecgo-Flag; `go vet` und `go test -c` von `backend/ebiten` und
+  `droptest` fuer windows/amd64 und arm64.
+- X11 Ende zu Ende im Container (`golang:1.27-trixie`, weil lokal
+  vorhanden; `CGO_ENABLED=0` genuegte): Dateien mit Leerzeichen und
+  Umlaut, ein Ordner, eine Datei aus einem zweiten Ordner kommen an,
+  `smb:` nicht; ein Drop mit dem Zeiger ausserhalb des Fensters erreicht das
+  fensterweite Ziel. Nach den Review-Korrekturen erneut gruen.
+- macOS am echten Fenster (06.11.2026, macOS 27.2): `GIFT_DROP_MACOS=1 go
+  test ./backend/ebiten/droptest -v -count=1` gruen fuer die vier
+  hinzugefuegten Methoden auf der KVO-getauschten View, die drei
+  registrierten UTIs, Dateien mit Umlaut und Ordner genau einmal an der
+  richtigen Stelle, den Finder-artigen Drag beim Dateiziel, Text und
+  Adresse beim inneren Ziel, Verlassen ohne Drop und die Ablehnung von Text
+  ueber dem Dateiziel (`draggingUpdated:` antwortet None); mit
+  `GIFT_DROP_NATIVE=0 ... -run MacEbitenPath` Ebitens Pfad allein. Die
+  Pfade kommen ueber `fileSystemRepresentation` zerlegt (NFD), wie bei
+  Ebiten; der Test vergleicht deshalb Dateien, nicht Bytes.
+- `go test -tags giftgpu ./ui ./gifttest ./backend/ebiten` gruen, mit den
+  neuen Goldens `drop-destination-targeted-light/-dark`; die
+  Bildschirmfotos der Doku sind mit `docs/capture` aufgenommen; Hugo 0.164
+  (per `go install`, wie in `docs/MAINTAINING.md`) baut die Seite ohne
+  Fehler und Warnungen. Das Image `hugomods/hugo:exts` enthielt nur 0.154
+  und scheitert an `hugo.Data`, unabhaengig von diesem Abschnitt.
+- Nicht gemacht: der optionale echte `NSDraggingSession`-Fall per
+  `CGEventPost` und Drags aus Finder, Safari und TextEdit; sie stehen in der
+  Abnahmeliste.
+
+Abweichungen vom Entwurf:
+- Die Einheit der nativen Positionen ist die von Ebitens Cursor in gifts
+  Layout, also physische Pixel: macOS Punkte mal `backingScaleFactor`,
+  Windows `ScreenToClient` ohne Teilen durch den Skalierungsfaktor.
+- `DropInfo.Live` kam dazu: ohne Live-Sitzung erfindet der Kern Betreten
+  und Verlassen um den Drop, damit das Ziel ueber die Arten entscheidet;
+  `ui.DropDestination` meldet sie dann nicht an `OnTargeted`.
+- Die Antwort an das System gehoert zur laufenden Sitzung (Zaehler in der
+  Queue), nicht zur vorigen. Ebitens Meldung wird bei aktiver nativer Schicht
+  die Schonfrist lang festgehalten und nur zugestellt, wenn keine native
+  kommt (Quellen, die nur `WM_DROPFILES` kennen).
+- Der Windows-Test nutzt ein eigenes `IDataObject` fuer alle drei Arten
+  statt `SHCreateDataObject`; `IDropTargetHelper` ist nicht umgesetzt.
+- `RevokeDragDrop` laeuft nach dem Spielende und wird bei einem Fehler nur
+  protokolliert, weil Ebiten das Fenster dann schon zerstoert haben kann.
+- `HasDropTargets` zaehlt eingehaengte, aktivierte Ziele; versteckte
+  Vorfahren zaehlen nicht mit.
+- Unter `NoMouse` kommen auch die Live-Ereignisse an (anders als oben
+  unter "Backend" geplant): ein Drag aus einer anderen Anwendung ist ein
+  Ereignis des Systems, kein Abfragen der Maus. `DropCapabilities.Live` ist
+  mit nativer Schicht immer wahr; sonst zeigte das Doku-Bild, das mit
+  `NoMouse` aufgenommen wird, eine Hervorhebung neben dem Satz, es gebe
+  keine.
+
+Beim Nutzer: der Windows-Laufzeittest und die Abnahmeliste oben.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

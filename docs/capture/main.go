@@ -123,6 +123,18 @@ var exampleShots = []exampleShot{
 		{"op":"pointerMove","x":5,"y":630},
 		{"op":"waitFrames","frames":4}
 	]}`},
+	// Two files and an address dropped, then text held over the note, so the
+	// shot shows the list and the highlight. The paths are made up and the
+	// same on every machine; their sizes are therefore not shown.
+	{Name: "example-drop", Input: `{"steps":[
+		{"op":"waitFrames","frames":4},
+		{"op":"drop","x":320,"y":300,"files":["/Users/anna/Documents/Offer 2026.pdf","/Users/anna/Pictures/Lisbon/tram.jpg"]},
+		{"op":"waitFrames","frames":2},
+		{"op":"drop","x":145,"y":104,"urls":["https://gift.dev/docs/concepts/drag-and-drop/"]},
+		{"op":"waitFrames","frames":2},
+		{"op":"dragOver","x":145,"y":104,"kinds":["text"]},
+		{"op":"waitFrames","frames":4}
+	]}`},
 	{Name: "example-video", Args: []string{"-sample", "-width", "800", "-height", "480", "-autohide", "0", "-loop=false"}, Settle: 20, Input: `{"steps":[
 		{"op":"waitFrames","frames":60},
 		{"op":"tap","x":400,"y":240},
