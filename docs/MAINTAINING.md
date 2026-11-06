@@ -138,7 +138,7 @@ warnings.
 
 ## Ebitengine upgrades
 
-gift's drop support (PLAN.md, section 48) leans on details of Ebitengine's GLFW port that are not API. After an
+gift's drop support (PLAN.md, section 49) leans on details of Ebitengine's GLFW port that are not API. After an
 upgrade of `github.com/hajimehoshi/ebiten/v2`, check them in its module source and run the window tests of
 `backend/ebiten/droptest` (the command for each platform is in that package's documentation):
 

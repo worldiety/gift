@@ -75,8 +75,9 @@ gift/                       Modulwurzel, Package gift
   clipboard/                Zwischenablage per purego, optional, Abschnitt 19
   notify/                   Benachrichtigungen des Systems, Abschnitt 43
   tray/                     Icon in Menueleiste und Infobereich, Abschnitt 47
+  filedialog/               Dateidialog des Systems, Abschnitt 48
   internal/
-    dbus/                   D-Bus ohne cgo, Client und Server, Abschnitte 43, 47
+    dbus/                   D-Bus ohne cgo, Client und Server, Abschnitte 43, 47, 48
     scene/                  Indexierte retained Nodes und Handles
     layout/                 Layoutalgorithmen, Masonry-/Zeilenindex
     text/                   Shaping, Messung, Zeilenumbruch, Glyphenschluessel
@@ -105,11 +106,13 @@ von gift nennt sie, sie sind ausschliesslich ueber einen Side-Effect-Import
 oder eine ausdrueckliche Nennung durch die Anwendung erreichbar. Die Richtung
 der Abhaengigkeiten aus diesem Abschnitt bleibt dadurch unveraendert.
 
-`notify` und `tray` sind mit den Abschnitten 43 und 46 dazugekommen. Sie
-sprechen mit dem Betriebssystem, nicht mit dem Frame, und erreichen den
-UI-Executor nur ueber eine uebergebene `Post`-Funktion. `tray` importiert
-`ui` allein fuer `ui.Symbol` und steht damit wie `clipboard` oberhalb von
-`ui`; kein Paket innerhalb von gift nennt eines der beiden. Ihr
+`notify`, `tray` und `filedialog` sind mit den Abschnitten 43, 47 und 48
+dazugekommen. Sie sprechen mit dem Betriebssystem, nicht mit dem Frame, und
+erreichen den UI-Executor nur ueber eine uebergebene `Post`-Funktion
+(`filedialog.Present` ueber den Token seiner Komponente). `tray` importiert
+`ui` allein fuer `ui.Symbol`, `filedialog` `ui` und `ui/filepicker` fuer
+seine View und den Typ `Mode`; beide stehen damit wie `clipboard` oberhalb
+von `ui`, und kein Paket innerhalb von gift nennt eines der drei. Ihr
 gemeinsamer Unterbau fuer Linux ist `internal/dbus`.
 
 `internal/iconsvg` ist bewusst intern und wird nur vom Generator benutzt: es
@@ -1926,7 +1929,9 @@ keinen Desktop, der einen liefern koennte, und ein nativer Dialog laesst
 sich nicht headless testen. Die Auswahl besteht deshalb aus gift-Views und
 liest ueber ein `fs.FS`, das die Anwendung uebergibt. Damit bestimmt die
 Anwendung, was sichtbar ist, und ein Test reicht ein `fstest.MapFS` herein.
-Geschrieben wird nie.
+Geschrieben wird nie. Seit Abschnitt 48 gibt es zusaetzlich den Dialog des
+Systems, wo ein Desktop da ist; fuer Kiosk und Tests bleibt es bei dieser
+Entscheidung.
 
 Drei Bausteine, in dieser Reihenfolge:
 
@@ -4401,7 +4406,738 @@ Anlass (02.11.2026): SwiftUIs DisclosureGroup fehlte, ebenso ein Akkordeon.
 Offen: die Liste blendet Trennlinien um eine gedrueckte Gruppenzeile nicht
 aus, weil sie nur ihre direkten Kinder fragt.
 
-## 48. Dateien und Inhalte von aussen ablegen (Drag and Drop)
+## 48. Native Dateidialoge
+
+Status: umgesetzt (05.11.2026), M0 bis M6. Der Entwurf unten bleibt als
+Beschreibung stehen; was davon abweicht und was geprueft ist, steht unter
+"Stand der Umsetzung".
+
+Anlass (05.11.2026): `ui/filepicker` (Abschnitt 24) ist bewusst kein
+Systemdialog, damit er im Kiosk ohne Desktop und unter gifttest
+funktioniert. Laeuft eine gift-Anwendung aber unter macOS, Windows, KDE
+oder GNOME, soll sie *zusaetzlich* den Dialog des Systems oeffnen koennen,
+mit einem Aufruf, der dem des In-App-Pickers so aehnlich ist, dass die
+Anwendung waehlen oder beides kombinieren kann. Andere Umgebungen werden
+nicht beruecksichtigt: dort tut die neue Komponente nichts, wie `notify`
+und `tray` (Abschnitte 43 und 47). Paket `filedialog`.
+
+### Stand der Umsetzung (05.11.2026)
+
+- Kern (M0): `filedialog.go`, `opener.go`, `request.go`, `present.go`, wie
+  unten beschrieben. Geprueft mit einem falschen System und gifttest, auch
+  mit `-race`. Abweichung: `relToRoot` loest Symlinks ueber den laengsten
+  existierenden Praefix auf, nicht nur ueber den Ordner bei Save, weil
+  `/var` und `/private/var` auf macOS sonst auch bei Open auseinanderfallen.
+  Eine sofortige Antwort (nicht verfuegbar, `ErrBusy`) laeuft ebenfalls
+  ueber eine Anfrage, damit das zurueckgegebene cancel sie verwirft; der
+  Fallback-Weg loggt den Grund wie `Open` einmal auf Error.
+- GNOME und KDE (M1, M2, M6): `portal.go`, `platform_linux.go`,
+  `x11parent_linux.go`. Geprueft in Docker (golang:1.27-trixie,
+  linux/arm64) gegen einen echten dbus-daemon mit einem falschen Portal:
+  Open, OpenMulti, Directory, Save, Abbruch, Close, Version 2, kein Portal;
+  das Elternfenster mit Xvfb, wobei der Test den Fenstermanager spielt.
+  Abweichungen: Empfangsgrenze 16 MiB statt 1 MiB (eine OpenMulti-Antwort
+  ueber viele Dateien darf nicht verloren gehen, sonst bliebe der Dialog
+  belegt); das Portal beobachtet seinen Namen, ein Portal, das waehrend
+  eines offenen Dialogs verschwindet, beendet ihn mit onCancel; ein Close,
+  nachdem die Zustellung einer Antwort schon begonnen hat, ist nicht final.
+  X-Fehler beim Suchen des Fensters (BadWindow) faengt ein Haken an der
+  eigenen Verbindung (`XESetError`), nicht der prozessweite Handler, den
+  GLFW und `clipboard` setzen. Offen (Nutzer): ein echtes GNOME und KDE
+  Plasma 6, ob die Backends das Elternfenster annehmen, ob KDE beim
+  Speichern eine Endung anhaengt.
+- macOS (M3): `platform_darwin.go`. Geprueft mit
+  `GIFT_FILEDIALOG_MACOS=1 go test ./filedialog/ -run MacOS -v`: jeder
+  Modus oeffnet als freies Panel und endet per close mit Cancel; Save
+  liefert den Pfad. `[NSSavePanel ok:]` ist auf diesem macOS nicht
+  implementiert (Remote-View), der Test bestaetigt Save darum ueber das
+  private `completeWithReturnCode:url:urls:`, nur im Test. Pfade kommen ueber
+  `fileSystemRepresentation`. Am 06.11.2026 auch mit
+  `GIFT_FILEDIALOG_SELFTEST=1 go run ./cmd/example-filedialog` geprueft:
+  jedes Panel erscheint als Sheet am GLFW-Fenster (Debug-Log "showing the
+  panel as a sheet"), die Anwendung laeuft mit 60 bis 61 Updates je Sekunde
+  weiter, und keines antwortet vor oder nach dem Schliessen aus dem Code.
+  Das freie Panel als Ausweichweg ist damit nicht noetig. Offen (Nutzer):
+  echte Auswahl, Escape, Nachfrage vor dem Ueberschreiben, Fokus nach dem
+  Sheet.
+- Windows (M4): `platform_windows.go`, `winlogic.go`. Nur gebaut, gevettet
+  (amd64, arm64, 386) und die reine Logik auf dem Mac getestet, nie
+  ausgefuehrt. Abweichungen: Konstanten klein geschrieben (`fosPickFolders`),
+  damit nichts aus einer Datei ohne Tag exportiert wird; close schickt
+  IDCANCEL alle 50 ms an jedes sichtbare `#32770`-Fenster des Threads, bis
+  Show zurueckkehrt, damit auch eine Nachfrage vor dem Ueberschreiben
+  geschlossen wird; Filter heissen "Name (*.jpg;*.png)". Offen (Nutzer):
+  `GIFT_FILEDIALOG_WINDOWS=1 go test ./filedialog/ -run Windows -v` und das
+  Beispiel auf Windows 11.
+- M5: `cmd/example-filedialog` (nativ, In-App, nativ sonst In-App; Selbsttest),
+  Kitchen-Sink-Seite "File dialog", Doku-Seite
+  `concepts/file-dialogs.md`, README, Absatz in `ui/filepicker`,
+  `filedialog` in `docs/apigen`. Eine Beispielseite unter `examples/` gibt
+  es nicht, wie fuer `example-tray` und `example-notify`: sie braeuchte
+  Screenshots eines nativen Fensters.
+
+### Der gemeinsame Nenner
+
+| Funktion | macOS | Windows | GNOME / KDE (Portal) |
+|---|---|---|---|
+| Mechanik | NSOpenPanel/NSSavePanel, purego/objc | IFileOpenDialog/IFileSaveDialog, COM von Hand | `org.freedesktop.portal.FileChooser` ueber `internal/dbus` |
+| Eine Datei, mehrere, Ordner, Speichern | ja | ja | ja; Ordner erst ab Version 3 |
+| Titel | `message` (der Titel wird seit macOS 11 nicht gezeigt) | SetTitle | `title`-Argument |
+| Startordner | `directoryURL` | SetFolder | `current_folder` (SaveFile immer, OpenFile ab Version 4) |
+| Endungsfilter | UTType, Filter nach Konformitaet (`.jpg` laesst auch `.jpeg` zu) | `*.jpg;*.png` | Glob `*.[jJ][pP][gG]` |
+| Vorgeschlagener Name | `nameFieldStringValue` | SetFileName | `current_name` |
+| Nachfrage vor Ueberschreiben | das System | `FOS_OVERWRITEPROMPT` | das Portal |
+| Haengt beim Speichern eine Endung an | ja, die bevorzugte des ersten Typs (`.jpg` -> `.jpeg`) | ja (`SetDefaultExtension`) | nein (GNOME), KDE offen |
+| Am Fenster haengend | Sheet am gift-Fenster | Owner-HWND, Fenster gesperrt | `x11:<XID>`, wenn das Fenster gefunden wird (M6) |
+| Schliessen aus dem Code | `cancel:` | `WM_COMMAND IDCANCEL` an den Dialog | `Request.Close` |
+| Versteckte Dateien, eigener Filter, Wurzel-Sperre | nein | nein | nein |
+
+`filedialog` verspricht Modi, Titel, Startordner, eine Filtergruppe aus
+Endungen, den vorgeschlagenen Namen und die Nachfrage vor dem
+Ueberschreiben. Nicht versprochen und in der Paketdoku aufgefuehrt:
+`Filter(fs.DirEntry)`, `ShowHidden`, `RootLabel`, mehrere Filtergruppen
+oder "Alle Dateien", Einsperren in eine Wurzel, das (Nicht-)Anhaengen einer
+Endung beim Speichern, headless Tests des echten Dialogs.
+
+### Paket und Dateien
+
+Neues Top-Level-Paket `filedialog/` neben `notify/` und `tray/`: es spricht
+mit dem Betriebssystem, liegt darum ueber `ui`, und nichts in gift
+importiert es. `ui/filepicker` bleibt bis auf einen Doku-Absatz unveraendert
+(es darf nicht von OS-Code abhaengen). `filedialog` importiert `gift`, `ui`
+und `ui/filepicker` (nur fuer den Typ `Mode`), wie `tray` `ui` fuer
+`ui.Symbol` importiert. Keine neue Abhaengigkeit in go.mod.
+
+```text
+filedialog/
+  doc.go                     Paketdoku (Englisch)
+  filedialog.go              Mode, Dialog, New, Methoden von Dialog, Open, Available, ErrUnsupported, ErrBusy
+  present.go                 PresentView, Present, Fallback
+  request.go                 request, Validierung, Endungen, Root-Umrechnung
+  opener.go                  opener (lazy open, Belegung, Logging), std
+  portal.go                  Portal-Protokoll ueber ein portalBus-Interface
+  winlogic.go                FOS-Flags, Filter-Strings, GUIDs, HRESULTs (ohne Tag)
+  platform_darwin.go         //go:build darwin && !ios
+  platform_windows.go        //go:build windows
+  platform_linux.go          //go:build linux && !android
+  platform_unsupported.go    //go:build (!linux && !darwin && !windows) || android || ios
+  filedialog_test.go  present_test.go  portal_test.go  winlogic_test.go
+  platform_darwin_test.go    //go:build darwin && !ios, GIFT_FILEDIALOG_MACOS=1
+  platform_windows_test.go   //go:build windows, GIFT_FILEDIALOG_WINDOWS=1
+  platform_linux_test.go     //go:build linux && !android, GIFT_FILEDIALOG_DBUS=1 / _PORTAL=1
+```
+
+Regel: jeder exportierte Bezeichner steht in einer Datei ohne Build-Tag,
+getaggte Dateien deklarieren nur Unexportiertes. `docs/apigen` ueberspringt
+Dateien mit positivem Build-Constraint (`constrained`,
+`docs/apigen/main.go:142-185`); Exportiertes dort fehlte in der Doku. Echt-System-Tests sind per
+Umgebungsvariable gesperrt, nicht per Tag, damit sie im Cross-Vet
+mitkompilieren (wie `notify_linux_test.go:21-23`).
+
+### API
+
+```go
+package filedialog
+
+var ErrUnsupported = errors.New("gift/filedialog: no native file dialog here")
+var ErrBusy = errors.New("gift/filedialog: a native file dialog is already open")
+
+// Mode ist der Typ des In-App-Pickers: eine Variable speist beide.
+type Mode = filepicker.Mode
+const (
+    Open      = filepicker.Open
+    OpenMulti = filepicker.OpenMulti
+    Directory = filepicker.Directory
+    Save      = filepicker.Save
+)
+
+type Dialog struct{ /* unexportiert, Value-Receiver */ }
+
+func New(onPick func(paths []string), onCancel func()) Dialog // panic bei nil onPick
+func (d Dialog) Mode(m Mode) Dialog              // panic bei m > Save
+func (d Dialog) Title(s string) Dialog           // Default "Open", "Choose a folder", "Save"
+func (d Dialog) Start(dir string) Dialog         // OS-Ordner; ignoriert (Debug-Log), wenn kein Ordner
+func (d Dialog) Root(dir string) Dialog          // Ergebnisse als fs.FS-Pfade relativ zu dir; Start-Default
+func (d Dialog) Extensions(exts ...string) Dialog // Normalisierung wie filepicker
+func (d Dialog) FilterName(s string) Dialog      // Default "Supported files"
+func (d Dialog) SuggestedName(s string) Dialog   // nur Save
+func (d Dialog) Logger(l *slog.Logger) Dialog    // nil: still (Abschnitt 15, nie slog.Default)
+
+// Open zeigt den Dialog imperativ und kehrt sofort zurueck; die Antwort
+// kommt ueber post auf die UI-Goroutine (gift.App.Post oder Token.Post).
+// cancel ist nie nil (bei err != nil eine leere Funktion), idempotent und
+// darf schon gerufen werden, bevor das System den Dialog zeigt. Mit nil
+// post: eine Warn-Meldung, kein Dialog, kein Callback, ErrUnsupported.
+func (d Dialog) Open(post func(func())) (cancel func(), err error)
+
+// Available: ohne Blockieren und ohne Rundreise zum System; false nach
+// einem dauerhaften Fehlschlag fuer den Rest des Prozesses.
+func Available() bool
+
+// Darstellung in der Form von ui.Sheet.
+type PresentView struct{ /* unexportiert */ }
+func Present(content gift.View, dialog Dialog) PresentView // panic bei nil content
+func (p PresentView) Presented(b bool) PresentView   // Default true, wie SheetView
+func (p PresentView) Fallback(v gift.View) PresentView // In-App-Ersatz, wenn nativ nicht geht
+func (p PresentView) FallbackHeight(f float32) PresentView
+func (p PresentView) Key(s string) PresentView
+func (p PresentView) Flex(f float32) PresentView
+// ViewType "filedialog.Present"
+```
+
+Wahlfreiheit der Anwendung, mit demselben `pick`:
+
+```go
+// In-App
+picker := filepicker.New(os.DirFS(root), pick, cancel).Mode(mode).Extensions(".jpg", ".png")
+return ui.Sheet(screen, picker).Presented(ctx.Read(picking)).OnDismiss(cancel)
+
+// Nativ
+dlg := filedialog.New(pick, cancel).Mode(mode).Extensions(".jpg", ".png").Root(root)
+return filedialog.Present(screen, dlg).Presented(ctx.Read(picking))
+
+// Nativ, sonst In-App
+return filedialog.Present(screen, dlg).Fallback(picker).Presented(ctx.Read(picking))
+```
+
+Vertrag der Callbacks wie bei filepicker (`picker.go:82-84`): beide auf der
+UI-Goroutine; `onPick` bekommt genau einen Pfad ausser in `OpenMulti`, nie
+eine leere Liste; in `Save` wird nichts geschrieben; die Anwendung schliesst
+`presented` selbst aus beiden Callbacks. Ohne `Root` sind die Pfade absolute
+OS-Pfade, mit `Root(dir)` fs.FS-Pfade relativ zu `dir`, genau wie
+`filepicker.New(os.DirFS(dir), ...)` sie liefert.
+
+### Was "tut nichts" heisst
+
+Auf einem System ohne nativen Dialog (andere Linux-Desktops, kein
+Session-Bus, Kiosk, BSD, Android, iOS, wasm) oder wenn der Dialog nicht
+erreichbar ist:
+
+- es erscheint nichts, `onPick` wird nie gerufen;
+- `onCancel` wird ueber post gerufen, als negative Antwort, wie
+  `notify.Authorize` mit `done(false)` antwortet (`notify/notify.go:326-346`).
+  Ohne diesen Aufruf bliebe `presented` der Anwendung auf true stehen, und
+  ihr Knopf taete nichts mehr. Mit nil `onCancel` oder nil post geschieht
+  gar nichts (nil post: eine Warn-Meldung, wie `notify.go:289-297`). Das
+  steht so in der Doku von `New` und in doc.go;
+- mit `Fallback` wird stattdessen der Ersatz im Sheet gezeigt, schon beim
+  ersten Versuch, und `onCancel` wird *nicht* gerufen;
+- der Grund wird einmal je Prozess auf Error geloggt, und zwar auf dem
+  ersten `Open` mit Logger (der Logger gehoert dem Dialog, die Plattform dem
+  Prozess); spaetere Versuche auf Debug;
+- `Available()` liefert false; `Open` liefert `ErrUnsupported` synchron nur,
+  wenn das schon bekannt ist (`GIFT_KIOSK` gesetzt, `platformAvailable()`
+  false oder ein frueherer dauerhafter Fehlschlag), sonst nil und die
+  Antwort kommt asynchron.
+
+Dauerhaft ist: dlopen/Klassen fehlen (macOS), CoCreateInstance schlaegt fehl
+(Windows), kein Portal oder Desktop (Linux). Nicht dauerhaft, also
+`Available()` bleibt true: noch keine NSApplication (macOS vor der
+Run-Loop) und `Directory` auf einem Portal unter Version 3 (Open, OpenMulti
+und Save gehen dort weiter). Beides beantwortet nur diese eine Anfrage mit
+Fallback oder `onCancel`.
+
+### Gemeinsamer Kern (`opener.go`, `request.go`)
+
+```go
+type request struct {
+    mode       Mode
+    title, filterName, suggested string // Defaults gesetzt, strings.ToValidUTF8
+    start      string   // absolut, Clean; "" wenn nicht gesetzt oder kein Ordner (os.Stat)
+    exts       []string // ".jpg"
+}
+type result struct{ paths []string; cancelled bool; err error }
+
+type platform interface {
+    // open zeigt den Dialog und kehrt sofort zurueck. done genau einmal, auf
+    // beliebiger Goroutine, nie blockierend auf dem macOS-Haupt-Thread.
+    // close ist best effort und idempotent; final meldet, ob nach close
+    // garantiert kein done mehr kommt (Portal: ja; macOS, Windows: nein).
+    open(r request, done func(result)) (close func() (final bool), err error)
+}
+
+type openConfig struct {
+    log    *slog.Logger         // Logger des ersten Open; nur fuer Debug beim Oeffnen
+    getenv func(string) string  // os.Getenv; im Test ersetzt
+}
+
+type opener struct {
+    once   sync.Once
+    p      platform
+    failed atomic.Pointer[error] // dauerhafter Fehlschlag, gelesen ohne once
+    logged atomic.Bool           // Fehlschlag schon auf Error geloggt
+    mu     sync.Mutex            // schuetzt cur und owner
+    cur    uint64                // Generation der letzten Anfrage
+    owner  uint64                // Generation, die den Dialog belegt; 0 = frei
+    open   func(openConfig) (platform, error)
+    avail  func() bool
+    getenv func(string) string
+}
+var std = newOpener(openPlatform, platformAvailable, os.Getenv)
+
+func (o *opener) available() bool // GIFT_KIOSK leer && avail() && failed == nil
+```
+
+- `Dialog` hat ein unexportiertes Feld `op *opener` (nil = `std`) und den
+  Test-Hook `withOpener`. Tests fassen `std` nie an, pruefen
+  `(*opener).available()` statt `Available()` und laufen nicht mit
+  `t.Parallel` auf einem geteilten opener.
+- `Available()` = `std.available()`. `GIFT_KIOSK` als Konstante kopiert, mit
+  Verweis auf `kiosk/system/install.go:25`, ohne Import. `Open` und
+  PresentView fragen immer `d.opener().available()`.
+- `Open`: (1) nil post: Warn, `ErrUnsupported`. (2) request bauen und
+  validieren: `start` absolut machen und nur behalten, wenn `os.Stat` einen
+  Ordner meldet (sonst Debug); `suggested` ohne `/` und `\`, sonst "" mit
+  Warn; Titel und Name durch `strings.ToValidUTF8(..., "\uFFFD")`.
+  (3) `!available()`: onCancel posten, `ErrUnsupported`. (4) Belegen: unter
+  `mu` mit `owner != 0` -> onCancel posten, `ErrBusy` (der offene Dialog
+  bleibt; mit Fallback ebenso onCancel, nicht der Fallback, weil schon ein
+  nativer Dialog offen ist); sonst `cur++`, `owner = cur`, gen merken.
+  (5) Goroutine starten: `once.Do(openPlatform)`; Fehlschlag -> `failed`
+  setzen, loggen, freigeben, onCancel (oder Fallback). Sonst, falls
+  `cancel` schon gerufen wurde, nicht oeffnen und freigeben; sonst
+  `p.open`; Fehler -> loggen, freigeben, onCancel; danach `close` unter
+  einem kleinen Mutex der Anfrage ablegen und, falls `cancel` inzwischen
+  gerufen wurde, sofort `close` rufen. `Open` kehrt nach (4) zurueck.
+- Freigeben heisst: unter `mu`, nur wenn `owner == gen`, `owner = 0`; genau
+  einmal je Anfrage (sync.Once der Anfrage). Freigegeben wird bei `done`
+  (auch einem verworfenen `done` nach `close`), bei einem `close` mit
+  `final == true` und bei jedem Fehler in der Goroutine. Eine Response, die
+  nach einem finalen `close` noch im Kanal liegt, gibt daher nichts frei,
+  was einer spaeteren Anfrage gehoert.
+- `cancel` (aus `Open`): setzt das Abbruch-Flag der Anfrage, ruft `close`,
+  wenn es schon da ist, und unterdrueckt jeden spaeteren Callback.
+- Schnelles Wiederoeffnen: auf macOS und Windows (`final == false`) kommt
+  das verworfene `done` erst, wenn das System den Abbruch gemeldet hat;
+  wer vorher erneut oeffnet, bekommt `ErrBusy` und onCancel. Das steht in
+  doc.go.
+- `done` wandelt um: Fehler -> Error-Log, onCancel; cancelled -> onCancel;
+  leere Liste -> Protokollfehler, onCancel; mehrere Pfade ausserhalb von
+  `OpenMulti` -> nur der erste, Warn; dann Root-Umrechnung; dann onPick.
+- Logging des dauerhaften Fehlschlags: einmal je Prozess auf Error, auf dem
+  ersten `Open`, das einen Logger hat (`logged` per CompareAndSwap), sonst
+  Debug auf dem eigenen Logger.
+- Root-Umrechnung: `EvalSymlinks` auf die Wurzel und auf das Ergebnis, bei
+  Save auf `filepath.Dir(p)` plus `filepath.Base(p)` (das Ziel existiert
+  meist nicht); schlaegt das fehl, `filepath.Clean`. Dann `filepath.Rel`,
+  `filepath.ToSlash`, `fs.ValidPath`. Ausserhalb der Wurzel (`..`) wird die
+  ganze Antwort mit Warn zu onCancel. Die Wurzel selbst ist `"."`.
+- Endungen: `normalizeExts` aus `ui/filepicker/model.go:139-152` kopiert
+  (dort unexportiert), Kommentar mit Quelle, gleiche Tabellentests.
+
+### PresentView (`present.go`)
+
+- `Build` = `ui.ZStack(gift.Component("filedialog", p.body)).Key(p.key).Flex(p.flex).Build(bc)`.
+  Alles, was Zustand braucht, liegt in `body`, denn `Build` hat nur den
+  `BuildContext` und kommt an keinen State.
+- In `body`: ein Zeiger-Slot nach `picker.go:228-238`
+  (`st := ctx.State("session", (*session)(nil))`, bei nil anlegen und
+  `st.Set`) mit `session{ wasPresented bool; gen uint64; cancel func() }`,
+  dazu `fb := ctx.State("fallback", false)` als echter State, damit ein
+  Wechsel einen Build ausloest; gelesen mit `ctx.Read(fb)`.
+- `body` liefert immer dieselbe Form, damit der Inhalt seinen Zustand
+  behaelt: `ui.Sheet(content, child).Presented(presented && ctx.Read(fb)).OnDismiss(onCancel)`,
+  `.Height(h)` nur wenn `FallbackHeight` gesetzt wurde (`FallbackHeight`
+  prueft wie `ui/sheet.go:154-160` auf (0, 1] und panikt sonst). `child`
+  ist nil ohne Fallback (die Form haengt dann nur an der statischen Wahl der
+  Anwendung), sonst der Fallback, solange `fb` true ist, und `ui.ZStack()`
+  sonst, damit ein verborgener Picker nicht schon Ordner liest.
+- Geoeffnet wird nur an der Flanke false -> true (`presented && !wasPresented`):
+  ein nil `onCancel` oder eine Anwendung, die `presented` nicht
+  zuruecksetzt, darf keine Oeffnungsschleife ausloesen. `gen++`.
+  Mit Fallback und `!d.opener().available()` direkt `fb.Set(true)`.
+  Sonst `tok := ctx.Request()` und ein internes `open(tok.Post, onUnsupported)`;
+  ohne Fallback ist `onUnsupported` onCancel, mit Fallback ein Closure,
+  das ueber `tok.Post` auf der UI-Goroutine `fb.Set(true)` setzt, aber nur,
+  wenn `gen` noch die eigene ist und `presented` noch gilt. Ein spaetes
+  Ergebnis nach `Presented(false)` aendert so nichts.
+- Flanke true -> false: `cancel()` (ohne Callback), `fb.Set(false)`, `gen++`.
+- `ctx.OnUnmount` ruft `cancel()`.
+
+### macOS (`platform_darwin.go`)
+
+- purego: Foundation, AppKit, UniformTypeIdentifiers, libSystem
+  (`_dispatch_main_q`, `dispatch_async_f`, `memmove`) und das Symbol `NSApp`
+  (wie `tray/platform_darwin.go:290-294`). Die Haupt-Queue-Helfer
+  `hasApp/async/run/pool` werden aus `tray/platform_darwin.go:359-410`
+  kopiert, mit Herkunftskommentar; tray bleibt unberuehrt. Genau ein
+  `purego.NewCallback`.
+- Klassen einmal per `objc.GetClass`: NSOpenPanel, NSSavePanel, NSURL,
+  NSString, NSMutableArray, UTType, NSAutoreleasePool. Selektoren einmal in
+  einer `macSel`-Struktur: `alloc`, `init`, `drain`,
+  `stringWithUTF8String:`, `openPanel`, `savePanel`,
+  `setCanChooseFiles:`, `setCanChooseDirectories:`,
+  `setAllowsMultipleSelection:`, `setCanCreateDirectories:`, `setMessage:`,
+  `setTitle:`, `setPrompt:`, `setDirectoryURL:`, `setNameFieldStringValue:`,
+  `setAllowedContentTypes:`, `setAllowsOtherFileTypes:`,
+  `typeWithFilenameExtension:`,
+  `fileURLWithFileSystemRepresentation:isDirectory:relativeToURL:`,
+  `arrayWithCapacity:`, `addObject:`, `URLs`, `URL`, `path`, `count`,
+  `objectAtIndex:`, `keyWindow`, `mainWindow`,
+  `activateIgnoringOtherApps:`,
+  `beginSheetModalForWindow:completionHandler:`,
+  `beginWithCompletionHandler:`, `cancel:`, `retain`, `release`.
+- `open`: ohne `hasApp()` -> nicht dauerhafter `ErrUnsupported` ("no
+  NSApplication yet"). Sonst `async` auf den Haupt-Thread, im Autorelease-Pool:
+  Panel je Modus anlegen (Open/OpenMulti/Directory: NSOpenPanel mit
+  passenden Flags, Directory mit `canCreateDirectories`; Save: NSSavePanel,
+  `canCreateDirectories`, Name); `title` und `message` = Titel, `prompt` =
+  "Open"/"Open"/"Choose"/"Save"; Startordner per
+  `fileURLWithFileSystemRepresentation:` (auch Nicht-UTF-8); Endungen ohne
+  Punkt ueber `typeWithFilenameExtension:`, nil wird uebersprungen (Debug),
+  ein leeres Array wird nicht gesetzt, nicht in Directory; in Save
+  zusaetzlich `setAllowsOtherFileTypes:YES`. `[panel retain]`.
+- Block `objc.NewBlock(func(_ objc.Block, resp int))` (NSModalResponse ist
+  NSInteger, OK 1, Cancel 0; naechstes Vorbild mit Skalar-Argument ist
+  `notify/platform_darwin.go:398`): OK liest `URLs` bzw. `URL`, dann
+  `path`; die Anfrage merkt `finished = true` (nur auf dem Haupt-Thread
+  gelesen und geschrieben); `go done(...)`; `[panel release]`.
+  `block.Release()` direkt nach dem `begin...`-Aufruf, AppKit kopiert den
+  Block.
+- Fenster: `[NSApp keyWindow]`, sonst `mainWindow`; mit Fenster
+  `beginSheetModalForWindow:completionHandler:`, sonst
+  `activateIgnoringOtherApps:YES` und `beginWithCompletionHandler:`. Nie
+  `runModal` (eine verschachtelte Modal-Schleife auf dem Haupt-Thread haelt
+  Ebitengines Main-Thread-Queue und damit Update/Draw an), nie
+  `dispatch_sync` (Abschnitt 47).
+- `close`: `async(func(){ if !finished { [panel cancel:nil] } })`, damit
+  nie ein freigegebenes Panel angesprochen wird; final = false (der Block
+  kommt mit Cancel, wird verworfen und gibt frei).
+- `platformAvailable()` true; kein Bundle noetig. Sandbox ohne
+  `com.apple.security.files.user-selected.*`: das Panel schlaegt fehl, Log,
+  onCancel; dokumentiert.
+- Risiko: GLFWs NSWindow-Unterklasse und Sheets. Zeigt M3, dass Fokus oder
+  Rendering leiden, wird immer `beginWithCompletionHandler:` benutzt und das
+  hier festgehalten.
+
+### Windows (`platform_windows.go`, `winlogic.go`)
+
+- Prozeduren: ole32 `CoCreateInstance` (nicht in x/sys, per
+  `NewLazySystemDLL`), `windows.CoInitializeEx`, `CoUninitialize`,
+  `CoTaskMemFree`; shell32 `SHCreateItemFromParsingName`; user32
+  `EnumThreadWindows`, `GetClassNameW`, `IsWindowVisible`, `PostMessageW`,
+  `GetWindowThreadProcessId`, `GetWindow`, dazu `windows.EnumWindows`.
+- GUIDs: in `winlogic.go` (ohne Tag, x/sys/windows gibt es dort nicht) als
+  Strings; in `platform_windows.go` umgewandelt ueber ein kopiertes
+  `mustGUID` mit seiner Abhaengigkeit `guidOf`
+  (`notify/platform_windows.go:89-96`, `:368-376`):
+  CLSID_FileOpenDialog `{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}`,
+  CLSID_FileSaveDialog `{C0B4E2F3-BA21-4773-8DBA-335EC946EB8B}`,
+  IID_IFileOpenDialog `{D57C7288-D4AD-4768-BE02-9D969532D960}`,
+  IID_IFileSaveDialog `{84BCCD23-5FDE-4CDB-AEA4-AF64B83D78AB}`,
+  IID_IShellItem `{43826D1E-E718-42EE-BC55-A1E261C37BFE}`.
+- Vtable-Slots (je mit Kommentar Interface/Methode, gegen windows-rs
+  geprueft): IUnknown 0-2; IModalWindow 3 Show; IFileDialog 4 SetFileTypes,
+  9 SetOptions, 10 GetOptions, 12 SetFolder, 15 SetFileName, 17 SetTitle,
+  18 SetOkButtonLabel, 20 GetResult, 22 SetDefaultExtension, 23 Close;
+  IFileOpenDialog 27 GetResults; IShellItem 5 GetDisplayName;
+  IShellItemArray 7 GetCount, 8 GetItemAt. Aufruf ueber `vcall` wie
+  `notify/platform_windows.go:153`.
+- `winlogic.go` (ohne Tag, auf dem Mac getestet): `FOS_OVERWRITEPROMPT 0x2`,
+  `FOS_NOCHANGEDIR 0x8`, `FOS_PICKFOLDERS 0x20`, `FOS_FORCEFILESYSTEM 0x40`,
+  `FOS_ALLOWMULTISELECT 0x200`, `FOS_PATHMUSTEXIST 0x800`,
+  `FOS_FILEMUSTEXIST 0x1000`, `SIGDN_FILESYSPATH 0x80058000`,
+  `hrCancelled 0x800704C7`, `sFalse 1`, `rpcEChangedMode 0x80010106`;
+  `fosFor(m, base)`, `filterSpec(name, exts) (label, pattern)` ->
+  `"*.jpg;*.png"`, `defaultExtension(exts)`, `hresult(r uintptr) uint32`
+  (auf 32 Bit gekuerzt, auch fuer 386).
+- Ablauf je `open`: neue Goroutine, `runtime.LockOSThread()` ohne Unlock (der
+  Thread endet mit seinem Apartment), `CoInitializeEx(APARTMENTTHREADED|DISABLE_OLE1DDE)`
+  mit `S_FALSE` als Erfolg und `RPC_E_CHANGED_MODE` als Fehler, defer
+  `CoUninitialize` (lockeres Vorbild `web/browser_windows.go:16-35`, das
+  entsperrt und S_FALSE nicht behandelt; hier bewusst anders). Thread-ID
+  merken. CoCreateInstance; GetOptions/SetOptions(`fosFor`); SetTitle,
+  SetOkButtonLabel; SetFileTypes(1, &spec) ausser in Directory; Save:
+  SetFileName, SetDefaultExtension; Startordner ueber
+  SHCreateItemFromParsingName + SetFolder. `COMDLG_FILTERSPEC` und die
+  UTF-16-Strings bis nach Show per `runtime.KeepAlive` halten.
+- Owner: Suche wie `raiseWindow` (`notify/platform_windows.go:588`): eigener
+  Prozess, sichtbar, ohne Owner; neu dazu die Bevorzugung der Klasse
+  `GLFW30`, nicht das versteckte
+  GLFW-Nachrichtenfenster; sonst 0. Show sperrt den Owner und koppelt die
+  Eingabe-Queues beider Threads; das ist der akzeptierte Preis. Haengt es im
+  Test des Nutzers, wird `Show(0)` benutzt.
+- Ergebnis: `hrCancelled` -> cancelled; anderer Fehler -> err; Open per
+  GetResults/GetCount/GetItemAt, Save und Directory per GetResult, je
+  GetDisplayName(SIGDN_FILESYSPATH), `windows.UTF16PtrToString`,
+  CoTaskMemFree. Alles freigeben, `done`.
+- `close`: setzt `closeRequested` und sucht mit `EnumThreadWindows(tid)`
+  das sichtbare Fenster der Klasse `#32770`, dann
+  `PostMessageW(hwnd, WM_COMMAND, IDCANCEL, 0)`; Show kehrt auf seinem
+  Thread mit Cancel zurueck. Gibt es das Fenster noch nicht (Show noch nicht
+  so weit), wird alle 50 ms erneut gesucht, bis es gefunden ist oder Show
+  zurueckkehrt. Der Callback fuer EnumThreadWindows ist ein einziges
+  `windows.NewCallback` auf Paketebene (die Zahl der Callbacks ist
+  begrenzt). Kein COM-Aufruf von aussen. final = false.
+- `platformAvailable()` true. Ohne comctl32-v6-Manifest wirken manche
+  Elemente ungestylt; Pruefpunkt fuer den Nutzer, kein Teil von v1.
+
+### GNOME und KDE (`platform_linux.go`, `portal.go`)
+
+Kein kdialog oder zenity: beide Desktops bringen xdg-desktop-portal mit
+FileChooser mit (-gnome/-gtk, -kde); ein Hilfsprogramm waeren zwei weitere,
+nicht testbare Wege und eine externe Abhaengigkeit, die Abschnitt 43 schon
+fuer godbus abgelehnt hat. Fehlt das Portal, tut die Komponente nichts.
+
+- `platformAvailable()` (nur Umgebung, kein I/O ausser stat):
+  `XDG_CURRENT_DESKTOP` (an `:` geteilt) oder ersatzweise
+  `XDG_SESSION_DESKTOP`/`DESKTOP_SESSION` enthaelt ohne Ruecksicht auf
+  Gross-/Kleinschreibung `GNOME`, `KDE` oder `plasma`; und
+  `dbus.SessionBusAddress` liefert eine Adresse. XFCE, labwc, sway, ein
+  fehlender Bus: false.
+- `openPlatform` (einmal, auf der Goroutine aus `Open`): eigene Verbindung
+  `dbus.Dial(addr, 25*time.Second)` (die erste Anfrage kann das Portal per
+  D-Bus aktivieren), `SetReceiveLimit(1<<20)`, `SetSignalHandler` vor jedem
+  AddMatch; Probe `Properties.Get("org.freedesktop.portal.FileChooser",
+  "version")` auf `org.freedesktop.portal.Desktop`
+  `/org/freedesktop/portal/desktop`; Fehler oder Version < 1 ->
+  dauerhaft unsupported. Danach `GetNameOwner` fuer den Absender. Bus-
+  Aufrufe (AddMatch, RemoveMatch, GetNameOwner) gehen wie in
+  `notify/freedesktop.go:93` und `tray/sni.go:286` ueber
+  `Call(dbus.BusName, dbus.BusPath, dbus.BusInterface, ...)`; `internal/dbus`
+  hat dafuer keine eigenen Helfer.
+- Protokoll in `portal.go`, gegen `portalBus` (`Call`, `SetSignalHandler`,
+  `UniqueName`) geschrieben, damit es auf dem Mac testbar ist:
+  - `requestPath(unique, token)` ->
+    `/org/freedesktop/portal/desktop/request/<unique ohne ':' mit '.'->'_'>/<token>`;
+    `newToken()` aus `[A-Za-z0-9_]`, Zaehler plus Zufall.
+  - `buildOptions(r, token, version)` -> `a{sv}`: `handle_token` s, `modal`
+    b, `accept_label` s, `multiple` b, `directory` b (Version < 3 ->
+    nicht dauerhafter ErrUnsupported), `filters` `a(sa(us))` und
+    `current_filter` `(sa(us))` mit einer Gruppe aus `ciGlob`-Mustern
+    (Typ 0), nicht in Directory; `current_folder` ay mit NUL am Ende (Save
+    immer, OpenFile ab Version 4; in M1 gegen die Spezifikation
+    `org.freedesktop.portal.FileChooser.xml` pruefen); Save `current_name` s.
+  - `ciGlob(".tar.gz")` -> `*.[tT][aA][rR].[gG][zZ]`; GTK und Qt
+    verstehen `[...]`.
+  - Ablauf: AddMatch `type='signal',sender='<unique des Portals>',interface='org.freedesktop.portal.Request',member='Response',path='<vorhergesagt>'`,
+    `pending[path] = done`, dann `OpenFile`/`SaveFile` mit `"ssa{sv}"`
+    `(parent_window "", title, options)` auf einer Worker-Goroutine (nie im
+    Leser). Weicht der zurueckgegebene Handle ab: Warn, zweite Match-Regel,
+    beide Pfade gelten. Call-Fehler: abmelden, RemoveMatch, Fehler.
+  - Signal-Handler (Leser-Goroutine, darf nicht blockieren und nicht
+    `Call`en, `internal/dbus/conn.go:150-157`): verlangt Interface, Member,
+    Signatur `ua{sv}`, `m.Sender ==` Portal-Unique und einen Pfad in
+    `pending`; uebergibt an einen gepufferten Kanal, eine Goroutine ruft
+    `done` und RemoveMatch.
+  - `parseResponse(code, results)`: 0 -> `uris` (`as`, von `internal/dbus`
+    als `[]any` geliefert, jedes Element per Typ-Assertion `string`) ueber
+    `fileURI`;
+    1 -> cancelled; sonst Fehler "the portal ended the request (code N)".
+  - `fileURI`: `url.Parse`, Schema `file`, Host "" oder `localhost`, Pfad
+    (prozentdekodiert); alles andere ist ein Fehler.
+  - `close`: `Request.Close` auf dem Handle, auf einer Goroutine; pending und
+    Match entfernen; final = true (nach Close sendet das Portal kein
+    Response).
+- Das Fenster von gift bekommt weiter Eingaben; der Dialog ist ein fremdes,
+  nicht angehaengtes Fenster. Flatpak/Snap liefern Pfade unter
+  `/run/user/<uid>/doc/...`; mit `Root` wird das zu onCancel. Beides steht in
+  der Paketdoku.
+
+### Tests
+
+Ohne Tag, auf dem Mac in `go test ./filedialog/`:
+
+- `filedialog_test.go`/`present_test.go` mit einem `fakePlatform` ueber
+  `withOpener`: einmaliges Oeffnen ueber Rebuilds; nur an der Flanke, auch
+  mit nil `onCancel`; Schliessen bei `Presented(false)` ohne Callback und
+  bei Unmount; `cancel` vor dem Erscheinen des Dialogs; Pick und Cancel ueber Post auf der UI-Goroutine
+  (der Fake meldet nach `done` auf einem Kanal, der Test wartet darauf und
+  ruft dann `Settle`, das auf keine Goroutine wartet); OpenMulti gegen einen Pfad (Kuerzung, Log); leere
+  Antwort -> Cancel; `ErrBusy`; Belegung frei nach done, nach verworfenem
+  done, nach finalem close und nach einem Fehler in der Goroutine; ein
+  spaetes done einer alten Anfrage gibt die neue nicht frei; Presented
+  true -> false -> true oeffnet erneut (Fake mit `final == true`) bzw.
+  liefert `ErrBusy` (Fake mit `final == false` vor dem done); spaetes
+  unsupported nach `Presented(false)` setzt keinen Fallback; ein blockierender
+  Fake-Opener (1 s) verzoegert `Open` nicht (< 50 ms); unsupported:
+  onCancel einmal, onPick nie, `Available()` false, genau ein Error-Record
+  (slog-Handler in einen Puffer), auch wenn der erste Dialog keinen Logger
+  hat; Fallback: erster fehlgeschlagener Versuch zeigt
+  `gifttest.ByType("filepicker.Picker")` ohne onCancel, und der Zustand im
+  Inhalt (ein Zaehler) ueberlebt den Wechsel; Root: innen, Wurzel `"."`,
+  aussen -> Cancel plus Warn, Symlink-Wurzel (`t.TempDir`, `os.Symlink`),
+  Save in Symlink-Wurzel innen und aussen; Endungen mit den Eingaben aus
+  `ui/filepicker/model_test.go`; `Mode(Save+1)` und `New(nil, ...)` paniken;
+  Validierung (Startordner kein Ordner, `/` im Namen, ungueltiges UTF-8).
+- `portal_test.go` mit einem `fakePortalBus`: `requestPath(":1.42", "t")`;
+  `buildOptions` je Modus und Version (Directory mit 2 -> unsupported,
+  Open mit 2 geht, `current_folder` fuer OpenFile erst mit 4, nicht mit 3); Form von `filters` und Rundreise des `a{sv}` durch
+  `(*dbus.Message).Marshal` und `dbus.ReadMessage`; NUL in
+  `current_folder`; `ciGlob`; `parseResponse` 0/1/2, ohne `uris`;
+  `fileURI` mit `%20`, Unicode, `file://localhost/x`, Fehler fuer
+  `file://host/x` und `https://`; Signal mit falschem Pfad, Interface,
+  Signatur oder Absender wird ignoriert; AddMatch vor Call; Response vor
+  der Antwort mit dem Handle; `Close` beim Abbruch.
+- `winlogic_test.go`: `fosFor` je Modus, `filterSpec`, `defaultExtension`,
+  `hresult`, alle GUIDs gegen die Bytes des `windows.GUID`-Layouts.
+
+Mit Tag, echtes System, per Variable gesperrt:
+
+- `platform_darwin_test.go`: Tag `darwin && !ios`, Struktur von `tray/tray_darwin_test.go:25-47`
+  (`init(){runtime.LockOSThread()}`, `TestMain` mit `m.Run` auf einer
+  Goroutine und der Run-Loop auf dem Haupt-Thread, nur wenn
+  `GIFT_FILEDIALOG_MACOS=1`, sonst direkt `m.Run`). `TestMacOSLoads` immer
+  (dlopen, Klassen). `TestMacOSPanel` mit Variable: jeder Modus oeffnet ohne
+  Fenster und wird nach 500 ms per `close` geschlossen -> cancelled; Save
+  mit Name und `t.TempDir()` als Ordner, dann `ok:` an das Panel auf der
+  Haupt-Queue -> `<tmp>/<name>`.
+- `platform_windows_test.go`: Groessen von `COMDLG_FILTERSPEC` (16 Byte auf
+  64 Bit, 8 auf 32); mit `GIFT_FILEDIALOG_WINDOWS=1` ein Open, das nach
+  500 ms per `close` endet -> cancelled (fuer den Nutzer).
+- `platform_linux_test.go`: `GIFT_FILEDIALOG_DBUS=1` exportiert auf einer
+  zweiten `dbus.Conn` mit `RequestName` ein falsches
+  `org.freedesktop.portal.Desktop` (Property `version`, OpenFile/SaveFile,
+  die Response *nach* ihrer Antwort von einer Goroutine senden, und
+  `Request.Close`) und faehrt `openPlatform` mit `XDG_CURRENT_DESKTOP=GNOME`
+  durch: Open, OpenMulti, Directory, Save, Abbruch, Close, Version 2.
+  Kommando (so auch im Kommentar der Testdatei):
+  `docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src golang:1.27-trixie sh -c 'apt-get update -qq && apt-get install -y -qq dbus && dbus-run-session -- env GIFT_FILEDIALOG_DBUS=1 go test ./filedialog/ -run DBus -v'`.
+  `GIFT_FILEDIALOG_PORTAL=1` interaktiv auf echtem GNOME oder KDE, fuer den
+  Nutzer.
+
+### Pruefkommandos
+
+Basis fuer jeden Meilenstein (`<pkgs>` = die bis dahin existierenden
+Pakete, ab M5 mit `./cmd/example-filedialog/`):
+
+```text
+gofmt -l filedialog cmd   # leer
+go vet ./... && go test ./...
+go test -race ./filedialog/          # nur wenn `xcrun --version` geht; sonst vermerken
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go vet <pkgs>
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go vet <pkgs>
+GOOS=windows GOARCH=amd64 go vet <pkgs>
+GOOS=windows GOARCH=arm64 go vet <pkgs>
+GOOS=windows GOARCH=386   go vet <pkgs>
+GOOS=darwin  GOARCH=arm64 go vet <pkgs>
+GOOS=freebsd GOARCH=amd64 go vet ./filedialog/
+GOOS=js GOARCH=wasm go vet ./filedialog/
+```
+
+Kein `GOOS=ios` (braucht externes cgo-Linken). Ab M5 zusaetzlich
+`go run ./docs/apigen`, `go test ./docs/...` und `hugo build` in
+`docs/gift.dev` ohne Warnungen.
+
+### Meilensteine
+
+Jeder Meilenstein endet in etwas Pruefbarem, mit seinen Pruefkommandos und
+einem Commit auf diesem Branch (Conventional Commit mit Scope, Betreff
+englisch und klein, z. B. `feat(filedialog): ...`; Rumpf englische Prosa je
+Plattform mit Mechanik, Grenzen und was geprueft ist und was nicht;
+Trailer `Co-Authored-By`). Kein Push. Abnahme ist geteilt in das, was der
+Agent selbst prueft (blockierend), und das, was nur ein Mensch am Dialog
+pruefen kann (in diesem Abschnitt als "offen" vermerkt, nicht blockierend).
+
+**M0: API, Kern, Nichts-tun ueberall.**
+Dateien: `doc.go`, `filedialog.go`, `present.go`, `request.go`,
+`opener.go`, `platform_unsupported.go`, `filedialog_test.go`,
+`present_test.go`; vorlaeufig `platform_darwin.go`, `platform_windows.go`,
+`platform_linux.go` mit `platformAvailable()` false und `openPlatform` ->
+`ErrUnsupported` "not implemented yet". Abnahme: alle Kern- und
+PresentView-Tests gruen, alle Cross-Vets gruen, keine neue Abhaengigkeit.
+
+**M1: Portal-Protokoll, portabel.**
+Dateien: `portal.go`, `portal_test.go`. Abnahme: Tests gruen inklusive
+Marshal/ReadMessage-Rundreise.
+
+**M2: Linux-Plattform.**
+Dateien: `platform_linux.go` (Erkennung, Dial, Probe, GetNameOwner,
+Verdrahtung), `platform_linux_test.go`. Vorab `docker info`; geht das
+nicht, wird M2 als "nicht gegen dbus-daemon geprueft" vermerkt und weiter
+gemacht. Abnahme (Agent): der Docker-Test laeuft gruen; mit
+`XDG_CURRENT_DESKTOP=XFCE` oder `GIFT_KIOSK=1` liefert `Available()` false
+und onCancel kommt. Offen (Nutzer): GNOME und KDE Plasma 6 interaktiv,
+Anhaengen einer Endung unter KDE.
+
+**M3: macOS.**
+Dateien: `platform_darwin.go`, `platform_darwin_test.go`; vorgezogen ein
+erster `cmd/example-filedialog/main.go`. Abnahme (Agent):
+`go test ./filedialog/` und `GIFT_FILEDIALOG_MACOS=1 go test ./filedialog/ -run MacOS -v`
+gruen; `grep -rnE '"(runModal|dispatch_sync)' filedialog/` leer (nur Selektor- und Symbol-Strings, Kommentare zaehlen nicht);
+`GIFT_FILEDIALOG_SELFTEST=1 go run ./cmd/example-filedialog` oeffnet je
+Modus ein Panel als Sheet, zaehlt eine Sekunde lang Updates (mindestens 20
+erwartet, sonst gilt das Sheet-Risiko oben und es wird auf das freie Panel
+umgestellt), schliesst per Code und gibt die Zaehler aus. Offen (Nutzer):
+echte Auswahl je Modus, Escape, Nachfrage vor Ueberschreiben, Fokus nach
+dem Sheet.
+
+**M4: Windows, best effort.**
+Dateien: `winlogic.go`, `winlogic_test.go`, `platform_windows.go`,
+`platform_windows_test.go`. Reine Logik zuerst, auf dem Mac getestet.
+Abnahme (Agent): Tests gruen, drei Windows-Vets gruen,
+`GOOS=windows GOARCH=amd64 go build -o /tmp/... ./cmd/example-filedialog`
+gelingt. Status "umgesetzt, nicht geprueft", bis der Nutzer
+`GIFT_FILEDIALOG_WINDOWS=1 go test ./filedialog/ -run Windows -v` und das
+Beispiel auf Windows 11 meldet (dabei: Owner gesperrt, kein Haenger, Optik).
+
+**M5: Beispiel, Kitchen Sink, Doku, PLAN.**
+- `cmd/example-filedialog/main.go` fertig: Modus-Wahl, Umschalter "nativ /
+  In-App / nativ sonst In-App", Endungsfeld, Startordner (Home), Knopf,
+  letztes Ergebnis oder "cancelled", Statuszeile `Available()`, slog auf
+  stderr (Debug), Selbsttest aus M3. Benutzt `Present(...).Root(home)` und
+  `Fallback(filepicker.New(os.DirFS(home), ...))`, damit beide Wege
+  dieselben Pfade liefern.
+- `cmd/example-kitchensink/filedialog.go`: Seite in der Form von
+  `cmd/example-kitchensink/tray.go:28-38`: `showcase.Demo{Name: "file-dialog",
+  Group: "system", Title: "File dialog", Summary: "The system's own open,
+  folder and save dialog, or the in-app picker where there is none.",
+  Width: 560, Height: 460}`, `build: fileDialogPage`,
+  `source: "cmd/example-kitchensink/filedialog.go"`; mit `Present` und
+  `Fallback`, ohne Post-Hilfe, Start mit `presented == false` (sonst oeffnet
+  `TestEveryDemoRunsOnItsStage` einen Dialog); keine Showcase-Demo, weil ein
+  nativer Dialog sich nicht aufnehmen laesst.
+- `filedialog/doc.go` endgueltig; `ui/filepicker/doc.go:12-17` bekommt einen
+  Absatz mit Verweis auf `filedialog` und `Fallback`.
+- Doku-Seite `docs/gift.dev/content/docs/concepts/file-dialogs.md`
+  (`title: File dialogs`, `weight: 20`): Einleitung, Usage mit den drei
+  Varianten, Systeme, wann nichts passiert, Pfade und Root, Related; die
+  Seite des File-Pickers bekommt einen Gegenlink; `README.md` "Picking
+  Files" einen Absatz. Gegenlink in
+  `docs/gift.dev/content/docs/components/dialogs/file-picker/index.md`. Shortcodes als
+  `{{< api pkg="filedialog" type="PresentView" >}}`. `"filedialog"` kommt in
+  die Paketliste von `docs/apigen/main.go`, weil `PresentView` eine View ist
+  wie `ui/filepicker`; dann `go run ./docs/apigen`. Regeln aus
+  docs/MAINTAINING.md (Englisch, zweite Person, Praesens, gegen den Code
+  geprueft, keine PLAN-Verweise).
+- PLAN.md: dieser Abschnitt wird vom Entwurf zum Bericht (Status je
+  Plattform wie in Abschnitt 47); Abschnitt 3 bekommt
+  `filedialog/` im Baum nach `tray/`, `internal/dbus` "Abschnitte 43, 47, 48",
+  und der Absatz, der mit "`notify` und `tray` sind mit den Abschnitten 43
+  und 46" beginnt, nennt `filedialog` (und korrigiert 46 zu 47); Abschnitt
+  24 nach dem Satz "Geschrieben wird nie." den Satz "Seit Abschnitt 48 gibt es zusaetzlich den Dialog des
+  Systems, wo ein Desktop da ist; fuer Kiosk und Tests bleibt es bei dieser
+  Entscheidung."
+- Abnahme: volle Pruefkommandos, Doku-Generator und Hugo gruen, die
+  Doku-Schnipsel kompilieren (kurz als `_test.go` vetten, dann loeschen),
+  das Beispiel laeuft auf dem Mac.
+
+**M6, optional nach Freigabe: X11-Elternfenster fuer das Portal.**
+`filedialog/x11parent_linux.go` mit einem Xlib-Loader nach
+`clipboard/clipboard_x11.go:248-283`: `_NET_CLIENT_LIST`, Eintrag mit
+`_NET_WM_PID == os.Getpid()`, sonst WM_CLASS; hoechstens 200 ms, sonst "".
+Reine Funktion `formatParent(xid) == "x11:<hex>"` mit Test. Wayland-Handles
+gehen nicht, Ebitengine 2.10 ist X11/XWayland.
+
+### Entscheidungen (Voreinstellung, bei Freigabe aenderbar)
+
+1. Nicht verfuegbar heisst: nichts erscheint, `onCancel` ueber Post (oder
+   Fallback), einmal geloggt, `Available()` false. Wer "nichts tun" streng
+   als "kein Callback" liest, bekommt eine Anwendung mit haengendem
+   `presented`; darum diese Wahl.
+2. Kein kdialog/zenity.
+3. macOS als Sheet, freies Panel nur ohne Fenster oder wenn M3 Probleme
+   zeigt; nie `runModal`.
+4. Windows schliesst aus dem Code per `IDCANCEL` an den Dialog, nicht per
+   `IFileDialog::Close` von fremdem Thread.
+5. Eine Filtergruppe, kein "Alle Dateien", wie beim In-App-Picker.
+6. `Mode` ist ein Alias von `filepicker.Mode`.
+7. Haupt-Queue-Helfer aus tray kopiert; ein gemeinsames `internal/macmain`
+   ist eine spaetere Aufraeumarbeit.
+8. Abschnittsnummer 48 nach dem zweiten "47" (DisclosureGroup), das nicht
+   umnummeriert wird.
+
+## 49. Dateien und Inhalte von aussen ablegen (Drag and Drop)
 
 Anlass (05.11.2026): Dateien aus dem Finder, dem Explorer, Nautilus oder
 Dolphin in ein Fenster von gift ziehen, und die Anwendung reagiert darauf;

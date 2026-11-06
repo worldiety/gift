@@ -6,7 +6,7 @@ import (
 )
 
 // Drag and drop from outside the application, as a backend reports it; see
-// [gift.App.DragOver], [gift.App.Drop] and the project plan, section 48.
+// [gift.App.DragOver], [gift.App.Drop] and the project plan, section 49.
 //
 // A drag is not a pointer: nothing is pressed, nothing is captured, and the
 // mouse hover rests while it lasts. These actions therefore take kinds and

@@ -116,6 +116,8 @@ package.
 - [Modal](../modal/) and [Alert](../alert/): the picker uses an alert to confirm replacing a file.
 - [Virtual List](../../lists/virtual-list/): the list the picker shows a folder with.
 - [Text Field](../../basic/text-field/): the filter and name fields.
+- [File Dialogs](../../../concepts/file-dialogs/): the dialog of the operating system, called the same way, with
+  this picker as its fallback.
 - [Kiosks](../../../concepts/kiosks/): why gift brings its own picker.
 - [Concurrency](../../../concepts/concurrency/): how work off the UI goroutine reaches the screen.
 - [Testing](../../../concepts/testing/): driving a screen with `gifttest`; hand the picker an `fstest.MapFS` there.

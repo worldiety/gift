@@ -123,7 +123,7 @@ type Element struct {
 	// drop area does not catch the pointer: a node with a nil Interactor and
 	// a DropTarget stays transparent to hover and presses, which go to its
 	// children and its ancestors as before. [Element.Disabled] switches the
-	// target off. See drop.go and the project plan, section 48.
+	// target off. See drop.go and the project plan, section 49.
 	DropTarget Interactor
 
 	// Focusable declares that this node may hold the keyboard focus and

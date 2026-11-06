@@ -16,6 +16,10 @@
 // gift cannot test. This one is views all the way down, so gifttest drives it
 // like any other screen.
 //
+// Where a desktop exists, package github.com/worldiety/gift/filedialog
+// shows the system's own dialog with the same modes and callbacks, and its
+// Fallback presents this picker where there is none.
+//
 // # What it reads
 //
 // It reads through an [io/fs.FS], so the application decides what the person

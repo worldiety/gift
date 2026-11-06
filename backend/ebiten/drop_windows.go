@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The Windows drag layer; see drop.go and the project plan, section 48.
+// The Windows drag layer; see drop.go and the project plan, section 49.
 //
 // Ebitengine accepts files with DragAcceptFiles and WM_DROPFILES, which
 // carries CF_HDROP and nothing before the drop. This layer registers an OLE

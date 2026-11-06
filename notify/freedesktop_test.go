@@ -170,6 +170,33 @@ func TestAClickOnTheBodyIsPosted(t *testing.T) {
 	}
 }
 
+// TestAClickRaisesWithItsToken: the token of the ActivationToken signal that
+// precedes a click is handed to raise, once, and a click without one raises
+// with an empty token. Clicks on someone else's notification raise nothing.
+func TestAClickRaisesWithItsToken(t *testing.T) {
+	f, _, _ := newTestFreedesktop(t, "actions")
+	raised := make(chan string, 4)
+	f.raise = func(token string) { raised <- token }
+	f.show(Notification{ID: "a", Title: "t", OnClick: func() {}})
+
+	f.signal(signalMsg("ActivationToken", "us", uint32(99), "foreign_TIME1"))
+	f.signal(signalMsg("ActionInvoked", "us", uint32(99), "default"))
+	f.signal(signalMsg("ActivationToken", "us", uint32(1), "gnome-shell/Photos/1-2-host_TIME123"))
+	f.signal(signalMsg("ActionInvoked", "us", uint32(1), "default"))
+	if got := <-raised; got != "gnome-shell/Photos/1-2-host_TIME123" {
+		t.Fatalf("raised with %q", got)
+	}
+	f.signal(signalMsg("ActionInvoked", "us", uint32(1), "default"))
+	if got := <-raised; got != "" {
+		t.Fatalf("a second click without a token raised with the first one's, %q", got)
+	}
+	select {
+	case got := <-raised:
+		t.Fatalf("an extra raise with %q", got)
+	default:
+	}
+}
+
 // TestAClosedNotificationIsForgotten: after the server reports it closed, a
 // Show with the same ID starts a new notification, and a late click on the
 // old id does nothing.

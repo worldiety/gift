@@ -15,7 +15,7 @@ import (
 )
 
 // This file brings content dropped from other applications into gift; see
-// the project plan, section 48, and gift's drop.go for the session it feeds.
+// the project plan, section 49, and gift's drop.go for the session it feeds.
 //
 // There are two sources. Ebitengine reports dropped files on macOS, Windows
 // and Linux through [eb.DroppedFiles], for one tick, with nothing before the

@@ -14,7 +14,7 @@ import (
 	"github.com/worldiety/gift"
 )
 
-// The macOS drag layer; see drop.go and the project plan, section 48.
+// The macOS drag layer; see drop.go and the project plan, section 49.
 //
 // Ebitengine's view class, GLFWContentView, implements draggingEntered:,
 // answering Generic to everything, and performDragOperation:, which reads file

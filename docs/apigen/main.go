@@ -33,6 +33,7 @@ var packages = []string{
 	".",
 	"ui",
 	"ui/filepicker",
+	"filedialog",
 	"ui/videoplayer",
 	"ui/gesture",
 	"ui/imageviewer",

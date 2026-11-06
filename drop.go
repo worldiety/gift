@@ -10,7 +10,7 @@ import (
 // This file is the core half of dropping content from outside the
 // application: files from the Finder, the Explorer, Nautilus or Dolphin, and
 // where the platform reports it, text and web addresses. The project plan,
-// section 48, is the design; the short version is below.
+// section 49, is the design; the short version is below.
 //
 // # The session
 //
