@@ -1985,6 +1985,121 @@
       }
     ]
   },
+  "filedialog": {
+    "importPath": "github.com/worldiety/gift/filedialog",
+    "synopsis": "Package filedialog shows the operating system's own file dialog — open one or several files, choose a directory, pick a path to save to — on macOS, on Windows, and in a GNOME or KDE session, and does nothing elsewhere.",
+    "types": {
+      "Dialog": {
+        "synopsis": "Dialog describes one native file dialog.",
+        "decl": "type Dialog struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "New",
+            "signature": "New(onPick func(paths []string), onCancel func()) Dialog",
+            "synopsis": "New returns a dialog that calls onPick with the picked paths and onCancel when the person backs out, or when there is no native dialog to show."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Extensions",
+            "signature": "Extensions(exts ...string) Dialog",
+            "synopsis": "Extensions limits the files that can be picked to these extensions, ignoring case: \".jpg\" and \"JPG\" are the same."
+          },
+          {
+            "name": "FilterName",
+            "signature": "FilterName(s string) Dialog",
+            "synopsis": "FilterName sets the label of the filter made from Dialog.Extensions, where the system shows one."
+          },
+          {
+            "name": "Logger",
+            "signature": "Logger(l *slog.Logger) Dialog",
+            "synopsis": "Logger sets where the dialog reports what went wrong."
+          },
+          {
+            "name": "Mode",
+            "signature": "Mode(m Mode) Dialog",
+            "synopsis": "Mode sets what the dialog picks; see Mode."
+          },
+          {
+            "name": "Open",
+            "signature": "Open(post func(func())) (cancel func(), err error)",
+            "synopsis": "Open shows the dialog now and returns at once; the answer arrives later, through post, on the UI goroutine."
+          },
+          {
+            "name": "Root",
+            "signature": "Root(dir string) Dialog",
+            "synopsis": "Root makes the dialog report fs.FS paths relative to dir, \"/\"-separated, the same paths filepicker.New reports for os.DirFS(dir)."
+          },
+          {
+            "name": "Start",
+            "signature": "Start(dir string) Dialog",
+            "synopsis": "Start sets the directory the dialog opens in, an operating system path."
+          },
+          {
+            "name": "SuggestedName",
+            "signature": "SuggestedName(s string) Dialog",
+            "synopsis": "SuggestedName fills the name field of Save mode."
+          },
+          {
+            "name": "Title",
+            "signature": "Title(s string) Dialog",
+            "synopsis": "Title sets the title of the dialog."
+          }
+        ]
+      },
+      "Mode": {
+        "synopsis": "Mode says what a dialog picks.",
+        "decl": "type Mode = filepicker.Mode",
+        "constructors": [],
+        "methods": []
+      },
+      "PresentView": {
+        "synopsis": "PresentView shows a native file dialog over its content while it is presented, in the shape of ui.Sheet.",
+        "decl": "type PresentView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Present",
+            "signature": "Present(content gift.View, dialog Dialog) PresentView",
+            "synopsis": "Present returns content with dialog shown over it while presented."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Fallback",
+            "signature": "Fallback(v gift.View) PresentView",
+            "synopsis": "Fallback sets the view shown in a ui.Sheet where there is no native dialog."
+          },
+          {
+            "name": "FallbackHeight",
+            "signature": "FallbackHeight(f float32) PresentView",
+            "synopsis": "FallbackHeight sets the height of the fallback sheet as a fraction of the height it is presented in, in (0, 1]; see ui.SheetView.Height."
+          },
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) PresentView",
+            "synopsis": "Flex makes the view take a share of the remaining main axis space of its parent stack."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) PresentView",
+            "synopsis": "Key sets the reconciliation key of this view among its siblings."
+          },
+          {
+            "name": "Presented",
+            "signature": "Presented(b bool) PresentView",
+            "synopsis": "Presented says whether the dialog is open right now."
+          }
+        ]
+      }
+    },
+    "funcs": [
+      {
+        "name": "Available",
+        "signature": "Available() bool",
+        "synopsis": "Available reports whether this process is one where a native dialog is attempted: macOS, Windows, or a GNOME or KDE session with a session bus, outside a gift kiosk."
+      }
+    ]
+  },
   "filepicker": {
     "importPath": "github.com/worldiety/gift/ui/filepicker",
     "synopsis": "Package filepicker is a file picker made of gift views: it opens one or several files, chooses a directory or picks a path to save to, inside the application's own window and on a touchscreen as well as with a mouse and a keyboard.",

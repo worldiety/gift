@@ -108,6 +108,16 @@ ui.Sheet(screen, filepicker.New(os.DirFS("/media/usb"), open, cancel).
 Directories are read off the UI goroutine and listed with `ui.VirtualList`, so
 a folder of a hundred thousand files scrolls like one of a hundred.
 
+On a desktop, `filedialog` shows the system's own dialog instead — macOS,
+Windows, GNOME and KDE, without CGO — with the same modes and callbacks, and
+does nothing elsewhere. `Fallback` uses the in-app picker where there is no
+native dialog:
+
+```go
+dlg := filedialog.New(open, cancel).Mode(filedialog.OpenMulti).Root(root)
+filedialog.Present(screen, dlg).Fallback(picker).Presented(picking)
+```
+
 ### Camera Photos
 
 Galleries of 12–50 megapixel camera JPEGs thumbnail several times faster with
