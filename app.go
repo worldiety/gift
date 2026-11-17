@@ -147,6 +147,14 @@ type App struct {
 	// [App.keyFallbackNode].
 	keyFallbacks int
 
+	// dropTargets is the number of mounted, enabled nodes that declare
+	// [Element.DropTarget], behind [App.HasDropTargets]; dropCaps is what
+	// [App.SetDropCapabilities] said, and dropWarned that the one debug line
+	// about a platform without drops was written. See drop.go.
+	dropTargets int
+	dropCaps    DropCapabilities
+	dropWarned  bool
+
 	// reconcileHidden is the inherited [Element.Hidden] state of the node
 	// currently being applied: true when any ancestor of it, inside the part
 	// of the tree this reconciliation has already walked, declared the flag.

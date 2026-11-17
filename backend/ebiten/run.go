@@ -308,7 +308,9 @@ type Config struct {
 	// over the window, and a picture of an open menu has a highlighted row
 	// on one machine and none on the next. A build with the giftauto tag
 	// sets it when the environment has GIFT_CAPTURE, as docs/capture does,
-	// so a program that does not choose its own Config is covered too.
+	// so a program that does not choose its own Config is covered too. A drag
+	// from another application is no reading of the mouse and still arrives;
+	// see drop.go.
 	NoMouse bool
 
 	// NoInput disables the input bridge. It exists for a measurement run that
@@ -452,6 +454,12 @@ func Run(app *gift.App, cfg Config) error {
 		g.input = nil
 	} else {
 		g.input.noMouse = cfg.NoMouse
+		g.input.log = cfg.Logger
+		if g.input.dropped != nil {
+			// Files on the three desktop systems; the native layer of the
+			// first update may add the rest. See drop.go.
+			app.SetDropCapabilities(gift.DropCapabilities{Kinds: gift.DropFile})
+		}
 		if !cfg.NoMouse {
 			// Here, on the main thread, which AppKit wants for its event
 			// monitor; Run is on it, because RunGame has to be.
@@ -496,6 +504,8 @@ func Run(app *gift.App, cfg Config) error {
 	} else {
 		err = eb.RunGameWithOptions(g, opts)
 	}
+	// Back on the main thread, where a native drag layer is taken down.
+	g.closeDrops()
 	if cfg.Logger != nil {
 		// Skipped refreshes are the evidence that DrawOnDemand works: on an
 		// idle kiosk they outnumber the drawn frames by orders of
@@ -735,6 +745,7 @@ func (g *game) Update() error {
 	// this same tick. The project plan, section 6, allows build and layout
 	// only in Update, and the UI executor assertion assumes exactly this.
 	if g.input != nil {
+		g.installDrops()
 		g.input.poll()
 	}
 
@@ -751,6 +762,7 @@ func (g *game) Update() error {
 	text.Default().Tick()
 
 	err := g.app.Update(geom.Sz(float32(g.w), float32(g.h)))
+	g.answerDrops()
 
 	// The idle policy reads the paint flag, which the update sets when a
 	// build or a layout actually changed something. Reading it here, before

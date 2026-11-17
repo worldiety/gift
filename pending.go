@@ -51,6 +51,9 @@ const (
 	// noticePointerLeave is [EventPointerLeave] for a node that was hovered
 	// when a build hid it.
 	noticePointerLeave
+	// noticeDragLeave is the [EventDragLeave] of a drop target that was
+	// hidden or disabled under a drag; see drop.go.
+	noticeDragLeave
 )
 
 // notice is one queued notification.
@@ -60,6 +63,10 @@ type notice struct {
 	// pointer is the id carried into the synthesised event for the two
 	// pointer kinds, and is ignored for noticeFocusLost.
 	pointer PointerID
+	// drop and live are, for noticeDragLeave, the drop target that heard
+	// the enter and whether the session was live; see drop.go.
+	drop Interactor
+	live bool
 }
 
 // maxNoticeRounds bounds the settle loop of [App.settleNotices].
@@ -157,6 +164,11 @@ func (a *App) deliverNotice(n notice) {
 		a.notifyDirect(n.node, Event{Kind: EventFocusLost, Time: a.in.now, Pointer: MousePointer})
 	case noticePointerCancel:
 		a.notifyDirect(n.node, Event{Kind: EventPointerCancel, Time: a.in.now, Pointer: n.pointer})
+	case noticeDragLeave:
+		if a.in.drag.target == n.node {
+			return
+		}
+		a.deliverDragTo(n.node, n.drop, EventDragLeave, DropInfo{Kinds: a.in.drag.kinds, Live: n.live})
 	case noticePointerLeave:
 		a.notifyDirect(n.node, Event{Kind: EventPointerLeave, Time: a.in.now, Pointer: n.pointer})
 	}
@@ -188,7 +200,12 @@ func (a *App) notifyDirect(h scene.Handle, e Event) {
 	c := &a.in.ectx
 	prevH, prevD := c.cur, c.nd
 	c.cur, c.nd = h, nd
+	// Not a drag event: EventContext.Drop must say so even when this runs
+	// inside a drag target's handler.
+	prevDel := a.in.drag.delivering
+	a.in.drag.delivering = false
 	nd.interactor.HandleEvent(c, e)
+	a.in.drag.delivering = prevDel
 	c.cur, c.nd = prevH, prevD
 }
 
@@ -204,4 +221,14 @@ func (a *App) forgetNotices(h scene.Handle) {
 		}
 	}
 	a.in.notices = out
+}
+
+// deferDragLeave queues the [EventDragLeave] of a drop target that was hidden
+// or disabled under a drag, for t, the interactor that heard the enter.
+func (a *App) deferDragLeave(h scene.Handle, t Interactor, live bool) {
+	if !a.store.Valid(h) || t == nil {
+		return
+	}
+	a.dropNotice(h, noticeDragLeave)
+	a.in.notices = append(a.in.notices, notice{node: h, kind: noticeDragLeave, pointer: MousePointer, drop: t, live: live})
 }

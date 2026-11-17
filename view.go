@@ -113,6 +113,19 @@ type Element struct {
 	// children; see [Interactor] for why that polarity is the safe one.
 	Interactor Interactor
 
+	// DropTarget makes this node a target for content dragged in from
+	// outside the application: it receives [EventDragEnter],
+	// [EventDragOver], [EventDragLeave] and [EventDrop], and nothing else.
+	// Returning true from the enter or the over accepts the drag, from the
+	// drop takes the content; see [EventContext.Drop] for what is carried.
+	//
+	// It is a second interactor rather than a flag on Interactor so that a
+	// drop area does not catch the pointer: a node with a nil Interactor and
+	// a DropTarget stays transparent to hover and presses, which go to its
+	// children and its ancestors as before. [Element.Disabled] switches the
+	// target off. See drop.go and the project plan, section 49.
+	DropTarget Interactor
+
 	// Focusable declares that this node may hold the keyboard focus and
 	// therefore takes part in the tab order. It is only honoured together
 	// with a non nil Interactor: focus exists to deliver key events, and a

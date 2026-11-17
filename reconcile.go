@@ -173,6 +173,7 @@ func (a *App) applyElement(h scene.Handle, nd *nodeData, desc childDesc, owner *
 	// follow the element is Disabled, because a button that was disabled
 	// while the mouse rested on it must not keep the hover look.
 	nd.interactor = desc.elem.Interactor
+	a.applyDropTarget(h, nd, desc.elem.DropTarget, desc.elem.Disabled)
 	nd.focusable = desc.elem.Focusable && desc.elem.Interactor != nil
 	nd.disabled = desc.elem.Disabled
 	nd.clip = desc.elem.Clip
@@ -306,6 +307,7 @@ func (a *App) applyHidden(h scene.Handle, nd *nodeData, hidden bool) {
 	// [TabBarView] for what they are worth on a Pi.
 	a.stopHiddenWork(h)
 	a.hideOverlaysIn(h)
+	a.hideDropTarget(h)
 	for i := range a.in.pointers {
 		p := &a.in.pointers[i]
 		if !p.active {
@@ -350,6 +352,8 @@ func (a *App) applyFocusTrap(h scene.Handle, nd *nodeData, trap bool) {
 	default:
 		return
 	}
+	// A drag that does not move is searched again under the new limit.
+	a.in.drag.rewalk = true
 	if !trap {
 		return
 	}

@@ -1,6 +1,8 @@
 package ebiten
 
 import (
+	"io/fs"
+	"log/slog"
 	"time"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
@@ -177,6 +179,23 @@ type inputBridge struct {
 	// not moved since is not a mouse anybody is using.
 	parked    bool
 	parkedPos geom.Point
+
+	// dropped is Ebitengine's report of dropped files, nil where gift drops
+	// nothing; native is the native drag layer, nil until the first update
+	// installs one or where there is none; dropEvs is the reused buffer of
+	// its events, nativeRecent the updates left in which a report of
+	// Ebitengine's is the native drop again. See drop.go.
+	dropped      func() fs.FS
+	native       nativeDrops
+	dropEvs      []nativeDropEvent
+	nativeRecent int
+	// heldFS is a report of Ebitengine's waiting heldFor more updates for a
+	// native drop it repeats; heldPos is the cursor it came with.
+	heldFS         fs.FS
+	heldPos        geom.Point
+	heldFor        int
+	dropsInstalled bool
+	log            *slog.Logger
 }
 
 // trackedKeys maps the keys gift knows to Ebitengine's codes.
@@ -233,6 +252,7 @@ func newInputBridge(app *gift.App) *inputBridge {
 		appendChars: eb.AppendInputChars,
 		cursor:      eb.CursorPositionF,
 		wheel:       eb.Wheel,
+		dropped:     droppedFiles,
 
 		runes:   make([]rune, 0, 16),
 		ids:     make([]eb.TouchID, 0, 8),
@@ -259,6 +279,7 @@ func (b *inputBridge) poll() {
 	b.pollKeys()
 	b.pollRunes()
 	b.pollMouse(now)
+	b.pollDrops()
 	b.pollTouches()
 	if b.panel != nil {
 		b.pollPanel(now, b.screen())

@@ -143,6 +143,23 @@ const (
 	// [App.ContextMenuAt]. On a touch screen the same request is a long
 	// press, which a view recognises itself.
 	EventContextMenu
+
+	// EventDragEnter says a drag from outside the application reached this
+	// node's [Element.DropTarget]. Returning true accepts it, and the node
+	// becomes the target; [EventContext.Drop] tells what the drag carries.
+	// It goes to the drop target only and does not bubble: gift walks up to
+	// the next drop target itself when this one declines.
+	EventDragEnter
+	// EventDragOver says the accepted drag moved or changed what it
+	// carries. Returning false declines it from now on.
+	EventDragOver
+	// EventDragLeave ends what EventDragEnter began: the drag left the
+	// node, was given up, was dropped, or the node was hidden or disabled
+	// under it. It is not sent to a node that was unmounted.
+	EventDragLeave
+	// EventDrop delivers the dropped content, in [EventContext.Drop].
+	// Returning true takes it; false hands it to the next drop target above.
+	EventDrop
 )
 
 // Key is a physical key, in the small set gift's own navigation, activation
@@ -438,6 +455,10 @@ func (e Event) IsPointer() bool {
 	return e.Kind >= EventPointerEnter && e.Kind <= EventWheel || e.Kind == EventContextMenu
 }
 
+// IsDrag reports whether e is one of the four drag events of a drop target.
+// Its Pos is meaningful, like a pointer event's.
+func (e Event) IsDrag() bool { return e.Kind >= EventDragEnter && e.Kind <= EventDrop }
+
 // Interaction is the presentation state gift maintains for an interactive
 // node.
 //
@@ -500,6 +521,10 @@ type Interaction struct {
 	// [App.NodeInteraction] can report a disabled control as hovered or
 	// pressed: assert Disabled, not the absence of the other two.
 	Disabled bool
+	// DropTargeted is set while this node is the target that accepts a drag
+	// from outside the application; see [Element.DropTarget]. A drop area
+	// draws its highlight from it, without being rebuilt.
+	DropTargeted bool
 }
 
 // Interactor is the retained half of a view that wants input.
@@ -868,6 +893,9 @@ type inputState struct {
 	// whether the focused node wants characters, and what is covering the
 	// screen because of it. See softinput.go.
 	soft softInputState
+
+	// drag is the drag session from outside the application; see drop.go.
+	drag dragState
 }
 
 // keyRepeat is the state of the one key gift repeats.
@@ -1678,7 +1706,9 @@ func (a *App) pointerEvent(kind EventKind, p *pointer) Event {
 // by returning immediately for a touch. The project plan, section 7:
 // "Touch-Ereignisse erzeugen keine synthetischen Hover-Zustaende."
 func (a *App) updateHover(p *pointer) {
-	if p.kind != PointerMouse {
+	if p.kind != PointerMouse || a.in.drag.live {
+		// While a live drag session lasts the cursor carries something, and
+		// the hover rests; the first move after it ends brings it back.
 		return
 	}
 	h := a.hitTest(p.pos)
@@ -1745,7 +1775,12 @@ func (a *App) deliver(h scene.Handle, e Event, direct bool) bool {
 			c := &a.in.ectx
 			prevH, prevD := c.cur, c.nd
 			c.cur, c.nd = h, nd
+			// Not a drag event, even when a drag target's handler caused it;
+			// see [EventContext.Drop].
+			prevDel := a.in.drag.delivering
+			a.in.drag.delivering = false
 			handled := nd.interactor.HandleEvent(c, e)
+			a.in.drag.delivering = prevDel
 			c.cur, c.nd = prevH, prevD
 			if handled || direct {
 				return handled
@@ -1890,6 +1925,7 @@ func (a *App) forgetNode(h scene.Handle) {
 	// place a deferred notification is genuinely dropped rather than delayed,
 	// and it is the case in which there is no recipient; see pending.go.
 	a.forgetNotices(h)
+	a.forgetDrop(h, a.data(h))
 	if a.in.focus == h {
 		a.in.focus = scene.Handle{}
 		// The focused node was unmounted, so it never got its

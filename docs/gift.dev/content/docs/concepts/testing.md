@@ -478,6 +478,9 @@ release behave like two events, not like one:
 | `key`, `keyDown`, `keyUp`                                        | `key` such as `"tab"`, `"enter"`, `"escape"`; `mods` such as `["shift"]` |
 | `text`                                                           | `text`, typed character by character          |
 | `focus`                                                          | `forward`, default `true`                     |
+| `dragOver`                                                       | `x`, `y` (omitted: the last position), `kinds` from `"file"`, `"text"`, `"url"` (empty: not reported); see [Drag and Drop](../drag-and-drop/) |
+| `drop`                                                           | `x`, `y`, `files` (absolute paths), `urls`, `dropText`; dropped in that order |
+| `dragLeave`                                                      | none; the drag leaves the window              |
 | `waitMs`, `waitFrames`, `waitTicks`                              | `ms`, `frames`, `ticks`                       |
 | `capture`                                                        | `frames`, `png`                               |
 

@@ -124,6 +124,10 @@ var views = []struct {
 		why: presenterWhy,
 	},
 	{
+		name: "ui.DropDestination", set: setMinimal, v: ui.DropDestination(ui.Box()),
+		why: "a wrapper that takes drops for its content; size and style belong to the content",
+	},
+	{
 		name: "ui.Stepper", set: setMinimal, v: ui.Stepper(0, nil),
 		why: "a fixed 94 by 32 pair of buttons, as UIStepper; it has no box of its own to size or style",
 	},

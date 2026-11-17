@@ -135,3 +135,24 @@ captured by `docs/capture` too, see `exampleShots` there.
 When the API changes: run `go run ./docs/apigen`, re-render the screenshots of the affected demos, update the
 prose of the affected pages, and add pages for new components. `hugo build` must pass without errors or
 warnings.
+
+## Ebitengine upgrades
+
+gift's drop support (PLAN.md, section 49) leans on details of Ebitengine's GLFW port that are not API. After an
+upgrade of `github.com/hajimehoshi/ebiten/v2`, check them in its module source and run the window tests of
+`backend/ebiten/droptest` (the command for each platform is in that package's documentation):
+
+- macOS, `internal/glfw/cocoa_window_darwin.go`: the view class is still called `GLFWContentView`; it implements
+  `draggingEntered:` and `performDragOperation:` but not `draggingUpdated:`, `draggingExited:`,
+  `concludeDragOperation:` or `draggingEnded:`, which gift adds; and `performDragOperation:` still answers YES,
+  since gift reads the drop in `concludeDragOperation:`. If Ebitengine implements one of the four, gift's layer stays
+  off and only files arrive; adapt `backend/ebiten/drop_darwin.go`.
+- Windows, `internal/glfw/win32_window_windows.go`: the window class is `GLFW30` and the window has
+  `WS_EX_ACCEPTFILES`, which is how gift tells it from GLFW's hidden helper window of the same class; and the main
+  thread is not initialised for COM as a multi-threaded apartment for good, which would make `OleInitialize` fail.
+- `internal/file/file_notjs.go`: a folder Ebitengine makes up in the file system of a drop has a `FileInfo` whose
+  `Sys` is nil, every dropped entry implements `AbsPather`, and `virtualDir.ReadDir` still stops at the first path it
+  cannot stat. `backend/ebiten/drop.go` reads the drop by these rules, and `backend/ebiten/drop_test.go` mimics them.
+- Linux, `internal/glfw/init_linbsd.go`: `parseUriList` and what it makes of an address that is not `file:`.
+- `RunOnMainThread` still works from `Update` in the multi-threaded mode gift runs Ebitengine in; the native layers
+  are installed through it in the first update.
