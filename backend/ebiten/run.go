@@ -323,6 +323,10 @@ type Config struct {
 	// one and makes everything too small on a 5 inch one of the same 1280
 	// by 720 pixels; package kiosk sets 2 there. It is rounded as every
 	// density is; see [gift.App.SetDensity].
+	//
+	// A scale in .wdygift/config.json in the home directory, {"scale": 2},
+	// replaces both: it is the person's word on a display the desktop gets
+	// wrong, for every gift application. Read once, when Run starts.
 	Density float64
 }
 
@@ -448,7 +452,7 @@ func Run(app *gift.App, cfg Config) error {
 		h:         h,
 
 		systemScale: newSystemScale(),
-		density:     cfg.Density,
+		density:     cfg.density(),
 	}
 	if cfg.NoInput {
 		g.input = nil
@@ -477,7 +481,7 @@ func Run(app *gift.App, cfg Config) error {
 	}
 
 	eb.SetWindowTitle(cfg.Title)
-	eb.SetWindowSize(w, h)
+	eb.SetWindowSize(windowSize(w, h, g.density, g.startScale()))
 	eb.SetWindowResizingMode(eb.WindowResizingModeEnabled)
 	eb.SetTPS(busy)
 	if cfg.DrawOnDemand || cfg.DirectToScreen {
@@ -601,7 +605,8 @@ type game struct {
 	// means there is nothing to correct. See [newSystemScale].
 	systemScale func() float64
 
-	// density is [Config.Density]: a density that replaces the monitor's.
+	// density is the density that replaces the monitor's: the user's
+	// scale or [Config.Density]; see [Config.density].
 	density float64
 }
 

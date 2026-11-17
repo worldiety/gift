@@ -178,7 +178,8 @@ for measurement runs that a resting cursor must not disturb, and for a test harn
 `gift.App` itself. A kiosk application leaves it off.
 
 **Density.** gift reads the device scale factor of the monitor and rounds it to a whole number. On a display that
-reports 1, one logical pixel is one screen pixel.
+reports 1, one logical pixel is one screen pixel. A scale in `.wdygift/config.json` in the home directory,
+`{"scale": 2}`, takes precedence over both the monitor and `Density`.
 
 ## Raspberry Pi OS
 

@@ -329,6 +329,10 @@ The *density* says how many physical pixels one logical pixel covers along each 
   backend then scales down; 1.4 becomes 1.
 - The Ebitengine backend reads the factor of the monitor on almost every frame and calls `App.SetDensity`, so a window
   dragged to another monitor follows. You do not call it yourself.
+- Where the desktop reports a wrong factor, the person at the computer sets their own in `.wdygift/config.json` in
+  their home directory, `{"scale": 2}`. It holds for every gift application, takes precedence over the monitor and over
+  `Config.Density`, and is read when the application starts. GNOME 46 with native scaling for XWayland clients is
+  such a desktop: the Xft.dpi of a 2x display does not reach the application, and every window is half its size.
 - `gifttest.Options.Density` runs a test at a given density.
 
 A density change changes the presentation, not the layout. gift scales the whole display list at its root, so

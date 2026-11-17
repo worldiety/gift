@@ -5762,6 +5762,25 @@ Abweichungen vom Entwurf:
 
 Beim Nutzer: der Windows-Laufzeittest und die Abnahmeliste oben.
 
+## 50. Skalierung per Benutzerkonfiguration
+
+Anlass (17.11.2026): Unter GNOME 46 mit nativer Skalierung fuer
+XWayland-Clients kommt die Xft.dpi eines 2x-Displays nicht an. Ebitengine
+und der eigene Xft-Leser sehen 1, jedes gift-Fenster ist halb so gross.
+
+- `~/.wdygift/config.json` mit `{"scale": 2}`: gilt fuer alle
+  gift-Anwendungen dieses Benutzers und hat Vorrang vor dem Monitor und vor
+  `Config.Density`. Gelesen einmal beim Start von `backend/ebiten.Run`;
+  gerundet wie jede Dichte (`RoundDensity`), erlaubt 1 bis `MaxDensity`.
+  Kaputtes JSON oder ein Wert ausserhalb wird geloggt und ignoriert, eine
+  fehlende Datei still.
+- Das Fenster oeffnet mit Width x Height logischen Pixeln bei dieser Dichte:
+  unter X11 ist der Faktor, den GLFW beim Start nimmt, vorher bekannt
+  (Xft.dpi, sonst 96), also wird die Fenstergroesse umgerechnet. Auf macOS
+  und Windows ist er vor der Schleife nicht lesbar; dort bleibt die Groesse.
+- Ein Workaround, bis der Desktop die Skalierung richtig meldet. Weitere
+  Schluessel in der Datei werden ignoriert.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb
