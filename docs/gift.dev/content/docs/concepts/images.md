@@ -6,7 +6,8 @@ weight: 8
 A view in gift never loads a picture itself. [`ui.Image`](../../components/basic/image/) and the
 [image gallery](../../components/lists/image-gallery/) only say *which* picture to show and how large. One
 application wide service, the `asset.Pipeline`, does the rest in the background: it reads the file or the URL,
-decodes it, applies the EXIF orientation, scales it to a thumbnail and caches the result in memory and on disk.
+decodes it, applies the EXIF orientation, scales it to a thumbnail, converts its colors into sRGB and caches the
+result in memory and on disk.
 Until a picture is ready, the view draws a placeholder. Nothing in a frame waits for I/O or a decode.
 
 This page explains how to set up the pipeline, where pictures come from, what is cached and bounded, and what to
@@ -29,7 +30,8 @@ A request for a picture goes through these stages:
 1. The view asks for the picture during layout, at the size it is drawn at.
 2. A worker goroutine establishes the revision of the source, a stat for a file, and checks the memory cache and
    the disk cache for a thumbnail of that revision.
-3. On a miss, the worker reads the bytes, decodes them, scales the picture to a thumbnail and orients it.
+3. On a miss, the worker reads the bytes, decodes them, scales the picture to a thumbnail, converts the colors of
+   the profile the picture declares into sRGB and orients it.
 4. The result is delivered to the UI goroutine through `Config.Deliver`.
 5. The backend uploads the thumbnail to the GPU, a few per frame, and the view draws it instead of its placeholder.
 
@@ -203,6 +205,10 @@ measured size.
 
 The pipeline applies the EXIF orientation of a JPEG before it reports dimensions, so a portrait photo from a
 phone has a portrait aspect ratio. It scales first and rotates the small result.
+
+A picture in Adobe RGB, Display P3 or any other color space that it declares with an ICC profile, its EXIF or the
+color chunks of a PNG is converted into sRGB, which is what gift paints. See
+[Color Management](../color-management/#pictures-in-the-image-pipeline) for what is read and what it costs.
 
 ## Caches
 
@@ -421,7 +427,8 @@ func init() {
 
 `MemoryFactor` is the working memory per pixel of the full picture that the pipeline reserves from
 `DecodeBudget` before the decode. Overestimate rather than underestimate. A decoder is called from several
-goroutines at once and must be safe for concurrent use. EXIF orientation is only read from JPEG.
+goroutines at once and must be safe for concurrent use. EXIF orientation is only read from JPEG. The ICC profile of
+a WebP is read and converted like that of a JPEG or PNG.
 
 ## Watching the pipeline
 

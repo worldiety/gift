@@ -15,7 +15,9 @@ import (
 // would make the same input produce different pixels; otherwise a user who
 // upgrades gift keeps looking at thumbnails produced by the old code for as
 // long as their files do not change.
-const ProcessingVersion uint32 = 1
+//
+// Version 2 converts the colours a picture declares into sRGB.
+const ProcessingVersion uint32 = 2
 
 // Key identifies one cached thumbnail.
 //

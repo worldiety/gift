@@ -146,6 +146,11 @@ t, err := cms.NewTransform(src, cms.SRGB(), cms.Options{Intent: cms.Perceptual})
 err = t.Pixels(img.Pix, cms.RGBAPremul8, img.Pix, cms.RGBAPremul8)
 ```
 
+The image pipeline uses it for every picture: the ICC profile of a JPEG, PNG
+or WebP, the Adobe RGB a camera notes in its EXIF and the color chunks of a
+PNG are read, and thumbnails converted into sRGB, CMYK JPEGs included.
+`asset.EmbedProfile` writes a profile into a JPEG or PNG you export.
+
 ### Pictures And Gestures
 
 `ui/imageviewer` shows pictures as large and as interactive as the screen

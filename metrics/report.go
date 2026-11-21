@@ -365,6 +365,7 @@ type assetCounters struct {
 	DiskHits       uint64 `json:"disk_hits"`
 	DecodedPixels  uint64 `json:"decoded_pixels"`
 	ScaledPixels   uint64 `json:"scaled_pixels"`
+	Converted      uint64 `json:"converted"`
 	InputBytes     int64  `json:"input_bytes"`
 	InputPeak      int64  `json:"input_peak_bytes"`
 	InputLimit     int64  `json:"input_limit_bytes"`
@@ -525,6 +526,7 @@ func (r *Recorder) emit(kind string) {
 				Quarantined:    as.Quarantined, NotModified: as.NotModified,
 				Decodes: as.Decodes, MemoryHits: as.MemoryHits, DiskHits: as.DiskHits,
 				DecodedPixels: as.DecodedPixels, ScaledPixels: as.ScaledPixels,
+				Converted:  as.Converted,
 				InputBytes: as.InputBytes, InputPeak: as.InputPeak, InputLimit: as.InputLimit,
 				DecodeBytes: as.DecodeBytes, DecodePeak: as.DecodePeak, DecodeLimit: as.DecodeLimit,
 				PixelBytes: as.PixelBytes, PixelPeak: as.PixelPeak, PixelLimit: as.PixelLimit,

@@ -13,8 +13,51 @@ Everything gift paints is sRGB: the theme, text, and the pictures the image pipe
 backend tells the system so, which matters on a Mac, where the screen would otherwise be taken as Display P3 and
 every sRGB color shown more saturated than it is.
 
-The image pipeline does not read the profiles embedded in pictures yet. Until it does, a picture in Adobe RGB or
-ProPhoto RGB is shown as if it were sRGB; convert it with `cms` where that matters.
+The [image pipeline](../images/) reads the color space every picture declares and converts its thumbnails into
+sRGB, so a photograph in Adobe RGB looks in gift as it does in Lightroom or a browser. You only need `cms`
+yourself for pixels that do not come through the pipeline.
+
+## Pictures in the image pipeline
+
+A picture says which color space its numbers are in, in one of these ways. `asset.ReadProfile` returns the profile
+a file declares, `nil` for none, which means sRGB.
+
+| Format | What is read |
+|--------|--------------|
+| JPEG | An ICC profile in APP2 segments, split over several when it is large. Without one, the EXIF of a camera set to Adobe RGB: those write no profile but the interoperability index R03, or the color space 2. |
+| PNG | The chunks `cICP`, `iCCP`, `sRGB`, and `gAMA` with `cHRM`, in that order of precedence, as the third edition of the PNG specification gives it. |
+| WebP | An ICC profile in the `ICCP` chunk, when a WebP decoder is [registered](../images/#other-formats). |
+
+The pipeline converts with the perceptual intent, which for the matrix profiles of cameras and displays is the
+same as relative colorimetric. It converts *after* scaling, so that a thumbnail pays for its own pixels and not for
+those of the photograph: a 512 pixel thumbnail takes about 2.5 ms on an Apple M5. Two kinds of picture are
+converted before scaling, in bands on every core: CMYK, because its colors come only from its profile, and 16 bit
+pictures, whose shadows would band in 8 bits of a linear or wide space. A 24 megapixel CMYK picture takes about
+120 ms on the ten cores of an M5. A camera embeds the same profile in every picture, and the pipeline bakes each profile once.
+
+A profile that cannot be read, or does not fit the pixels, such as a CMYK profile in an RGB file, is logged at
+debug level and the picture is shown as sRGB, as a program without color management would show it. The HDR
+transfers PQ and HLG of a `cICP` chunk are not converted: they need a tone mapping to show on a display that is not
+HDR. `Stats.Converted` counts the conversions.
+
+## Write a profile into a file
+
+A picture you export should say what space its numbers are in. `asset.EmbedProfile` writes a profile into the bytes
+an encoder wrote, a JPEG or a PNG, and removes whatever the file declared before:
+
+```go
+var buf bytes.Buffer
+if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+	return err
+}
+tagged, err := asset.EmbedProfile(buf.Bytes(), cms.DisplayP3())
+if err != nil {
+	return err
+}
+return os.WriteFile("export.jpg", tagged, 0o644)
+```
+
+A file without a profile is read as sRGB everywhere, so an sRGB picture needs none.
 
 ## Convert a picture
 
@@ -104,6 +147,8 @@ Converting 8 bit RGB between two matrix profiles takes about 9 nanoseconds per p
 through the table of a CMYK printer profile about 40.
 
 ## API
+
+{{< api-funcs pkg="asset" names="ReadProfile,EmbedProfile" >}}
 
 {{< api pkg="cms" type="Profile" >}}
 

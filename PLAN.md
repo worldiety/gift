@@ -5883,10 +5883,41 @@ Stand Stufe 0 und F1 (21.11.2026):
 - Tempo (M5, ein Kern): 8 Bit Matrix 8,6 ms je Megapixel, CMYK-Tabelle
   38 ms, Backen einer Tabelle 3,6 ms.
 
-Offen fuer F2: Profile aus JPEG/PNG/WebP lesen und in der Pipeline nach
-dem Skalieren umrechnen, CMYK-JPEGs ueber ihr Profil, Transformationen
-cachen. Ein schnellerer 8-Bit-Kernel (Festkomma) nur, wenn die Pipeline es
-braucht.
+Stand F2 (21.11.2026):
+
+- `asset.ReadProfile` liest, was ein Bild ueber seine Farben sagt: JPEG
+  ICC in APP2 (auch ueber mehrere Segmente), sonst EXIF Adobe RGB
+  (ColorSpace 0xFFFF mit Interop-Index R03, oder ColorSpace 2; 1 gewinnt);
+  PNG cICP > iCCP > sRGB > gAMA/cHRM (PNG 3. Ausgabe), cICP-Primaries
+  1/4/5/6/7/9/11/12/22 und Transfers 709/2.2/2.8/linear/sRGB, PQ und HLG
+  fallen durch; gAMA 1/2.2 ohne cHRM gilt als sRGB; iCCP auf 8 MiB
+  begrenzt; WebP ICCP. Graue Bilder bekommen Gray-Profile, RGB-Profile auf
+  grauen Pixeln gelten als neutrales RGB.
+- Pipeline: Profil pruefen (passt es zu den gespeicherten Pixeln?),
+  Transformation nach sRGB perceptual, je Profil (SHA-256) einmal gebacken
+  und LRU-begrenzt auf 16. Umrechnung nach dem Skalieren auf dem Thumbnail;
+  CMYK und 16 Bit vorher in voller Groesse, parallel in Baendern, mit
+  Reservierung im Decode-Budget. Kaputte oder unpassende Profile: Debug-Log
+  und sRGB. `ProcessingVersion` 2, `Stats.Converted`.
+- Fast-sRGB: macOS' sRGB Profile.icc und sRGB2014 sind fuer `cms` keine
+  Identitaet (bis 0,45 Stufen Abweichung), aendern aber keinen einzigen
+  8-Bit-Wert (alle 16,7 Mio. geprueft). Eine neue Transformation, die auf
+  einem Gitter jeder fuenften Stufe (140 608 Farben) nichts aendert, wird
+  deshalb nicht angewendet.
+- `cms.Pixels`: deckende Bloecke vormultiplizierter 8-Bit-Pixel nehmen den
+  schnellen Matrix-Pfad (25 -> 13,6 ns je Pixel).
+- `asset.EmbedProfile` schreibt ein Profil in JPEG (APP2 nach JFIF/EXIF)
+  und PNG (iCCP nach IHDR) und entfernt widersprechende Angaben.
+- Pruefung: CMYK-JPEG aus Pillow (`asset/testdata/cmyk.py`) mit dem
+  synthetischen CMYK-Profil trifft LittleCMS auf +-2; 16-Bit-PNG linear
+  zeigt, dass vor dem Skalieren gerechnet wird (7 statt 13); Fuzz ueber
+  Lesen und Einbetten 4,5 Mio. Laeufe ohne Befund.
+- Tempo (M5): Thumbnail 512 px Adobe RGB 2,4 ms, ueber CMYK-Tabelle 6 ms;
+  24 MP CMYK in voller Groesse 116 ms, 16 Bit 52 ms (zehn Kerne). Pi 5:
+  7 ms, 25 ms, 766 ms und 327 ms (vier Kerne).
+
+Nicht in F2: ein waehlbarer Arbeitsfarbraum (kommt mit F3, dann auch im
+Cache-Schluessel), WebP-Schreiben, eXIf in PNG, TIFF.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

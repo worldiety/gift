@@ -184,6 +184,27 @@ func TestAlphaIsCarriedAndPremultiplicationUndone(t *testing.T) {
 	if want := []byte{117, 26, 18, 128}; !bytes.Equal(got[:4], want) {
 		t.Errorf("premultiplied RGBA: %v, want %v", got[:4], want)
 	}
+	// Opaque runs take the fast path, which must not reach a translucent
+	// pixel among them: three blocks, the middle one with one pixel at
+	// half alpha.
+	run := make([]byte, 4*600)
+	for i := 0; i < len(run); i += 4 {
+		copy(run[i:], []byte{255, 0, 0, 255})
+	}
+	copy(run[4*300:], half)
+	out := make([]byte, len(run))
+	if err := tr.Pixels(out, RGBAPremul8, run, RGBAPremul8); err != nil {
+		t.Fatal(err)
+	}
+	for p := range 600 {
+		want := []byte{234, 51, 35, 255}
+		if p == 300 {
+			want = []byte{117, 26, 18, 128}
+		}
+		if !bytes.Equal(out[4*p:4*p+4], want) {
+			t.Fatalf("pixel %d of a premultiplied run: %v, want %v", p, out[4*p:4*p+4], want)
+		}
+	}
 	// Nothing visible stays nothing.
 	if err := tr.Pixels(got[:4], RGBAPremul8, []byte{0, 0, 0, 0}, RGBAPremul8); err != nil {
 		t.Fatal(err)

@@ -50,6 +50,9 @@ type Stats struct {
 	// honest measure: a decode count says nothing about how big the pictures
 	// were.
 	DecodedPixels, ScaledPixels uint64
+	// Converted is the number of decodes whose colours were converted
+	// into sRGB from the profile the picture declared.
+	Converted uint64
 	// Input, Decode and Pixels are the three byte budgets.
 	Input, Decode, Pixels BudgetStats
 	// CacheEntries is the number of thumbnails in the CPU cache and
@@ -82,6 +85,7 @@ func (p *Pipeline) Stats() Stats {
 		NotModified:    p.counters.notModified.Load(),
 		DecodedPixels:  p.counters.decodedPixels.Load(),
 		ScaledPixels:   p.counters.scaledPixels.Load(),
+		Converted:      p.counters.converted.Load(),
 		Input:          p.input.snapshot(),
 		Decode:         p.decode.snapshot(),
 		Pixels:         p.pixels.snapshot(),

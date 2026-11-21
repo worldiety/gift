@@ -499,7 +499,7 @@
       },
       "Stats": {
         "synopsis": "Stats is a snapshot of the pipeline's counters.",
-        "decl": "type Stats struct {\n\tRequests                                   uint64\n\tDeduplicated                               uint64\n\tPromotions                                 uint64\n\tDropped, Cancelled                         uint64\n\tReadyDropped                               uint64\n\tCompleted, Failed                          uint64\n\tBackoffRefused, Quarantined                uint64\n\tDecodes, MemoryHits, DiskHits, NotModified uint64\n\tDecodedPixels, ScaledPixels                uint64\n\tInput, Decode, Pixels                      BudgetStats\n\tCacheEntries                               int\n\tCacheHits, CacheMisses, CacheEvictions     uint64\n\tQueuedVisible, QueuedPrefetch, InFlight    int\n\tDisk                                       DiskCacheStats\n}",
+        "decl": "type Stats struct {\n\tRequests                                   uint64\n\tDeduplicated                               uint64\n\tPromotions                                 uint64\n\tDropped, Cancelled                         uint64\n\tReadyDropped                               uint64\n\tCompleted, Failed                          uint64\n\tBackoffRefused, Quarantined                uint64\n\tDecodes, MemoryHits, DiskHits, NotModified uint64\n\tDecodedPixels, ScaledPixels                uint64\n\tConverted                                  uint64\n\tInput, Decode, Pixels                      BudgetStats\n\tCacheEntries                               int\n\tCacheHits, CacheMisses, CacheEvictions     uint64\n\tQueuedVisible, QueuedPrefetch, InFlight    int\n\tDisk                                       DiskCacheStats\n}",
         "constructors": [],
         "methods": []
       },
@@ -601,6 +601,16 @@
       }
     },
     "funcs": [
+      {
+        "name": "EmbedProfile",
+        "signature": "EmbedProfile(encoded []byte, p *cms.Profile) ([]byte, error)",
+        "synopsis": "EmbedProfile returns an encoded JPEG or PNG with p embedded, so that other programs read its numbers in the colour space they are in."
+      },
+      {
+        "name": "ReadProfile",
+        "signature": "ReadProfile(encoded []byte) (*cms.Profile, error)",
+        "synopsis": "ReadProfile returns the colour profile an encoded picture declares its numbers to be in, or nil when it declares none, which means sRGB."
+      },
       {
         "name": "RegisterDecoder",
         "signature": "RegisterDecoder(mimeType string, d Decoder)",

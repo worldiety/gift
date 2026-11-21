@@ -491,6 +491,9 @@ type Pipeline struct {
 	failMu sync.Mutex
 	fails  map[ID]*failure
 
+	// colour holds the conversions of the profiles pictures declared.
+	colour transforms
+
 	counters counters
 }
 
@@ -507,7 +510,7 @@ type counters struct {
 	completed, failed, backoff, readyDrops atomic.Uint64
 	decodes, diskHits, memHits, promotions atomic.Uint64
 	decodedPixels, scaledPixels            atomic.Uint64
-	notModified, quarantined               atomic.Uint64
+	notModified, quarantined, converted    atomic.Uint64
 }
 
 // NewPipeline starts a pipeline with cfg. Close it with [Pipeline.Close].
@@ -1279,6 +1282,13 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 		// budget altogether, so it gets the unscaled figure instead.
 		need = int64(float64(info.StoredW) * float64(info.StoredH) * info.Dec.MemoryFactor())
 	}
+	// The colours the picture declares. A conversion before scaling
+	// makes an sRGB copy of the decoded picture, which is decode working
+	// memory like the rest.
+	conv := p.conversion(j.id, raw)
+	if conv != nil && conv.early(info.Model) {
+		need += int64(info.StoredW) * int64(info.StoredH) * 4
+	}
 	if err := p.decode.acquire(ctx, need); err != nil {
 		return nil, Result{}, err
 	}
@@ -1301,7 +1311,7 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 	db := img.Bounds()
 	p.counters.decodedPixels.Add(uint64(db.Dx() * db.Dy()))
 
-	t, terr := p.thumbnail(ctx, img, info, j.rung)
+	t, terr := p.thumbnail(ctx, img, info, j.rung, conv)
 	p.decode.release(need)
 	if terr != nil {
 		return nil, Result{}, terr
@@ -1327,14 +1337,24 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 	}, nil
 }
 
-// thumbnail scales and orients one decoded picture.
+// thumbnail converts, scales and orients one decoded picture.
 //
 // It scales *before* it rotates. Rotating a 24 megapixel picture costs 96 MB of
 // destination and a cache miss per pixel; rotating its thumbnail costs a
 // quarter of a megabyte. The target rectangle is computed in stored space by
 // undoing the axis swap, so the result after rotation has exactly the requested
 // longest edge.
-func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInfo, rung int) (*Thumbnail, error) {
+//
+// It converts the colours into sRGB *after* scaling, for the same reason, but
+// for CMYK and 16 bit pictures, which are converted first; see
+// [conversion.early].
+func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInfo, rung int, conv *conversion) (*Thumbnail, error) {
+	if conv != nil && conv.early(info.Model) {
+		if full, ok := conv.full(img); ok {
+			img, conv = full, nil
+			p.counters.converted.Add(1)
+		}
+	}
 	sw, sh, ow, oh := storedTarget(info, rung)
 	scaledBytes := int64(sw) * int64(sh) * 4
 	if err := p.reservePixels(ctx, scaledBytes); err != nil {
@@ -1343,6 +1363,9 @@ func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInf
 	dst := image.NewRGBA(image.Rect(0, 0, sw, sh))
 	p.cfg.Scaler.Scale(dst, dst.Bounds(), img, img.Bounds(), xdraw.Src, nil)
 	p.counters.scaledPixels.Add(uint64(sw * sh))
+	if conv != nil && conv.thumbnail(dst) {
+		p.counters.converted.Add(1)
+	}
 
 	final := dst
 	finalBytes := scaledBytes
@@ -1363,6 +1386,29 @@ func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInf
 	}
 	t.refs.Store(1)
 	return t, nil
+}
+
+// conversion is how the colours of an encoded picture become sRGB, or nil
+// when they are sRGB already or cannot be read. A profile the pipeline
+// cannot use is not an error of the picture: it is shown as sRGB, as every
+// program without colour management would, and the reason is logged.
+func (p *Pipeline) conversion(id ID, raw []byte) *conversion {
+	d, err := declaredColour(raw)
+	if err == nil && d.profile != nil && !d.fits() {
+		err = fmt.Errorf("asset: a %s profile for %s pixels", d.profile.Space(), d.stored)
+	}
+	var c *conversion
+	if err == nil && d.profile != nil {
+		c, err = p.colour.get(d.profile)
+	}
+	if err != nil {
+		if p.cfg.Logger != nil {
+			p.cfg.Logger.Debug("colour profile ignored, shown as sRGB",
+				slog.String("id", string(id)), slog.String("err", err.Error()))
+		}
+		return nil
+	}
+	return c
 }
 
 // storedTarget is the size of a rung's thumbnail: ow by oh as shown, and sw by

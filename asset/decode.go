@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -184,6 +185,10 @@ type probeInfo struct {
 	Orientation      Orientation
 	MIME             string
 	Dec              Decoder
+	// Model is the colour model the decoder declared, which tells the
+	// colour conversion whether it works on the decoded picture or on the
+	// thumbnail; see [conversion.early].
+	Model color.Model
 }
 
 // probeHeader answers dimensions, media type and orientation from the encoded
@@ -212,6 +217,7 @@ func probeHeader(raw []byte, mimeType string) (probeInfo, error) {
 		info.Orientation = exifOrientation(raw)
 	}
 	info.StoredW, info.StoredH = cfg.Width, cfg.Height
+	info.Model = cfg.ColorModel
 	info.W, info.H = info.Orientation.Oriented(cfg.Width, cfg.Height)
 	return info, nil
 }

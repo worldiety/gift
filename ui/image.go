@@ -885,6 +885,7 @@ func ImagePipelineStats() metrics.AssetStats {
 		DiskHits:       s.DiskHits,
 		DecodedPixels:  s.DecodedPixels,
 		ScaledPixels:   s.ScaledPixels,
+		Converted:      s.Converted,
 
 		InputBytes: s.Input.InUse, InputPeak: s.Input.Peak, InputLimit: s.Input.Limit,
 		DecodeBytes: s.Decode.InUse, DecodePeak: s.Decode.Peak, DecodeLimit: s.Decode.Limit,

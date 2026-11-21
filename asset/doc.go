@@ -181,4 +181,16 @@
 // fraction of the stored size when only a thumbnail is wanted; see
 // [ScaledDecoder]. It replaces the JPEG decoder only when the application
 // registers it, for the reasons given in that package.
+//
+// # Colour
+//
+// Thumbnails are sRGB, what gift paints. A picture that declares another
+// colour space, with an ICC profile or the other ways [ReadProfile] lists,
+// is converted into sRGB with package cms, after scaling, so that a
+// thumbnail pays for its own pixels and not for those of the photograph;
+// CMYK and 16 bit pictures are converted before, on every core. A camera
+// embeds the same profile in every picture, and the pipeline bakes each
+// profile once. A profile that cannot be read or does not fit the pixels is
+// logged and the picture shown as sRGB. [EmbedProfile] writes a profile into
+// a JPEG or PNG an application exports.
 package asset

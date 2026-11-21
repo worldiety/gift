@@ -90,16 +90,22 @@ func (t *Transform) Pixels(dst []byte, df Format, src []byte, sf Format) error {
 	if len(dst) < n*df.Size() {
 		return errors.New("cms: destination too small")
 	}
-	if k, ok := t.k.(*matrixShaper); ok && (sf == RGB8 || sf == RGBA8) && (df == RGB8 || df == RGBA8) && !t.identity {
-		k.run8(dst, df.Size(), src, sf.Size(), n)
-		return nil
-	}
+	// Two matrix profiles and 8 bit RGB on both sides have a fast path,
+	// which a premultiplied block can take too where it is opaque: an
+	// opaque premultiplied pixel is a straight one.
+	ms, fast := t.k.(*matrixShaper)
+	fast = fast && !t.identity && rgb8(sf) && rgb8(df)
+	straight := !sf.premultiplied() && !df.premultiplied()
 	var in, out [block * 4]float32
 	var alpha [block]float32
 	for start := 0; start < n; start += block {
 		m := min(block, n-start)
 		s := src[start*sf.Size() : (start+m)*sf.Size()]
 		d := dst[start*df.Size() : (start+m)*df.Size()]
+		if fast && (straight || opaque(s, sf)) {
+			ms.run8(d, df.Size(), s, sf.Size(), m)
+			continue
+		}
 		unpack(in[:m*t.in], alpha[:m], s, sf)
 		if t.identity {
 			copy(out[:m*t.out], in[:m*t.in])
@@ -109,6 +115,22 @@ func (t *Transform) Pixels(dst []byte, df Format, src []byte, sf Format) error {
 		pack(d, df, out[:m*t.out], alpha[:m])
 	}
 	return nil
+}
+
+func rgb8(f Format) bool { return f == RGB8 || f == RGBA8 || f == RGBAPremul8 }
+
+// opaque reports whether every pixel of s is opaque.
+func opaque(s []byte, f Format) bool {
+	if !f.alpha() {
+		return true
+	}
+	size := f.Size()
+	for i := size - 1; i < len(s); i += size {
+		if s[i] != 255 {
+			return false
+		}
+	}
+	return true
 }
 
 // unpack reads pixels into colour values from 0 to 1 and alpha, the
