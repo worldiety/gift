@@ -1269,6 +1269,244 @@
       }
     ]
   },
+  "cms": {
+    "importPath": "github.com/worldiety/gift/cms",
+    "synopsis": "Package cms is colour management in pure Go: ICC profiles and the transforms between them, as LittleCMS makes them, without cgo.",
+    "types": {
+      "Chromaticity": {
+        "synopsis": "Chromaticity is a colour's position in the CIE xy diagram: its X and Z in proportion to X+Y+Z, without its brightness.",
+        "decl": "type Chromaticity struct{ X, Y float64 }",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "XYZ",
+            "signature": "XYZ() XYZ",
+            "synopsis": "XYZ is the colour of the chromaticity at the luminance Y = 1."
+          }
+        ]
+      },
+      "Class": {
+        "synopsis": "Class is the device class of a profile.",
+        "decl": "type Class uint32",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Curve": {
+        "synopsis": "Curve is a tone response curve: how a channel's encoded value maps to the linear light it stands for.",
+        "decl": "type Curve struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Gamma",
+            "signature": "Gamma(g float64) Curve",
+            "synopsis": "Gamma is the curve Y = X^g: 2.2 for Adobe RGB, 1.8 for ProPhoto."
+          },
+          {
+            "name": "Linear",
+            "signature": "Linear() Curve",
+            "synopsis": "Linear is the identity curve of a linear colour space."
+          },
+          {
+            "name": "Parametric",
+            "signature": "Parametric(kind int, params ...float64) Curve",
+            "synopsis": "Parametric is one of the five parametric curves of the ICC specification, section 10.18, with its parameters in the order the specification lists them, g first:"
+          },
+          {
+            "name": "Rec709Curve",
+            "signature": "Rec709Curve() Curve",
+            "synopsis": "Rec709Curve is the curve of Rec."
+          },
+          {
+            "name": "SRGBCurve",
+            "signature": "SRGBCurve() Curve",
+            "synopsis": "SRGBCurve is the curve of sRGB and Display P3: a power of 2.4 with a linear foot, IEC 61966-2-1."
+          },
+          {
+            "name": "Table",
+            "signature": "Table(samples []uint16) Curve",
+            "synopsis": "Table is a sampled curve: n samples from X = 0 to 1, each a value from 0 to 65535 standing for Y from 0 to 1, linearly interpolated."
+          }
+        ],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Format": {
+        "synopsis": "Format is the layout of pixels in a byte slice.",
+        "decl": "type Format uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Size",
+            "signature": "Size() int",
+            "synopsis": "Size is the number of bytes of one pixel."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Intent": {
+        "synopsis": "Intent is the rendering intent: what a transform does with the colours the destination cannot show.",
+        "decl": "type Intent uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Options": {
+        "synopsis": "Options are the choices of a transform beyond its two profiles.",
+        "decl": "type Options struct {\n\tIntent                 Intent\n\tBlackPointCompensation bool\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Profile": {
+        "synopsis": "Profile is an ICC profile: how the colours of a device, a file or a colour space relate to the CIE colours of the profile connection space.",
+        "decl": "type Profile struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "NewGrayProfile",
+            "signature": "NewGrayProfile(description string, white Chromaticity, trc Curve) (*Profile, error)",
+            "synopsis": "NewGrayProfile makes an ICC v4 display profile of a gray space from its white and its curve."
+          },
+          {
+            "name": "NewRGBProfile",
+            "signature": "NewRGBProfile(description string, white Chromaticity, primaries [3]Chromaticity, trc Curve) (*Profile, error)",
+            "synopsis": "NewRGBProfile makes an ICC v4 display profile of an RGB space from its primaries, its white and the curve all three channels share."
+          },
+          {
+            "name": "ParseProfile",
+            "signature": "ParseProfile(data []byte) (*Profile, error)",
+            "synopsis": "ParseProfile reads an ICC profile of version 2 or 4."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Bytes",
+            "signature": "Bytes() []byte",
+            "synopsis": "Bytes is the profile as it is stored, to embed it in a file."
+          },
+          {
+            "name": "Class",
+            "signature": "Class() Class",
+            "synopsis": "Class is the device class."
+          },
+          {
+            "name": "Description",
+            "signature": "Description() string",
+            "synopsis": "Description is the profile's name, as its desc tag has it."
+          },
+          {
+            "name": "Intent",
+            "signature": "Intent() Intent",
+            "synopsis": "Intent is the rendering intent the header recommends."
+          },
+          {
+            "name": "IsMatrixShaper",
+            "signature": "IsMatrixShaper() bool",
+            "synopsis": "IsMatrixShaper reports whether the profile is a matrix profile, curves and a matrix rather than tables, as sRGB and most display profiles are."
+          },
+          {
+            "name": "MediaWhitePoint",
+            "signature": "MediaWhitePoint() XYZ",
+            "synopsis": "MediaWhitePoint is the white of the medium, relative to D50: the paper of a print, the display's white for a v4 display profile."
+          },
+          {
+            "name": "PCS",
+            "signature": "PCS() Space",
+            "synopsis": "PCS is the profile connection space, XYZ or Lab."
+          },
+          {
+            "name": "Space",
+            "signature": "Space() Space",
+            "synopsis": "Space is the colour space of the device side."
+          },
+          {
+            "name": "Version",
+            "signature": "Version() (major, minor int)",
+            "synopsis": "Version is the ICC version the profile was written for, as 2.1 or 4.3."
+          }
+        ]
+      },
+      "Space": {
+        "synopsis": "Space is the colour space of the data on one side of a profile, as the ICC signature in the profile header.",
+        "decl": "type Space uint32",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Channels",
+            "signature": "Channels() int",
+            "synopsis": "Channels is the number of channels of a colour in the space, or 0 for a space this package does not handle."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Transform": {
+        "synopsis": "Transform converts colours from one profile's device space to another's.",
+        "decl": "type Transform struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "NewTransform",
+            "signature": "NewTransform(src, dst *Profile, o Options) (*Transform, error)",
+            "synopsis": "NewTransform links the device space of src to that of dst through their profile connection spaces."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Color",
+            "signature": "Color(in ...float64) []float64",
+            "synopsis": "Color converts one colour exactly, in float64 and without the lookup table: in has a value from 0 to 1 per channel of the source space, the result one per channel of the destination."
+          },
+          {
+            "name": "Destination",
+            "signature": "Destination() Space",
+            "synopsis": ""
+          },
+          {
+            "name": "Identity",
+            "signature": "Identity() bool",
+            "synopsis": "Identity reports whether the transform changes no colour by as much as a quarter of an 8 bit step, as one from sRGB to sRGB does, so that a caller can skip it."
+          },
+          {
+            "name": "Pixels",
+            "signature": "Pixels(dst []byte, df Format, src []byte, sf Format) error",
+            "synopsis": "Pixels converts the pixels of src, in format sf, into dst, in format df."
+          },
+          {
+            "name": "Source",
+            "signature": "Source() Space",
+            "synopsis": "Source and Destination are the device spaces the transform converts between."
+          }
+        ]
+      },
+      "XYZ": {
+        "synopsis": "XYZ is a colour in CIE XYZ, with the Y of white at 1.",
+        "decl": "type XYZ struct{ X, Y, Z float64 }",
+        "constructors": [],
+        "methods": []
+      }
+    },
+    "funcs": []
+  },
   "dwd": {
     "importPath": "github.com/worldiety/gift/weather/dwd",
     "synopsis": "Package dwd is the weather of the Deutscher Wetterdienst behind the seam of package weather: the ICON-D2 model, 2.2 km over Germany and its neighbours, from the open data server, free for any use with the source named.",

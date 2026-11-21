@@ -55,6 +55,7 @@ var packages = []string{
 	"video/ffmpeg",
 	"geom",
 	"asset",
+	"cms",
 	"backend/ebiten",
 	"gifttest",
 }

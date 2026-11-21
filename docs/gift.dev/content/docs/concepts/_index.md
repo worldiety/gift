@@ -26,4 +26,5 @@ in action.
   {{< card link="testing/" title="Testing and Automation" icon="beaker" subtitle="Headless tests with gifttest, golden images and the giftauto interface." >}}
   {{< card link="diagnostics/" title="Diagnostics and Metrics" icon="chart-bar" subtitle="Counters, overflow reports, the metrics build, the debug build and logging." >}}
   {{< card link="login-and-payment/" title="Login and Payment" icon="key" subtitle="OAuth and payments in the system browser, and on the phone for a kiosk, without a web view." >}}
+  {{< card link="color-management/" title="Color Management" icon="color-swatch" subtitle="ICC profiles and conversions between color spaces, as LittleCMS does them, in pure Go." >}}
 {{< /cards >}}

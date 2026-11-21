@@ -5849,6 +5849,45 @@ Spaeter: Filmsimulationen als Look-Stufe vor dem Tonemapping (Matrix,
 HSV-Tabelle, Tonkurve, dazu Koernung und Color Chrome als eigene
 Operatoren); JPEGs ueber die inverse Tonkurve in dieselbe Kette.
 
+Stand Stufe 0 und F1 (21.11.2026):
+
+- Stufe 0: `runOptions` setzt `ColorSpace: ColorSpaceSRGB`. Vorher zeigte
+  ein MacBook (P3-Panel) reines sRGB-Rot als (255, 0, 0) des Panels, richtig
+  ist etwa (234, 51, 35). Geprueft per Bildschirmfoto vor dem Fix und im
+  Ebitengine-Code (NewMetalLayer mit kCGColorSpaceSRGB) danach.
+- F1: Paket `cms`, eigener Code im Stil von gift; die Regeln von LittleCMS
+  wie prism/meta/icc sie uebertraegt (NOTICE). Profile v2/v4 fuer RGB,
+  Gray, CMYK ueber XYZ oder Lab; lut8, lut16, mAB/mBA; curv/para; vier
+  Intents; BPC mit Schwarzpunkt-Erkennung inklusive Adobes Algorithmus fuer
+  Drucker und erzwungenem BPC bei v4-Zielen (perceptual, saturation);
+  absolut mit Medienweiss. Eingebaut: sRGB, Display P3, Adobe RGB,
+  ProPhoto, Rec.2020, linear sRGB/Rec.2020, sGray; Schreiber fuer v4.3.
+- Gebacken: zwei Matrixprofile als Kurventabellen und Matrix (Ausgabe
+  ueber Wurzel-Index, weil inverse Gammas bei Schwarz steil sind), sonst
+  CLUT 49^3 (CMYK 17^4) mit Pre- und Post-Linearisierung wie LittleCMS.
+  33^3 war in einigen Faellen schlechter als LittleCMS' eigene optimierte
+  Tabellen; 49 enthaelt jedes 9er/13er/17er/25er-Gitter.
+- Pruefstein: Pillow mit LittleCMS 2.17 in einer venv,
+  `cms/testdata/littlecms.py` schreibt `littlecms.json` (exakter Weg von
+  LittleCMS und wie weit dessen Optimierung davon abweicht). Synthetische
+  Profile in `testdata/profiles` (CMYK lut16 v2 Lab mit Papierweiss und
+  Tintenlimit, RGB mAB/mBA v4, RGB lut8 v2, Gray mit eigenem Weiss), auf
+  dem Mac zusaetzlich die Profile von macOS und die Testprofile aus
+  kovidgoyal/imaging. Ergebnis: `Color` in allen Faellen auf +-1 an
+  LittleCMS; `Pixels` nie schlechter als LittleCMS optimiert (dort bis 178
+  bei jpegli.icc, 19 bei Gray-LUTs, 17 bei cmyk.icc).
+- Robustheit: Fuzz-Test ueber Parser und Transformationen in beiden
+  Richtungen; Tabellengroessen gegen Ueberlauf geprueft, Indizes NaN-fest,
+  Kurven ueber 65535 Stuetzstellen abgelehnt, Umkehrtabellen erst bei
+  Bedarf und fuer monotone Kurven per binaerer Suche.
+- Tempo (M5, ein Kern): 8 Bit Matrix 8,6 ms je Megapixel, CMYK-Tabelle
+  38 ms, Backen einer Tabelle 3,6 ms.
+
+Offen fuer F2: Profile aus JPEG/PNG/WebP lesen und in der Pipeline nach
+dem Skalieren umrechnen, CMYK-JPEGs ueber ihr Profil, Transformationen
+cachen. Ein schnellerer 8-Bit-Kernel (Festkomma) nur, wenn die Pipeline es
+braucht.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

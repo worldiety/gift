@@ -134,6 +134,18 @@ if turbojpeg.Register() { // github.com/worldiety/gift/asset/turbojpeg
 
 Without the library, `Register` returns false and image/jpeg stays in charge.
 
+### Color Management
+
+Package `cms` converts colors between ICC profiles in pure Go, as LittleCMS
+does: version 2 and 4 profiles with curves, matrices or tables, the four
+rendering intents and black point compensation, checked against LittleCMS
+2.17. sRGB, Display P3, Adobe RGB, ProPhoto RGB and Rec. 2020 are built in:
+
+```go
+t, err := cms.NewTransform(src, cms.SRGB(), cms.Options{Intent: cms.Perceptual})
+err = t.Pixels(img.Pix, cms.RGBAPremul8, img.Pix, cms.RGBAPremul8)
+```
+
 ### Pictures And Gestures
 
 `ui/imageviewer` shows pictures as large and as interactive as the screen
