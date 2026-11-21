@@ -5781,6 +5781,74 @@ und der eigene Xft-Leser sehen 1, jedes gift-Fenster ist halb so gross.
 - Ein Workaround, bis der Desktop die Skalierung richtig meldet. Weitere
   Schluessel in der Datei werden ignoriert.
 
+## 51. Farbmanagement und RAW-Entwicklung in purem Go
+
+Anlass (21.11.2026): Der Bildsupport soll farbrichtig werden (ein CMS wie
+LittleCMS), RAWs so entwickeln, dass die in der Kamera gewaehlten
+Einstellungen gelten (Testkamera Sony A7 III, z. B. Schwarzweiss mit
+eigenem Kontrast), und spaeter Filmsimulationen bekommen, die auf JPEGs und
+bei RAWs vor dem Tonemapping auf dem ganzen Tonwertumfang wirken. Alles ohne
+cgo, CMS und RAW-Entwicklung in purem Go.
+
+Recherche (vier Teile: CMS, RAW-Dekodierung, Kamera-Looks, lightcraft):
+
+- Ebitengine kennzeichnet die Metal-Ebene ohne Angabe als Display P3; gift
+  malt sRGB. Auf jedem Mac mit P3-Panel war alles zu satt.
+- CMS: kovidgoyal/imaging `prism/meta/icc` (MIT, nur Standardbibliothek)
+  setzt ICC v2/v4, LUT-Profile, die vier Intents und BPC nach lcms um, aber
+  pro Pixel in float und auf sRGB als Ziel zugeschnitten. golittlecms ist
+  ein vollstaendiger, sehr junger Port (nur als Pruefstein). Gebackene
+  Kernel (Matrix mit Kurven, Tetraeder-CLUT 33^3) schaffen 24 MP in 14 bis
+  39 ms auf 10 Kernen.
+- RAW: keine reife Go-Bibliothek. ARW der A7 III: unkomprimiert oder cRAW
+  (32er-Bloecke, 11-Bit max/min, 7-Bit-Deltas, Kurve aus 0x7010);
+  Weissabgleich und Pegel im XOR-verschluesselten SR2SubIFD; Vorschau
+  1616x1080. dcraw (ausser Foveon) ist frei, LibRaw/rawspeed (LGPL) und
+  RawTherapee/darktable/ART (GPL) nur als Lektuere. Adobes DCP-Profile und
+  fremde Film-LUTs werden nicht ausgeliefert, nur die des Nutzers geladen.
+- Lightroom wendet bei Sony nur das Kamera-Profil an (Camera Monochrome
+  usw.), nicht die +-3-Stufen von Kontrast, Saettigung, Schaerfe und nicht
+  DRO; bei Fuji die Filmsimulation, nicht Koernung, Color Chrome, Lichter/
+  Schatten. Die MakerNote hat alles davon (Sony 0xb020, 0x2004 bis 0x2006,
+  0xb025; Fuji 0x1401, 0x1003, 0x1040 ff.).
+- lightcraft (Rust, MIT/Apache): linear Rec.2020 in f32, DNG-Farbmodell,
+  Matrizen aus spektralen Daten (rawtoaces-data, Apache), und ein Abgleich
+  jeder Datei mit ihrer eingebetteten Vorschau (3x3, HSV-Resttabelle,
+  Tonkurve ueber Quantile, Pruefung an zurueckgehaltenen Pixeln). Ein
+  Schwarzweiss-JPEG gibt nur die Tonkurve, das ist der In-Camera-Kontrast.
+
+Stufen:
+
+0. Die Ebitengine-Ebene als sRGB kennzeichnen (`runOptions`).
+1. F1, CMS-Kern `cms`: ICC lesen und schreiben (v2/v4, Matrix/TRC, Grau,
+   lut8/lut16/mAB/mBA, curv/para), PCS XYZ und Lab, Bradford, Intents
+   perceptual, relativ mit BPC, absolut; Transformationen gebacken als
+   Matrix mit Kurven oder Tetraeder-CLUT; eingebaute Profile sRGB, Display
+   P3, Adobe RGB, ProPhoto, Rec.2020. Grundlage prism/meta/icc (MIT, mit
+   Namensnennung), Pruefung gegen lcms2.
+2. F2, Pipeline farbrichtig: Farbangaben aus JPEG (APP2, EXIF R03), PNG
+   (cICP, iCCP, sRGB, gAMA/cHRM) und WebP lesen, nach dem Skalieren in den
+   Arbeitsfarbraum rechnen, Farbraum im Cache-Schluessel, Profil beim
+   Export einbetten.
+3. R1, ARW und DNG erkennen: TIFF/EP, Vorschau als Thumbnail, MakerNote
+   (Creative Style, Stufen, DRO, Weissabgleich), SR2-Entschluesselung.
+4. R2, Rohdaten: ARW unkomprimiert und cRAW, DNG (LJ92, Deflate, Kacheln);
+   Pegel, Weissabgleich, Lichterrekonstruktion, Demosaic (halbe Groesse,
+   RCD nach dem Paper), float32 in Kacheln.
+5. R3, Farbe und Tonwerte: DNG-Farbmodell mit zwei Lichtarten, Matrizen aus
+   DNG oder der dcraw-Tabelle, DCPs des Nutzers, Arbeitsraum linear
+   Rec.2020, ein Tonemapping zur Anzeige, Prozessversion.
+6. R4, Kameratreue: Creative Style schaltet Schwarzweiss, +-3 als eigene
+   Stufen, Abgleich mit der Vorschau; Standard ist kameratreu, neutral die
+   Alternative.
+7. F3, Display und weiter Farbraum: macOS P3 als Arbeitsraum, Windows ohne
+   Advanced Color und X11 das Displayprofil in einem GPU-Durchgang, Wayland
+   nichts; Override in `~/.wdygift/config.json`.
+
+Spaeter: Filmsimulationen als Look-Stufe vor dem Tonemapping (Matrix,
+HSV-Tabelle, Tonkurve, dazu Koernung und Color Chrome als eigene
+Operatoren); JPEGs ueber die inverse Tonkurve in dieselbe Kette.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

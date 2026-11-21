@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	eb "github.com/hajimehoshi/ebiten/v2"
+
 	"github.com/worldiety/gift"
 )
 
@@ -131,5 +133,13 @@ func TestLayoutFKeepsTheDensityOfItsOwn(t *testing.T) {
 				t.Errorf("density %v, want 2", got)
 			}
 		})
+	}
+}
+
+// TestTheScreenIsSRGB pins the colour space of the screen: unset, Ebitengine
+// shows gift's sRGB colours as Display P3 on macOS, too saturated.
+func TestTheScreenIsSRGB(t *testing.T) {
+	if cs := runOptions(Config{}).ColorSpace; cs != eb.ColorSpaceSRGB {
+		t.Errorf("colour space %v, want sRGB", cs)
 	}
 }

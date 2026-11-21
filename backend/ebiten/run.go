@@ -497,10 +497,7 @@ func Run(app *gift.App, cfg Config) error {
 			slog.Int("tps", busy), slog.Int("idle_tps", cfg.IdleTPS))
 	}
 
-	opts := &eb.RunGameOptions{
-		X11ClassName:    cfg.X11ClassName,
-		X11InstanceName: cfg.X11InstanceName,
-	}
+	opts := runOptions(cfg)
 	if cfg.DirectToScreen {
 		// Ebitengine asks for the interface when RunGame is called; only a
 		// game that has the method gets the final screen.
@@ -519,6 +516,24 @@ func Run(app *gift.App, cfg Config) error {
 			slog.Uint64("skipped", g.skipped))
 	}
 	return err
+}
+
+// runOptions are the options Run hands to Ebitengine.
+//
+// # The colour space
+//
+// Every colour gift paints is sRGB: the theme, text, and the pictures,
+// which package asset hands over as sRGB. Left unset, Ebitengine tags the
+// Metal layer on macOS and iOS as Display P3 instead (ebiten/v2@v2.10.5,
+// run.go), and Core Animation then shows sRGB values as the more saturated
+// P3 colours of the same numbers: pure red as the panel's red. Windows and
+// Linux are sRGB whatever this says.
+func runOptions(cfg Config) *eb.RunGameOptions {
+	return &eb.RunGameOptions{
+		X11ClassName:    cfg.X11ClassName,
+		X11InstanceName: cfg.X11InstanceName,
+		ColorSpace:      eb.ColorSpaceSRGB,
+	}
 }
 
 // nominalFor is the nominal frame interval a tick rate implies, rounded up to
