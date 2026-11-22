@@ -24,12 +24,14 @@ type Exif struct {
 }
 
 // exifWindow is how much of a file ReadExif reads: the APP1 segment of a
-// JPEG is at most 64 KiB and comes before the picture data.
+// JPEG is at most 64 KiB and comes before the picture data, and the raw file
+// of a camera has its EXIF in its first few dozen kilobytes.
 const exifWindow = 128 << 10
 
 // ReadExif reads the location and time of a photograph from the head of
-// src, without decoding it. A file without EXIF, or that is not a JPEG,
-// yields the zero Exif and no error; an error is a failure to read.
+// src, without decoding it: a JPEG, or a TIFF, as the raw files of cameras
+// are. A file without EXIF, or of another format, yields the zero Exif and
+// no error; an error is a failure to read.
 //
 // It is the function a map of photographs builds its points with; see the
 // project plan, section 37. A catalogue of thousands calls it from a few
@@ -49,11 +51,11 @@ func ReadExif(ctx context.Context, src Source) (Exif, error) {
 }
 
 // parseExif finds the APP1 segment of a JPEG and reads the GPS IFD and the
-// EXIF sub-IFD that IFD0 points to.
+// EXIF sub-IFD that IFD0 points to. A TIFF is its own EXIF.
 func parseExif(b []byte) Exif {
 	tiff := app1(b)
 	if tiff == nil {
-		return Exif{}
+		tiff = b
 	}
 	t, ok := newTiff(tiff)
 	if !ok {

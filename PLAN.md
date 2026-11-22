@@ -5991,6 +5991,45 @@ Stand F3, Teil B: Displayprofil unter X11 und Windows (22.11.2026):
   auf dem Pi gegen ein privates Xvfb (`GIFT_XVFB=1 xvfb-run`). Unter Xvfb
   weicht das Glas-Golden `glass-full` in 2 Pixeln ab, auch vor F3.
 
+Stand R1: ARW und DNG erkennen (22.11.2026):
+
+- Paket `raw`, pures Go, importiert nur `cms`. `Open(io.ReaderAt, size)`
+  liest Verzeichnisse feldweise, ohne die Pixel: `Mosaic` (Groesse,
+  Default-Crop in der Active Area, Bits, Kompression, CFA als "RGGB",
+  Schwarz je Position des 2x2-Musters, Weiss), Weissabgleich als Faktoren,
+  Vorschauen (JPEG ueber 0x201/0x202 oder Streifen, unkomprimiertes RGB),
+  `Sony` (Creative Style, Kontrast/Saettigung/Schaerfe, DRO,
+  Weissabgleich-Einstellung, Farbtemperatur, Shift, 14 Presets) und
+  `DNGColor` (ColorMatrix/ForwardMatrix/CameraCalibration 1 und 2,
+  Lichtarten, AnalogBalance, AsShotNeutral/WhiteXY, BaselineExposure).
+- SR2: privates Verzeichnis ueber 0xc634, Block 0x7200/0x7201, Schluessel
+  0x7221, entschluesselt wie dcraws `sony_decrypt` (NOTICE). Die A7 III
+  hat Schwarz (0x7310) und Weissabgleich (0x7313) auch im Klartext im
+  Verzeichnis der Rohdaten; WhiteLevel 0xc61d = 16383 stimmt (die
+  unkomprimierte Datei clippt dort), 0x787f = 15360 im SR2 nicht.
+- Im SR2-Block der A7 III stehen ausserdem, je Stil verschieden: 0x7800
+  eine 3x3-Matrix in 1/1024 (Schwarzweiss: Einheitsmatrix mal 1056),
+  0x7801 = 19, 38, 7 (Schwarzweiss-Mischung, etwa Rec.601), 0x7805/0x7806
+  eine Tonkurve aus 96 Punkten (Eingang linear bis 2^21, Ausgang bis 2^18).
+  Das ist vermutlich die JPEG-Engine der Kamera, Stoff fuer R4; R1 liest es
+  noch nicht aus.
+- `raw.Decoder` erfuellt `asset.Decoder`, `Sniffer` und das neue
+  `asset.ProfileReader` (Farbraum der Vorschau aus EXIF bzw.
+  PreviewColorSpace), ohne `asset` zu importieren; dekodiert die groesste
+  Vorschau (A7 III: 1616x1080). `asset` liest die Orientierung jetzt auch aus
+  dem ersten Verzeichnis eines TIFF und `ReadExif` auch TIFF.
+  `example-photos` registriert ARW und DNG.
+- Testdaten: sechs ARWs des Nutzers (22.11.2026: Schwarzweiss -2/0/-3,
+  Portrait mit Auto- und Schatten-Weissabgleich, Landscape ISO 16000,
+  Portrait 30 s ISO 640, unkomprimiert ISO 4000; alle DRO Auto, sRGB) vor
+  den Rohdaten abgeschnitten (eine mit grosser Vorschau), Name geloescht,
+  GPS nach Berlin verlegt: 1,1 MB in `raw/testdata`, neu erzeugt mit
+  `GIFT_RAW_FIXTURES`. Die Originale bleiben lokal in `samples/` (per
+  `.git/info/exclude` ausgeschlossen). DNG-Test gegen eine im Test gebaute
+  Datei, Fuzzing ohne Befund.
+- Fuer R4 fehlen noch: Creative Style Standard und Neutral, DRO aus und
+  Lv5, Adobe RGB.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

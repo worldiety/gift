@@ -427,8 +427,30 @@ func init() {
 
 `MemoryFactor` is the working memory per pixel of the full picture that the pipeline reserves from
 `DecodeBudget` before the decode. Overestimate rather than underestimate. A decoder is called from several
-goroutines at once and must be safe for concurrent use. EXIF orientation is only read from JPEG. The ICC profile of
-a WebP is read and converted like that of a JPEG or PNG.
+goroutines at once and must be safe for concurrent use. The orientation is read from the EXIF of a JPEG and from the
+first directory of a TIFF, which the raw files of cameras are. The ICC profile of a WebP is read and converted like
+that of a JPEG or PNG. A decoder whose format declares its colours in a way the pipeline does not read implements
+`ReadProfile` (the `asset.ProfileReader` interface) and says them itself.
+
+## Raw files of cameras
+
+Package [`raw`](https://pkg.go.dev/github.com/worldiety/gift/raw) reads Sony's ARW and Adobe's DNG in pure Go. Its
+decoder shows a raw file as the largest preview the camera embedded, the photograph as the camera rendered it, in
+its style, white balance and colour space:
+
+```go
+asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW})
+asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
+```
+
+The previews of an Alpha 7 III are 1616 by 1080 pixels, which is as large as such a picture is shown for now.
+`asset.ReadExif` reads the time and place of a raw file as of a JPEG. `raw.Open` reads the rest of what a raw file
+says without its pixels: the size and levels of the sensor data, the white balance, and of a Sony camera its
+creative style with contrast, saturation and sharpness, the dynamic range optimiser and the white balance presets,
+from the MakerNote and the encrypted SR2 block.
+
+The default `MaxEncodedBytes` of 64 MiB holds the uncompressed raw of a 24 megapixel camera, some 49 MB; raise it
+for larger sensors.
 
 ## Watching the pipeline
 
@@ -460,6 +482,8 @@ See [Diagnostics](../diagnostics/) for the measurement report.
 {{< api pkg="asset" type="Collection" >}}
 
 {{< api-funcs pkg="asset" names="RegisterDecoder,Retryable" >}}
+
+{{< api pkg="raw" type="File" >}}
 
 The fields of `asset.Config`, `asset.DiskCacheConfig` and `asset.BackoffPolicy` are documented in package
 [asset](https://pkg.go.dev/github.com/worldiety/gift/asset#Config).

@@ -15,7 +15,7 @@ From a checkout of the [repository](https://github.com/worldiety/gift):
 
 ```bash
 go run ./cmd/example-photos                       # two dozen generated pictures of up to 12 megapixels
-go run ./cmd/example-photos -dir ~/Pictures       # your own
+go run ./cmd/example-photos -dir ~/Pictures       # your own, raw files of cameras (ARW, DNG) among them
 go run ./cmd/example-photos -fullscreen -workers 2  # on a Raspberry Pi
 ```
 

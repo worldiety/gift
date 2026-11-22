@@ -14,6 +14,8 @@
 // megapixels, with fine detail to zoom into — so that the staged loading has
 // something to do. libjpeg-turbo is used when it is installed; it decodes the
 // first stage of a camera picture from the DC coefficients of its blocks.
+// Raw files of cameras, ARW and DNG, are shown as the preview the camera
+// embedded in them; see package raw.
 //
 // On Linux the touch screen is read directly, so pinching works on a
 // Raspberry Pi display; see [backend.Config.Touchscreen].
@@ -41,12 +43,13 @@ import (
 	backend "github.com/worldiety/gift/backend/ebiten"
 	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/internal/example"
+	"github.com/worldiety/gift/raw"
 	"github.com/worldiety/gift/ui"
 	"github.com/worldiety/gift/ui/imageviewer"
 )
 
 var (
-	dir        = flag.String("dir", os.Getenv("GIFT_PHOTOS_DIR"), "directory of JPEG/PNG pictures; empty generates samples")
+	dir        = flag.String("dir", os.Getenv("GIFT_PHOTOS_DIR"), "directory of JPEG, PNG and raw (ARW, DNG) pictures; empty generates samples")
 	cache      = flag.String("cache", defaultCacheDir(), "persistent thumbnail cache directory; empty disables it")
 	fullscreen = flag.Bool("fullscreen", false, "start full screen")
 	width      = flag.Int("width", 1280, "window width")
@@ -75,6 +78,8 @@ func run() error {
 		asset.RegisterDecoder(asset.MIMEJPEG, turbojpeg.Decoder{})
 		logger.Info("JPEG through libjpeg-turbo")
 	}
+	asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW})
+	asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
 	srcDir := *dir
 	if srcDir == "" {
 		var err error
@@ -87,7 +92,7 @@ func run() error {
 		return err
 	}
 	if len(sources) == 0 {
-		return fmt.Errorf("no JPEG or PNG files in %s", srcDir)
+		return fmt.Errorf("no JPEG, PNG or raw files in %s", srcDir)
 	}
 	items := make([]asset.Metadata, len(sources))
 	byID := make(map[asset.ID]asset.Source, len(sources))
@@ -209,7 +214,7 @@ func scan(dir string) ([]asset.Source, error) {
 	var names []string
 	for _, e := range entries {
 		switch strings.ToLower(filepath.Ext(e.Name())) {
-		case ".jpg", ".jpeg", ".png":
+		case ".jpg", ".jpeg", ".png", ".arw", ".dng":
 			names = append(names, e.Name())
 		}
 	}

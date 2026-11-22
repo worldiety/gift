@@ -1311,7 +1311,7 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 	// The colours the picture declares. A conversion before scaling
 	// makes an sRGB copy of the decoded picture, which is decode working
 	// memory like the rest.
-	conv := p.conversion(j.id, raw)
+	conv := p.conversion(j.id, raw, info.Dec)
 	if conv != nil && conv.early(info.Model) {
 		need += int64(info.StoredW) * int64(info.StoredH) * 4
 	}
@@ -1419,9 +1419,10 @@ func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInf
 // declares nothing is sRGB, or gray with the sRGB curve. A profile the
 // pipeline cannot use is not an error of the picture: it is shown as sRGB,
 // as every program without colour management would, and the reason is
-// logged.
-func (p *Pipeline) conversion(id ID, raw []byte) *conversion {
-	d, err := declaredColour(raw)
+// logged. dec is the decoder of the picture, which may say its colours
+// itself; see [ProfileReader].
+func (p *Pipeline) conversion(id ID, raw []byte, dec Decoder) *conversion {
+	d, err := declaredBy(raw, dec)
 	if err == nil && d.profile != nil && !d.fits() {
 		err = fmt.Errorf("asset: a %s profile for %s pixels", d.profile.Space(), d.stored)
 	}

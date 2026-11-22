@@ -56,6 +56,7 @@ var packages = []string{
 	"geom",
 	"asset",
 	"cms",
+	"raw",
 	"backend/ebiten",
 	"gifttest",
 }

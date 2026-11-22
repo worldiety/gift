@@ -155,6 +155,16 @@ converted into the profile of the display on its way to the screen, as
 macOS does by itself. `asset.EmbedProfile` writes a profile into a JPEG or PNG
 you export.
 
+Package `raw` reads Sony's ARW and Adobe's DNG in pure Go: the sensor data's
+levels and pattern, the white balance, and the settings of a Sony camera from
+its MakerNote and the SR2 block it encrypts, creative style, contrast,
+saturation, sharpness and DRO among them. Registered with the image pipeline,
+it shows a raw file as the preview the camera rendered:
+
+```go
+asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW}) // github.com/worldiety/gift/raw
+```
+
 ### Pictures And Gestures
 
 `ui/imageviewer` shows pictures as large and as interactive as the screen

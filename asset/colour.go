@@ -32,14 +32,36 @@ const maxProfile = 8 << 20
 //     cICP values that are not understood, the HDR transfers PQ and HLG
 //     among them, fall through to the next.
 //   - WebP: an ICC profile in an ICCP chunk.
+//   - Any format whose registered decoder is a [ProfileReader], as that of
+//     the raw files of cameras in github.com/worldiety/gift/raw is: what
+//     the decoder says.
 //
 // A file that declares sRGB in any of these ways yields [cms.SRGB], or
 // [cms.SGray] for a gray one. An error is a declaration that cannot be
 // read, such as a profile cut short; the pipeline then shows the picture as
 // sRGB, as it does one that declares nothing.
 func ReadProfile(encoded []byte) (*cms.Profile, error) {
-	d, err := declaredColour(encoded)
+	d, err := declaredBy(encoded, nil)
 	return d.profile, err
+}
+
+// declaredBy is what a picture declares about its colours: what dec says
+// when it is a [ProfileReader], else what the file says in the ways
+// declaredColour reads. A nil dec is the decoder the bytes sniff as.
+func declaredBy(b []byte, dec Decoder) (declared, error) {
+	if dec == nil {
+		dec, _, _ = decoderFor(b, "")
+	}
+	if pr, ok := dec.(ProfileReader); ok {
+		p, err := pr.ReadProfile(b)
+		d := declared{profile: p, from: "the decoder"}
+		if p != nil {
+			// The decoder vouches for its pixels.
+			d.stored = p.Space()
+		}
+		return d, err
+	}
+	return declaredColour(b)
 }
 
 // declared is what a picture says about its colours.

@@ -9,6 +9,8 @@ import (
 	"image/png"
 	"io"
 	"sync"
+
+	"github.com/worldiety/gift/cms"
 )
 
 // Decoder turns encoded bytes into an image.
@@ -16,7 +18,9 @@ import (
 // The two built in decoders are image/jpeg and image/png. Further formats are
 // added with [RegisterDecoder], which the project plan, section 12, step 4,
 // requires to be an explicit act: "weitere Formate nur ueber klar registrierte
-// Decoder. Kein RAW-/Video-Support."
+// Decoder. Kein RAW-/Video-Support." The raw files of cameras came later, in
+// section 51, and keep to it: github.com/worldiety/gift/raw has a decoder to
+// register.
 //
 // A Decoder is used from several goroutines at once and must be safe for
 // concurrent use.
@@ -83,6 +87,21 @@ type ScaledDecoder interface {
 // media type.
 type Sniffer interface {
 	Sniff(header []byte) bool
+}
+
+// ProfileReader is an optional extension of [Decoder]: a decoder that says
+// itself what colours the pixels it decodes are in. It is for a format whose
+// declarations [ReadProfile] does not read, and for a decoder that makes its
+// pixels in a space of its own: the preview in a camera's raw file is in the
+// colour space the camera was set to, which the raw file says in its own
+// way. github.com/worldiety/gift/raw's decoder is one.
+//
+// When the registered decoder has it, the pipeline and [ReadProfile] ask it
+// instead of reading the declarations themselves. A nil profile means sRGB,
+// as for a picture that declares nothing; an error is a declaration that
+// cannot be read, and the picture is shown as sRGB.
+type ProfileReader interface {
+	ReadProfile(encoded []byte) (*cms.Profile, error)
 }
 
 type decoderEntry struct {
@@ -215,6 +234,11 @@ func probeHeader(raw []byte, mimeType string) (probeInfo, error) {
 	}
 	if mt == MIMEJPEG {
 		info.Orientation = exifOrientation(raw)
+	} else {
+		// A TIFF, and the raw formats of cameras built on it, says the
+		// orientation in its first directory; its decoders leave it to the
+		// pipeline as a JPEG decoder does.
+		info.Orientation = tiffOrientation(raw)
 	}
 	info.StoredW, info.StoredH = cfg.Width, cfg.Height
 	info.Model = cfg.ColorModel

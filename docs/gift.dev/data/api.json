@@ -120,7 +120,7 @@
           {
             "name": "ReadExif",
             "signature": "ReadExif(ctx context.Context, src Source) (Exif, error)",
-            "synopsis": "ReadExif reads the location and time of a photograph from the head of src, without decoding it."
+            "synopsis": "ReadExif reads the location and time of a photograph from the head of src, without decoding it: a JPEG, or a TIFF, as the raw files of cameras are."
           }
         ],
         "methods": []
@@ -370,6 +370,12 @@
       "Prober": {
         "synopsis": "Prober is the optional extension for a source whose revision is cheap to establish: a local file, where a probe is a stat.",
         "decl": "type Prober interface {\n\tProbe(ctx context.Context) (ProbeResult, error)\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "ProfileReader": {
+        "synopsis": "ProfileReader is an optional extension of Decoder: a decoder that says itself what colours the pixels it decodes are in.",
+        "decl": "type ProfileReader interface {\n\tReadProfile(encoded []byte) (*cms.Profile, error)\n}",
         "constructors": [],
         "methods": []
       },
@@ -6324,6 +6330,167 @@
             "synopsis": ""
           }
         ]
+      }
+    },
+    "funcs": []
+  },
+  "raw": {
+    "importPath": "github.com/worldiety/gift/raw",
+    "synopsis": "Package raw reads the raw files of cameras in pure Go: Sony's ARW and Adobe's DNG.",
+    "types": {
+      "Compression": {
+        "synopsis": "Compression is how the mosaic of a raw file is stored: the value of the TIFF tag Compression of its directory.",
+        "decl": "type Compression uint16",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "DNGColor": {
+        "synopsis": "DNGColor is how a DNG describes the colours of its camera: the input of the colour model of the DNG specification, which maps the camera's colours to XYZ by two matrices measured under two illuminants and interpolated for the white balance of the photograph.",
+        "decl": "type DNGColor struct {\n\tVersion                                        [4]byte\n\tUniqueCameraModel                              string\n\tColorMatrix1, ColorMatrix2                     []float64\n\tForwardMatrix1, ForwardMatrix2                 []float64\n\tCameraCalibration1, CameraCalibration2         []float64\n\tCalibrationIlluminant1, CalibrationIlluminant2 int\n\tAnalogBalance                                  []float64\n\tAsShotNeutral                                  []float64\n\tAsShotWhiteXY                                  []float64\n\tBaselineExposure                               float64\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "DRO": {
+        "synopsis": "DRO is the setting of Sony's dynamic range optimiser, which lifts the shadows of the camera's pictures where it finds them, more or less strongly.",
+        "decl": "type DRO uint32",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Level",
+            "signature": "Level() int",
+            "synopsis": "Level is the level 1 to 5 of a fixed setting, 0 for off and the automatic ones."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Decoder": {
+        "synopsis": "Decoder decodes raw files for package asset, whose Decoder, Sniffer and ProfileReader it is without this package importing asset.",
+        "decl": "type Decoder struct{ Format Format }",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "Decode",
+            "signature": "Decode(r io.Reader) (image.Image, error)",
+            "synopsis": "Decode decodes the largest preview."
+          },
+          {
+            "name": "DecodeConfig",
+            "signature": "DecodeConfig(r io.Reader) (image.Config, error)",
+            "synopsis": "DecodeConfig is the size and colour model of the largest preview."
+          },
+          {
+            "name": "MemoryFactor",
+            "signature": "MemoryFactor() float64",
+            "synopsis": "MemoryFactor is that of decoding a JPEG, which the preview is; reading the metadata takes a few kilobytes."
+          },
+          {
+            "name": "ReadProfile",
+            "signature": "ReadProfile(encoded []byte) (*cms.Profile, error)",
+            "synopsis": "ReadProfile is the colour space of the largest preview, as the file declares it: the colour space the camera was set to, sRGB or Adobe RGB."
+          },
+          {
+            "name": "Sniff",
+            "signature": "Sniff(head []byte) bool",
+            "synopsis": "Sniff reports whether head begins a raw file of the decoder's format."
+          }
+        ]
+      },
+      "File": {
+        "synopsis": "File is a raw file as its metadata describes it.",
+        "decl": "type File struct {\n\tFormat       Format\n\tMake, Model  string\n\tOrientation  int\n\tMosaic       Mosaic\n\tWhiteBalance [3]float64\n\tPreviews     []Preview\n\tSony         *Sony\n\tDNG          *DNGColor\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "Open",
+            "signature": "Open(r io.ReaderAt, size int64) (*File, error)",
+            "synopsis": "Open reads the metadata of the raw file r of size bytes: its directories, the MakerNote and, of a Sony file, the encrypted SR2 block."
+          }
+        ],
+        "methods": [
+          {
+            "name": "DecodePreview",
+            "signature": "DecodePreview(p Preview) (image.Image, error)",
+            "synopsis": "DecodePreview decodes p into an image of p.Width by p.Height."
+          },
+          {
+            "name": "Largest",
+            "signature": "Largest() (Preview, bool)",
+            "synopsis": "Largest is the largest preview, ok false when the file has none."
+          },
+          {
+            "name": "PreviewData",
+            "signature": "PreviewData(p Preview) ([]byte, error)",
+            "synopsis": "PreviewData is the data of p as it is stored, a JPEG when p.JPEG."
+          }
+        ]
+      },
+      "Format": {
+        "synopsis": "Format is the kind of a raw file.",
+        "decl": "type Format uint8",
+        "constructors": [
+          {
+            "name": "Sniff",
+            "signature": "Sniff(head []byte) Format",
+            "synopsis": "Sniff reports the format of a raw file from its head, which must hold its first directory and the camera's make; the first few kilobytes do."
+          }
+        ],
+        "methods": [
+          {
+            "name": "MIME",
+            "signature": "MIME() string",
+            "synopsis": "MIME is the media type of the format, empty for FormatUnknown."
+          },
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Mosaic": {
+        "synopsis": "Mosaic describes the sensor data of a raw file: what it covers and how its numbers are to be read.",
+        "decl": "type Mosaic struct {\n\tWidth, Height   int\n\tCrop            image.Rectangle\n\tBitsPerSample   int\n\tCompression     Compression\n\tSamplesPerPixel int\n\tCFA             string\n\tBlack           [4]float64\n\tWhite           float64\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Preview": {
+        "synopsis": "Preview is a picture that the camera, or the converter that wrote a DNG, rendered from the raw data and embedded in the file: the photograph as the camera shows it, in its colours and with its settings.",
+        "decl": "type Preview struct {\n\tWidth, Height int\n\tJPEG          bool\n\tSpace         *cms.Profile\n\t// Has unexported fields.\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Sony": {
+        "synopsis": "Sony is what a Sony camera wrote about its settings into an ARW: in the MakerNote, and in the SR2 block, which the camera encrypts.",
+        "decl": "type Sony struct {\n\tModelID                         int\n\tCreativeStyle                   string\n\tContrast, Saturation, Sharpness int\n\tDRO                             DRO\n\tWhiteBalance                    WhiteBalance\n\tColorTemperature                int\n\tWhiteBalanceShift               [2]int\n\tPresets                         []WhiteBalancePreset\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "WhiteBalance": {
+        "synopsis": "WhiteBalance is the white balance setting of a Sony camera.",
+        "decl": "type WhiteBalance uint32",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "WhiteBalancePreset": {
+        "synopsis": "WhiteBalancePreset is the white balance of one of the camera's presets.",
+        "decl": "type WhiteBalancePreset struct {\n\tName    string\n\tFactors [3]float64\n}",
+        "constructors": [],
+        "methods": []
       }
     },
     "funcs": []
