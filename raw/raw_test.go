@@ -227,10 +227,20 @@ func FuzzOpen(f *testing.F) {
 		f.Add(b[:8192])
 	}
 	f.Add(buildDNG(f))
+	for _, name := range []string{"a7iii-crop-compressed.arw", "a7iii-crop-uncompressed.arw"} {
+		b, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(b)
+	}
 	f.Fuzz(func(t *testing.T, b []byte) {
 		if fl, err := Open(bytes.NewReader(b), int64(len(b))); err == nil {
 			for _, p := range fl.Previews {
 				_, _ = fl.DecodePreview(p)
+			}
+			if fl.Mosaic.Width*fl.Mosaic.Height <= 1<<20 {
+				_ = fl.Develop(Options{Half: len(b)%2 == 0}, func(Tile) {})
 			}
 		}
 	})

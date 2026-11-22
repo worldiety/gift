@@ -56,6 +56,9 @@ var (
 	ErrFormat = errors.New("raw: not a raw file this package reads")
 	// ErrNoPreview is a raw file without a preview that can be read.
 	ErrNoPreview = errors.New("raw: the file has no preview")
+	// ErrUnsupported is raw data this package does not decode, such as
+	// a sensor of other colours than red, green and blue.
+	ErrUnsupported = errors.New("raw: data this package does not decode")
 )
 
 // Compression is how the mosaic of a raw file is stored: the value of the
@@ -129,6 +132,8 @@ type File struct {
 	// segs is where the data of the mosaic lies, strips or tiles in their
 	// order.
 	segs []segment
+	// sonyCurve is the curve of Sony's compressed raw, tag 0x7010.
+	sonyCurve [4]uint16
 }
 
 // Mosaic describes the sensor data of a raw file: what it covers and how

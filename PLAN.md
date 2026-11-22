@@ -6030,6 +6030,54 @@ Stand R1: ARW und DNG erkennen (22.11.2026):
 - Fuer R4 fehlen noch: Creative Style Standard und Neutral, DRO aus und
   Lv5, Adobe RGB.
 
+Stand R2, Teil A: ARW dekodieren und entwickeln (22.11.2026):
+
+- `File.ReadMosaic`: ARW unkomprimiert (16 Bit LE) und Sony-komprimiert
+  (cRAW) wie dcraws `sony_arw2_load_raw`: Bloecke von 16 Byte fuer 16
+  Photosites einer Farbe ueber 32 Spalten, 11-Bit-Max/Min, 4-Bit-Positionen,
+  7-Bit-Stufen; Kurve aus 0x7010 (ohne Stuetzstellen die Identitaet). Wir
+  behalten 14 Bit (dcraws `>> 2` entfaellt): Schwarz 512 passt dann, die
+  Kurve reicht bis 17204, geclippte cRAW-Photosites liegen bei 16628. Ein
+  cRAW-Block ist in sich geschlossen, darum lassen sich Ausschnitte in
+  32er-Spalten herausschneiden (Fixtures). 24 MP: 50 bis 80 ms.
+- `File.Develop(Options, sink)`: Kacheln 256x256 mit 12 Photosites Rand,
+  float32, auf GOMAXPROCS Workern; Spiegelung an den Datenraendern mit
+  gerader Verschiebung (Farbe bleibt). Pegel je Position des 2x2-Musters,
+  Weissabgleich (kleinster Faktor 1, also Weiss = der zuerst clippende
+  Kanal = 1). `DevelopLinear` sammelt alles (12 Byte/Pixel).
+- Lichter: `HighlightsReconstruct` (Standard) schaetzt einen geclippten
+  Kanal aus dem Mittel der anderen Farben der 3x3-Nachbarn mal dem
+  Verhaeltnis, das die nicht geclippten Bloecke bis zwei neben geclippten
+  im ganzen Bild haben; in allen drei geclippt: alle Kanaele auf den
+  hoechsten Clip-Pegel (neutral, heller als die Umgebung). `HighlightsClip`
+  klemmt global bei 1. Ein lokales Klemmen nur an geclippten Stellen
+  verworfen: die Sonne wurde dunkler als ihr Hof. Clip ab 97 % von Weiss,
+  weil cRAW nahe Weiss in Stufen bis 3 % quantisiert.
+- Halbe Groesse: Rot und Blau je mit 9/3/3/1 Sechzehnteln auf die
+  Blockmitte interpoliert, sonst Farbsaeume an jeder Kante.
+- RCD nach der Beschreibung von Luis Sanz Rodriguez neu geschrieben
+  (Schritte 1 bis 4.3, eps 1e-5). Synthetisch: grau exakt, an Kanten
+  mittlerer Fehler 0,0008 gegen 0,0044 bilinear, feine Struktur 0,0024
+  gegen 0,012; nur bei voellig unabhaengig schwankenden Kanaelen ist
+  bilinear besser (RCD setzt glatte Farbdifferenzen voraus).
+- Pruefung an den Kamera-JPEGs: der Crop deckt sich pixelgenau (Korrelation
+  der Hochpaesse maximal bei Versatz 0); 100-%-Ausschnitte ohne Labyrinth-
+  oder Reissverschlussmuster. 24 MP voll in 450 ms, halb in 130 ms (M3, mit
+  Dekodieren).
+- Schwarzweiss-Vergleich (Frage des Nutzers): Kamera-JPEGs halbiert als
+  Wahrheit, Bayer-Mosaik daraus, Grau mit der Mischung der Kamera 19:38:7
+  (SR2 0x7801), PSNR auf Gamma 2.2. A = RCD + Mischung, B = Luminanz
+  (R+2G+B)/4 aus dem Mosaik durch Demodulation (Chroma bei (pi,pi) und
+  (pi,0)/(0,pi) tiefpassgefiltert, sigma 1,5) plus Mischkorrektur aus der
+  geglaetteten Chroma, C = RCD-Luminanz 1:2:1 plus geglaettete
+  Mischkorrektur, D = B wo die Chroma glatt ist, C an Farbkanten.
+  Ergebnis (dB, A/B/C/D): Wiese 43,8/43,2/44,0/44,5; Landschaft
+  34,7/36,8/35,0/35,8; See 45,0/44,4/45,3/45,4; Pflanze vor Lampe
+  43,6/37,8/43,4/43,2. B gewinnt bei feiner Textur, verliert an harten
+  Farbkanten stark; D meist +0,5 bis +1 dB. Sichtbar bei ISO 640 kaum, bei
+  ISO 16000 zeigt B mehr Feinzeichnung und mehr Korn. Fuer R4: Schwarzweiss
+  zunaechst mit RCD + Mischung wie die Kamera; D als moegliche Option.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

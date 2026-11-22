@@ -6417,9 +6417,24 @@
         ],
         "methods": [
           {
+            "name": "Bounds",
+            "signature": "Bounds(opt Options) image.Rectangle",
+            "synopsis": "Bounds is the size of the picture File.Develop makes with opt."
+          },
+          {
             "name": "DecodePreview",
             "signature": "DecodePreview(p Preview) (image.Image, error)",
             "synopsis": "DecodePreview decodes p into an image of p.Width by p.Height."
+          },
+          {
+            "name": "Develop",
+            "signature": "Develop(opt Options, sink func(Tile)) error",
+            "synopsis": "Develop develops the raw data of f into the picture its crop shows: levels, white balance, highlights and demosaicing, in tiles of float32 that are handed to sink as they are done."
+          },
+          {
+            "name": "DevelopLinear",
+            "signature": "DevelopLinear(opt Options) (*Linear, error)",
+            "synopsis": "DevelopLinear develops f into one Linear, twelve bytes a pixel: some 290 megabytes for 24 megapixels, which is what File.Develop avoids."
           },
           {
             "name": "Largest",
@@ -6430,6 +6445,11 @@
             "name": "PreviewData",
             "signature": "PreviewData(p Preview) ([]byte, error)",
             "synopsis": "PreviewData is the data of p as it is stored, a JPEG when p.JPEG."
+          },
+          {
+            "name": "ReadMosaic",
+            "signature": "ReadMosaic() ([]uint16, error)",
+            "synopsis": "ReadMosaic decodes the sensor data: Mosaic.Width by Mosaic.Height values, row by row, in the units of Mosaic.Black and Mosaic.White, the margins beyond the crop included."
           }
         ]
       },
@@ -6456,9 +6476,27 @@
           }
         ]
       },
+      "Highlights": {
+        "synopsis": "Highlights is what File.Develop does with photosites that clipped.",
+        "decl": "type Highlights uint8",
+        "constructors": [],
+        "methods": []
+      },
+      "Linear": {
+        "synopsis": "Linear is a developed picture held whole: three planes of float32, as Tile describes them.",
+        "decl": "type Linear struct {\n\tRect    image.Rectangle\n\tR, G, B []float32\n}",
+        "constructors": [],
+        "methods": []
+      },
       "Mosaic": {
         "synopsis": "Mosaic describes the sensor data of a raw file: what it covers and how its numbers are to be read.",
         "decl": "type Mosaic struct {\n\tWidth, Height   int\n\tCrop            image.Rectangle\n\tBitsPerSample   int\n\tCompression     Compression\n\tSamplesPerPixel int\n\tCFA             string\n\tBlack           [4]float64\n\tWhite           float64\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Options": {
+        "synopsis": "Options says how File.Develop develops the raw data.",
+        "decl": "type Options struct {\n\tHalf         bool\n\tWhiteBalance [3]float64\n\tHighlights   Highlights\n\tWorkers      int\n}",
         "constructors": [],
         "methods": []
       },
@@ -6471,6 +6509,12 @@
       "Sony": {
         "synopsis": "Sony is what a Sony camera wrote about its settings into an ARW: in the MakerNote, and in the SR2 block, which the camera encrypts.",
         "decl": "type Sony struct {\n\tModelID                         int\n\tCreativeStyle                   string\n\tContrast, Saturation, Sharpness int\n\tDRO                             DRO\n\tWhiteBalance                    WhiteBalance\n\tColorTemperature                int\n\tWhiteBalanceShift               [2]int\n\tPresets                         []WhiteBalancePreset\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Tile": {
+        "synopsis": "Tile is a part of the developed picture: linear light in the colours of the camera, white balanced, black at 0 and the level at which the first channel clips, which is white, at 1.",
+        "decl": "type Tile struct {\n\tRect    image.Rectangle\n\tR, G, B []float32\n\tStride  int\n}",
         "constructors": [],
         "methods": []
       },

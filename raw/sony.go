@@ -175,6 +175,12 @@ func (f *File) readSony(ifd0, exif, mosaic dir) {
 		}
 	}
 
+	if v := t.intsOf(mosaic, 0x7010); len(v) == 4 {
+		for i := range 4 {
+			f.sonyCurve[i] = uint16(v[i])
+		}
+	}
+
 	sr2 := sr2Block(t, ifd0)
 	m := &f.Mosaic
 	// Black level and white balance: in the directory of the mosaic when

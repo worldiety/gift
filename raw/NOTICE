@@ -1,6 +1,7 @@
 Package raw decrypts Sony's SR2 block as the function sony_decrypt of dcraw
-does, and reads the levels and the white balance of that block from the tags
-dcraw reads them from.
+does, reads the levels and the white balance of that block from the tags
+dcraw reads them from, and decodes Sony's compressed raw and its curve as
+sony_arw2_load_raw and the handling of tag 0x7010 do.
 
 dcraw
 https://www.dechifro.org/dcraw/
@@ -9,6 +10,9 @@ Copyright 1997-2018 by Dave Coffin, dcoffin a cybercom o net
 dcraw.c states: "No license is required to download and use dcraw.c." Its
 restrictions apply only to the functions it marks RESTRICTED, those for
 Foveon sensors, of which this package uses none.
+
+Its demosaicing is Ratio Corrected Demosaicing (RCD), as Luis Sanz Rodríguez
+described it in 2017, written anew for this package.
 
 No code of LibRaw, RawSpeed, RawTherapee, darktable or ART, which are under
 the LGPL or the GPL, is in this package.
