@@ -158,11 +158,17 @@ you export.
 Package `raw` reads Sony's ARW and Adobe's DNG in pure Go: the sensor data's
 levels and pattern, the white balance, and the settings of a Sony camera from
 its MakerNote and the SR2 block it encrypts, creative style, contrast,
-saturation, sharpness and DRO among them. Registered with the image pipeline,
-it shows a raw file as the preview the camera rendered:
+saturation, sharpness and DRO among them. It develops the raw data, Sony's
+compressed raw and the lossless JPEG of DNG among its forms, in float32 tiles
+on all cores: highlights reconstructed, demosaiced by RCD, the colours of the
+camera through its profile in the DNG color model — a DNG's own, the matrix
+of a Sony camera, or a `.dcp` of your own — and a tone curve fitted to the
+pictures of an Alpha 7 III, into sRGB, Display P3 or any matrix profile.
+Registered with the image pipeline, it shows a raw file as the preview the
+camera rendered, or developed:
 
 ```go
-asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW}) // github.com/worldiety/gift/raw
+asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW, Develop: true}) // github.com/worldiety/gift/raw
 ```
 
 ### Pictures And Gestures

@@ -73,7 +73,7 @@ func synthetic(w, h int, px func(x, y int) [3]float64) (*File, []uint16) {
 	return f, raw
 }
 
-func develop(t *testing.T, f *File, raw []uint16, opt Options) *Linear {
+func develop(t *testing.T, f *File, raw []uint16, opt Options) *Planes {
 	t.Helper()
 	d, err := newDeveloper(f, raw, opt)
 	if err != nil {
@@ -238,9 +238,9 @@ func TestHighlights(t *testing.T) {
 }
 
 // collect runs d into one picture of bounds r.
-func collect(t *testing.T, r image.Rectangle, d *developer) *Linear {
+func collect(t *testing.T, r image.Rectangle, d *developer) *Planes {
 	n := r.Dx() * r.Dy()
-	l := &Linear{Rect: r, R: make([]float32, n), G: make([]float32, n), B: make([]float32, n)}
+	l := &Planes{Rect: r, R: make([]float32, n), G: make([]float32, n), B: make([]float32, n)}
 	var mu sync.Mutex
 	if err := d.run(func(tl Tile) {
 		mu.Lock()

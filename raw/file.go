@@ -135,6 +135,8 @@ type File struct {
 	// sonyCurve is the curve of Sony's compressed raw, tag 0x7010.
 	sonyCurve [4]uint16
 	layout    layout
+	// profile is the camera profile a DNG carries, nil for none.
+	profile *Profile
 }
 
 // Mosaic describes the sensor data of a raw file: what it covers and how

@@ -6101,6 +6101,63 @@ Stand R2, Teil B: DNG-Rohdaten (22.11.2026):
   lineare DNG (schon demosaikt, z. B. ProRAW), OpcodeLists (Gain Maps der
   Handys, Objektivkorrekturen).
 
+Stand R3: Farbe und Tonwerte (22.11.2026):
+
+- Farbmodell nach DNG-Spezifikation (`colour.go`): XYZ->Kamera = AB*CC*CM,
+  zwei Kalibrierungen linear im Kehrwert der Farbtemperatur gewichtet
+  (McCamy aus xy; EXIF-Lichtarten 1 bis 34 auf Temperaturen), Neutral ->
+  Weiss per Iteration (halbe Schritte), mit ForwardMatrix FM*D^-1*(AB*CC)^-1,
+  sonst Bradford(Weiss->D50)*CM^-1; normiert auf Y = 1 fuer das Neutral.
+  CameraCalibration nur bei passender oder leerer Signatur. AsShotWhiteXY
+  ergibt den Weissabgleich ueber das Profil.
+- `Profile`: aus der DNG (IFD 0, sonst Rohdaten-Verzeichnis), aus der
+  Sony-Tabelle (dcraw 9.28 adobe_coeff, D65; Modelle ausgeschrieben statt
+  Praefixe, sonst bekaeme die A7 IV die Matrix der A7; SLT mit V) oder als
+  `.dcp` ueber `ParseProfile` (Magic 0x4352, "IIRC"/"MMCR"). HueSatMap 1/2
+  (mit der Kalibrierung getauscht und gemischt), LookTable, Encoding sRGB,
+  ProfileToneCurve (monoton geprueft, Fritsch-Carlson), BaselineExposure-
+  Offset. Tabellen: Wert aussen, Farbton, Saettigung innen (wie lightcraft,
+  MIT/Apache, gegengelesen), in HSV von linearem ProPhoto; Werte ueber 1
+  werden nur gesenkt. Unbekannte Kamera: `ErrUnsupported`. Drei Lichtarten
+  (DNG 1.6) als die ersten zwei, DefaultBlackRender nicht angewendet.
+- Pipeline (`render.go`): Kamera -> ProPhoto (Tabellen, Belichtung
+  dazwischen) -> linear Rec. 2020 = `OutputScene`; `OutputPicture` mit
+  Tonkurve, Gamut-Kompression und Kurve des Zielraums (`cms`-Shaper, nur
+  Matrixprofile), `OutputCamera` wie R2. `Options.Profile/Exposure/Space`,
+  `File.RGBA/RGBA64`, `DevelopLinear` heisst jetzt `DevelopPlanes`,
+  `ProcessVersion` 1. Kosten: 30 ms bei 6 MP, 55 ms bei 24 MP (M5).
+- Tonkurve: log-logistisch x^c/(x^c+k^c), skaliert auf 1 bei W, an die
+  Kamera-JPEGs angepasst (Szenen-Y gegen JPEG-Y, Median je Viertelblende,
+  fuenf Bilder): c = 1,52, k = 0,22, W = 3, auf +-3 Stufen (8 Bit) genau.
+  Mittelgrau 3,7 Blenden unter dem Kamera-Weiss, Kamera-Weiss bei 245.
+  Angewendet je Kanal in Rec. 2020: gegen die JPEGs (8x8-Mittel, Delta E 76
+  Median) Tageslicht 2,2/1,5/5,4/3,4 statt 2,3/1,7/5,4/3,4 farbtonerhaltend
+  in ProPhoto, Kunstlicht 3,7 statt 6,4: die Kameras ziehen helles Orange zu
+  Gelb, farbtonerhaltend wurde die Lampenwand pfirsichfarben. Die Tonkurve
+  eines DCP wirkt farbtonerhaltend in ProPhoto wie bei Adobe.
+- Gamut: Abstand zur Achromaten (a-c)/a ab 0,9 per Potenzkurve (p = 3)
+  gestaucht, 1,3 erreicht den Rand; der Rand behaelt 98 % Saettigung. Vor
+  der Kurve in Rec. 2020, nach der Matrix im Zielraum, dazu Skalierung > 1.
+- Lichter: geclippte Photosites nur aus nicht geclippten Nachbarn
+  geschaetzt, mit paarweisen Verhaeltnissen (geometrisches Mittel am Rand);
+  aendert die Messwerte nicht messbar.
+- Pruefung: Crops gegen gemessene Lab-Werte der Kamera-JPEGs (3x3 Felder):
+  Tageslicht Delta E 3,0 im Mittel, Lampe 3,6 (vorher 15 bis 17 an der
+  Wand). Unit-Tests fuer Weissraeume, McCamy, ein und zwei Matrizen
+  (Rundlauf Neutral <-> Weiss 2500 bis 7500 K), ForwardMatrix gegen
+  ColorMatrix, AB/CC, DCP-Parser, HSV-Tabellen, Kurven, Gamut, Grau bleibt
+  grau in jedem Raum, Profil eines Nutzers wirkt. Fuzz: 30 Mio. Laeufe
+  Parser, 14 Mio. Datei mit Entwicklung, ohne Befund. Galerie mit
+  `example-photos -develop` im echten Fenster geprueft.
+- Galerie: `raw.Decoder{Develop, Space}` entwickelt (halbe Groesse fuer
+  Thumbnails, ScaledDecoder), faellt ohne Rohdaten oder Matrix auf die
+  Vorschau zurueck. Neues `asset.Versioned`: die Version des Decoders geht
+  in den Cache-Schluessel (`Key.Decoder`), leer bleibt jeder Schluessel wie
+  er war.
+- Offen fuer R4: Schwarzweiss-Stil wird farbig entwickelt; Sonys JPEG bei
+  Kunstlicht waermer und satter (Portrait 3 bis 12 % satter als wir); DRO
+  Auto hebt in den JPEGs die Schatten. Eine echte DNG fehlt weiter.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

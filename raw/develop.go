@@ -3,11 +3,15 @@ package raw
 import (
 	"fmt"
 	"image"
+	"math"
 	"runtime"
 	"sync"
+
+	"github.com/worldiety/gift/cms"
 )
 
-// Options says how [File.Develop] develops the raw data.
+// Options says how [File.Develop] develops the raw data. The zero value
+// develops the picture the file holds, in sRGB, at full size.
 type Options struct {
 	// Half develops at half the width and height, each 2 by 2 block of
 	// photosites one pixel, without demosaicing: a fourth of the work, and
@@ -21,6 +25,19 @@ type Options struct {
 	Highlights Highlights
 	// Workers bounds the goroutines that develop tiles; zero is GOMAXPROCS.
 	Workers int
+
+	// Output is what comes out: a picture, the light of the scene, or the
+	// colours of the camera.
+	Output Output
+	// Profile is the camera profile the colours of the camera are mapped
+	// by; nil is the file's own, [File.Profile].
+	Profile *Profile
+	// Exposure brightens by as many stops, on top of the exposure the file
+	// and the profile ask for.
+	Exposure float64
+	// Space is the colour space of [OutputPicture]: an RGB profile of
+	// curves and a matrix, as most are; nil is sRGB.
+	Space *cms.Profile
 }
 
 // Highlights is what [File.Develop] does with photosites that clipped.
@@ -43,10 +60,11 @@ const (
 	HighlightsClip
 )
 
-// Tile is a part of the developed picture: linear light in the colours of
-// the camera, white balanced, black at 0 and the level at which the first
-// channel clips, which is white, at 1. Brighter colours, and highlights
-// that were reconstructed, are above 1.
+// Tile is a part of the developed picture, as [Options.Output] has it: a
+// picture's encoded values from 0 to 1, or linear light, of the scene or in
+// the colours of the camera, black at 0 and the level at which the first
+// channel of the camera clips, which is white, at 1. Linear light that is
+// brighter, and highlights that were reconstructed, are above 1.
 type Tile struct {
 	// Rect is where the tile lies in the developed picture, whose origin
 	// is the top left corner of the crop.
@@ -65,7 +83,8 @@ const (
 )
 
 // Develop develops the raw data of f into the picture its crop shows:
-// levels, white balance, highlights and demosaicing, in tiles of float32
+// levels, white balance, highlights and demosaicing, then the colours of
+// the camera's profile, exposure and the tone curve, in tiles of float32
 // that are handed to sink as they are done. sink is called from several
 // goroutines at once, and a tile's planes are reused once it returns.
 //
@@ -73,6 +92,10 @@ const (
 // [Options.Half], before the orientation of the file is applied; [Bounds]
 // tells it.
 func (f *File) Develop(opt Options, sink func(Tile)) error {
+	k, err := f.newPipe(opt, f.whiteBalance(opt))
+	if err != nil {
+		return err
+	}
 	raw, err := f.ReadMosaic()
 	if err != nil {
 		return err
@@ -81,7 +104,27 @@ func (f *File) Develop(opt Options, sink func(Tile)) error {
 	if err != nil {
 		return err
 	}
+	if k != nil {
+		next := sink
+		sink = func(t Tile) {
+			k.run(t)
+			next(t)
+		}
+	}
 	return d.run(sink)
+}
+
+// whiteBalance is the white balance opt develops with: its own, or the
+// file's, or none.
+func (f *File) whiteBalance(opt Options) [3]float64 {
+	wb := opt.WhiteBalance
+	if wb == ([3]float64{}) {
+		wb = f.WhiteBalance
+	}
+	if !(wb[0] > 0 && wb[1] > 0 && wb[2] > 0) {
+		wb = [3]float64{1, 1, 1}
+	}
+	return wb
 }
 
 // Bounds is the size of the picture [File.Develop] makes with opt.
@@ -93,19 +136,19 @@ func (f *File) Bounds(opt Options) image.Rectangle {
 	return image.Rect(0, 0, c.Dx(), c.Dy())
 }
 
-// Linear is a developed picture held whole: three planes of float32, as
+// Planes is a developed picture held whole: three planes of float32, as
 // [Tile] describes them.
-type Linear struct {
+type Planes struct {
 	Rect    image.Rectangle
 	R, G, B []float32
 }
 
-// DevelopLinear develops f into one [Linear], twelve bytes a pixel: some
+// DevelopPlanes develops f into one [Planes], twelve bytes a pixel: some
 // 290 megabytes for 24 megapixels, which is what [File.Develop] avoids.
-func (f *File) DevelopLinear(opt Options) (*Linear, error) {
+func (f *File) DevelopPlanes(opt Options) (*Planes, error) {
 	r := f.Bounds(opt)
 	n := r.Dx() * r.Dy()
-	l := &Linear{Rect: r, R: make([]float32, n), G: make([]float32, n), B: make([]float32, n)}
+	l := &Planes{Rect: r, R: make([]float32, n), G: make([]float32, n), B: make([]float32, n)}
 	err := f.Develop(opt, func(t Tile) {
 		for y := range t.Rect.Dy() {
 			o := (t.Rect.Min.Y+y)*r.Dx() + t.Rect.Min.X
@@ -144,7 +187,9 @@ type developer struct {
 	// one that clipped; nil when nothing clipped.
 	clip   []uint8
 	bw, bh int
-	ratio  [3]float32
+	// ratio is the colour around what clipped: ratio[c][k] is how much
+	// brighter colour c is than colour k there.
+	ratio [3][3]float32
 	// blackH and blackV are DNG's black level of each column and row
 	// above black, nil for none.
 	blackH, blackV []float32
@@ -167,13 +212,7 @@ func newDeveloper(f *File, raw []uint16, opt Options) (*developer, error) {
 			d.colour[p] = 2
 		}
 	}
-	wb := opt.WhiteBalance
-	if wb == ([3]float64{}) {
-		wb = f.WhiteBalance
-	}
-	if wb[0] <= 0 || wb[1] <= 0 || wb[2] <= 0 {
-		wb = [3]float64{1, 1, 1}
-	}
+	wb := f.whiteBalance(opt)
 	lo := min(wb[0], wb[1], wb[2])
 	for c := range 3 {
 		d.level[c] = float32(wb[c] / lo)
@@ -292,11 +331,12 @@ func (d *developer) block(x, y int) uint8 {
 }
 
 // borderRatios measures the colour of the pixels around clipped areas: for
-// each colour, its ratio to the mean of the other two, over the blocks that
-// did not clip but lie within two of one that did. A clipped channel is
-// estimated as that ratio times the mean of the others.
-func (d *developer) borderRatios() [3]float32 {
-	var sum [3]float64
+// each two colours, how much brighter the one is than the other, the
+// geometric mean over the blocks that did not clip but lie within two of
+// one that did. A clipped channel is estimated from one that did not clip
+// by that ratio.
+func (d *developer) borderRatios() [3][3]float32 {
+	var sum [3][3]float64
 	var n int
 	for by := range d.bh {
 		for bx := range d.bw {
@@ -304,21 +344,24 @@ func (d *developer) borderRatios() [3]float32 {
 				continue
 			}
 			v := d.blockRGB(bx, by)
+			if min(v[0], v[1], v[2]) <= 0.02 {
+				continue
+			}
 			for c := range 3 {
-				o := (v[(c+1)%3] + v[(c+2)%3]) / 2
-				if o <= 0.05 {
-					goto next
+				for k := range 3 {
+					sum[c][k] += math.Log(float64(min(max(v[c]/v[k], 1.0/16), 16)))
 				}
-				sum[c] += float64(min(max(v[c]/o, 0.25), 4))
 			}
 			n++
-		next:
 		}
 	}
-	r := [3]float32{1, 1, 1}
-	if n > 0 {
-		for c := range 3 {
-			r[c] = float32(sum[c] / float64(n))
+	var r [3][3]float32
+	for c := range 3 {
+		for k := range 3 {
+			r[c][k] = 1
+			if n > 0 {
+				r[c][k] = float32(math.Exp(sum[c][k] / float64(n)))
+			}
 		}
 	}
 	return r
@@ -350,7 +393,12 @@ func (d *developer) blockRGB(bx, by int) [3]float32 {
 	return v
 }
 
-// highlight is the photosite at (x, y) with the highlights treated.
+// highlight is the photosite at (x, y) with the highlights treated: a
+// photosite that clipped is estimated from the photosites of the other
+// colours around it that did not, each by the ratio of the colours around
+// the clipped areas, and is never made darker than it is. Where every
+// other colour around clipped too, it is white at the level of the
+// brightest channel.
 func (d *developer) highlight(x, y int) float32 {
 	v := d.value(x, y)
 	if d.opt.Highlights == HighlightsClip {
@@ -359,38 +407,31 @@ func (d *developer) highlight(x, y int) float32 {
 	if d.block(x, y) == 0 || !d.clipped(x, y) {
 		return v
 	}
-	// The other colours around: the mean of each over the 3 by 3
-	// photosites, and whether they clipped too.
 	c := d.colourAt(x, y)
 	var sum [3]float32
 	var n [3]int
-	all := true
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			k := d.colourAt(x+dx, y+dy)
-			if k == c {
+			if k == c || d.clipped(x+dx, y+dy) {
 				continue
 			}
 			sum[k] += d.value(x+dx, y+dy)
 			n[k]++
-			if !d.clipped(x+dx, y+dy) {
-				all = false
-			}
 		}
 	}
-	if all {
+	var est float32
+	var m int
+	for k := range 3 {
+		if n[k] > 0 {
+			est += sum[k] / float32(n[k]) * d.ratio[c][k]
+			m++
+		}
+	}
+	if m == 0 {
 		return d.top
 	}
-	var o float32
-	var k int
-	for i := range 3 {
-		if n[i] > 0 {
-			o += sum[i] / float32(n[i])
-			k++
-		}
-	}
-	o /= float32(k)
-	return min(max(v, o*d.ratio[c]), d.top)
+	return min(max(v, est/float32(m)), d.top)
 }
 
 func (d *developer) colourAt(x, y int) int {

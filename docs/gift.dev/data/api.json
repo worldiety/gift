@@ -246,7 +246,7 @@
       },
       "Key": {
         "synopsis": "Key identifies one cached thumbnail.",
-        "decl": "type Key struct {\n\tNamespace         string\n\tID                ID\n\tRevision          string\n\tSize              int\n\tOrientation       Orientation\n\tProcessingVersion uint32\n\tSpace             string\n}",
+        "decl": "type Key struct {\n\tNamespace         string\n\tID                ID\n\tRevision          string\n\tSize              int\n\tOrientation       Orientation\n\tProcessingVersion uint32\n\tSpace             string\n\tDecoder           string\n}",
         "constructors": [],
         "methods": [
           {
@@ -609,6 +609,12 @@
             "synopsis": "Cancel withdraws the request."
           }
         ]
+      },
+      "Versioned": {
+        "synopsis": "Versioned is an optional extension of Decoder: a decoder whose pictures change with a version of its own, beyond gift's ProcessingVersion, such as one that develops the raw data of cameras by a process that improves.",
+        "decl": "type Versioned interface{ DecoderVersion() string }",
+        "constructors": [],
+        "methods": []
       }
     },
     "funcs": [
@@ -6352,7 +6358,7 @@
       },
       "DNGColor": {
         "synopsis": "DNGColor is how a DNG describes the colours of its camera: the input of the colour model of the DNG specification, which maps the camera's colours to XYZ by two matrices measured under two illuminants and interpolated for the white balance of the photograph.",
-        "decl": "type DNGColor struct {\n\tVersion                                        [4]byte\n\tUniqueCameraModel                              string\n\tColorMatrix1, ColorMatrix2                     []float64\n\tForwardMatrix1, ForwardMatrix2                 []float64\n\tCameraCalibration1, CameraCalibration2         []float64\n\tCalibrationIlluminant1, CalibrationIlluminant2 int\n\tAnalogBalance                                  []float64\n\tAsShotNeutral                                  []float64\n\tAsShotWhiteXY                                  []float64\n\tBaselineExposure                               float64\n}",
+        "decl": "type DNGColor struct {\n\tVersion                                        [4]byte\n\tUniqueCameraModel                              string\n\tColorMatrix1, ColorMatrix2                     []float64\n\tForwardMatrix1, ForwardMatrix2                 []float64\n\tCameraCalibration1, CameraCalibration2         []float64\n\tCalibrationIlluminant1, CalibrationIlluminant2 int\n\tAnalogBalance                                  []float64\n\tAsShotNeutral                                  []float64\n\tAsShotWhiteXY                                  []float64\n\tBaselineExposure                               float64\n\tCameraCalibrationSignature                     string\n}",
         "constructors": [],
         "methods": []
       },
@@ -6374,19 +6380,29 @@
         ]
       },
       "Decoder": {
-        "synopsis": "Decoder decodes raw files for package asset, whose Decoder, Sniffer and ProfileReader it is without this package importing asset.",
-        "decl": "type Decoder struct{ Format Format }",
+        "synopsis": "Decoder decodes raw files for package asset, whose Decoder, ScaledDecoder, Sniffer, ProfileReader and Versioned it is without this package importing asset.",
+        "decl": "type Decoder struct {\n\tFormat  Format\n\tDevelop bool\n\tSpace   *cms.Profile\n}",
         "constructors": [],
         "methods": [
           {
             "name": "Decode",
             "signature": "Decode(r io.Reader) (image.Image, error)",
-            "synopsis": "Decode decodes the largest preview."
+            "synopsis": "Decode decodes the picture whole: the raw data developed at full size, or the largest preview."
           },
           {
             "name": "DecodeConfig",
             "signature": "DecodeConfig(r io.Reader) (image.Config, error)",
-            "synopsis": "DecodeConfig is the size and colour model of the largest preview."
+            "synopsis": "DecodeConfig is the size of the picture: the crop of the raw data when it is developed, else the largest preview."
+          },
+          {
+            "name": "DecodeScaled",
+            "signature": "DecodeScaled(r io.Reader, minW, minH int) (image.Image, error)",
+            "synopsis": "DecodeScaled develops the raw data at half size when that is at least minW by minH, at full size otherwise; a preview it decodes whole."
+          },
+          {
+            "name": "DecoderVersion",
+            "signature": "DecoderVersion() string",
+            "synopsis": "DecoderVersion is what the pictures of a developing decoder depend on, for the keys of a cache of them: ProcessVersion and the colour space; empty for previews, which are the camera's."
           },
           {
             "name": "MemoryFactor",
@@ -6396,7 +6412,12 @@
           {
             "name": "ReadProfile",
             "signature": "ReadProfile(encoded []byte) (*cms.Profile, error)",
-            "synopsis": "ReadProfile is the colour space of the largest preview, as the file declares it: the colour space the camera was set to, sRGB or Adobe RGB."
+            "synopsis": "ReadProfile is the colour space of the picture: that of the decoder when the raw data is developed, else that of the largest preview as the file declares it, the colour space the camera was set to, sRGB or Adobe RGB."
+          },
+          {
+            "name": "ScaledMemory",
+            "signature": "ScaledMemory(header []byte, w, h, minW, minH int) int64",
+            "synopsis": "ScaledMemory is the memory DecodeScaled takes: for the raw data, two bytes a photosite, the picture of four bytes a pixel, and the tiles the workers develop in."
           },
           {
             "name": "Sniff",
@@ -6429,12 +6450,12 @@
           {
             "name": "Develop",
             "signature": "Develop(opt Options, sink func(Tile)) error",
-            "synopsis": "Develop develops the raw data of f into the picture its crop shows: levels, white balance, highlights and demosaicing, in tiles of float32 that are handed to sink as they are done."
+            "synopsis": "Develop develops the raw data of f into the picture its crop shows: levels, white balance, highlights and demosaicing, then the colours of the camera's profile, exposure and the tone curve, in tiles of float32 that are handed to sink as they are done."
           },
           {
-            "name": "DevelopLinear",
-            "signature": "DevelopLinear(opt Options) (*Linear, error)",
-            "synopsis": "DevelopLinear develops f into one Linear, twelve bytes a pixel: some 290 megabytes for 24 megapixels, which is what File.Develop avoids."
+            "name": "DevelopPlanes",
+            "signature": "DevelopPlanes(opt Options) (*Planes, error)",
+            "synopsis": "DevelopPlanes develops f into one Planes, twelve bytes a pixel: some 290 megabytes for 24 megapixels, which is what File.Develop avoids."
           },
           {
             "name": "Largest",
@@ -6445,6 +6466,21 @@
             "name": "PreviewData",
             "signature": "PreviewData(p Preview) ([]byte, error)",
             "synopsis": "PreviewData is the data of p as it is stored, a JPEG when p.JPEG."
+          },
+          {
+            "name": "Profile",
+            "signature": "Profile() (*Profile, error)",
+            "synopsis": "Profile is the camera profile of f: a DNG's own, which its first directory holds, or for an ARW the matrix this package has for the camera, which is Adobe's for D65 as dcraw tabulates it."
+          },
+          {
+            "name": "RGBA",
+            "signature": "RGBA(opt Options) (*image.RGBA, error)",
+            "synopsis": "RGBA develops f into a picture of 8 bits a channel, in the colour space of opt.Space, as OutputPicture whatever opt.Output says."
+          },
+          {
+            "name": "RGBA64",
+            "signature": "RGBA64(opt Options) (*image.RGBA64, error)",
+            "synopsis": "RGBA64 is File.RGBA with 16 bits a channel."
           },
           {
             "name": "ReadMosaic",
@@ -6482,12 +6518,6 @@
         "constructors": [],
         "methods": []
       },
-      "Linear": {
-        "synopsis": "Linear is a developed picture held whole: three planes of float32, as Tile describes them.",
-        "decl": "type Linear struct {\n\tRect    image.Rectangle\n\tR, G, B []float32\n}",
-        "constructors": [],
-        "methods": []
-      },
       "Mosaic": {
         "synopsis": "Mosaic describes the sensor data of a raw file: what it covers and how its numbers are to be read.",
         "decl": "type Mosaic struct {\n\tWidth, Height   int\n\tCrop            image.Rectangle\n\tBitsPerSample   int\n\tCompression     Compression\n\tSamplesPerPixel int\n\tCFA             string\n\tBlack           [4]float64\n\tWhite           float64\n}",
@@ -6496,7 +6526,25 @@
       },
       "Options": {
         "synopsis": "Options says how File.Develop develops the raw data.",
-        "decl": "type Options struct {\n\tHalf         bool\n\tWhiteBalance [3]float64\n\tHighlights   Highlights\n\tWorkers      int\n}",
+        "decl": "type Options struct {\n\tHalf         bool\n\tWhiteBalance [3]float64\n\tHighlights   Highlights\n\tWorkers      int\n\tOutput       Output\n\tProfile      *Profile\n\tExposure     float64\n\tSpace        *cms.Profile\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "Output": {
+        "synopsis": "Output is what File.Develop makes of the raw data.",
+        "decl": "type Output uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
+      "Planes": {
+        "synopsis": "Planes is a developed picture held whole: three planes of float32, as Tile describes them.",
+        "decl": "type Planes struct {\n\tRect    image.Rectangle\n\tR, G, B []float32\n}",
         "constructors": [],
         "methods": []
       },
@@ -6506,6 +6554,44 @@
         "constructors": [],
         "methods": []
       },
+      "Profile": {
+        "synopsis": "Profile is the colour of a camera: how the colours its sensor sees become those of the light it saw, as the colour model of the DNG specification describes them.",
+        "decl": "type Profile struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "ParseProfile",
+            "signature": "ParseProfile(data []byte) (*Profile, error)",
+            "synopsis": "ParseProfile reads a DNG camera profile, a .dcp file: a TIFF structure with the magic number 0x4352 (\"IIRC\" or \"MMCR\") in place of 42, whose first directory holds the tags of a camera profile."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Camera",
+            "signature": "Camera() string",
+            "synopsis": "Camera is the camera the profile is for, as DNG's UniqueCameraModel names it, such as \"Sony ILCE-7M3\"; empty when the profile does not say."
+          },
+          {
+            "name": "HasTables",
+            "signature": "HasTables() bool",
+            "synopsis": "HasTables reports whether the profile corrects colours by tables beyond its matrices: a hue, saturation and value map or a look table."
+          },
+          {
+            "name": "HasToneCurve",
+            "signature": "HasToneCurve() bool",
+            "synopsis": "HasToneCurve reports whether the profile brings its own tone curve, which then replaces the one of this package."
+          },
+          {
+            "name": "Illuminants",
+            "signature": "Illuminants() []int",
+            "synopsis": "Illuminants are the illuminants the profile's matrices were measured under, as EXIF's LightSource numbers them: 17 standard light A, 21 D65."
+          },
+          {
+            "name": "Name",
+            "signature": "Name() string",
+            "synopsis": "Name is the name of the profile, ProfileName; for one of this package's table, the camera's."
+          }
+        ]
+      },
       "Sony": {
         "synopsis": "Sony is what a Sony camera wrote about its settings into an ARW: in the MakerNote, and in the SR2 block, which the camera encrypts.",
         "decl": "type Sony struct {\n\tModelID                         int\n\tCreativeStyle                   string\n\tContrast, Saturation, Sharpness int\n\tDRO                             DRO\n\tWhiteBalance                    WhiteBalance\n\tColorTemperature                int\n\tWhiteBalanceShift               [2]int\n\tPresets                         []WhiteBalancePreset\n}",
@@ -6513,7 +6599,7 @@
         "methods": []
       },
       "Tile": {
-        "synopsis": "Tile is a part of the developed picture: linear light in the colours of the camera, white balanced, black at 0 and the level at which the first channel clips, which is white, at 1.",
+        "synopsis": "Tile is a part of the developed picture, as Options.Output has it: a picture's encoded values from 0 to 1, or linear light, of the scene or in the colours of the camera, black at 0 and the level at which the first channel of the camera clips, which is white, at 1.",
         "decl": "type Tile struct {\n\tRect    image.Rectangle\n\tR, G, B []float32\n\tStride  int\n}",
         "constructors": [],
         "methods": []

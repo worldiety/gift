@@ -38,8 +38,10 @@ const (
 	// a few hundred.
 	maxEntries = 4096
 	// maxNumbers bounds the numbers a field is read as. The longest the
-	// package reads are the offsets of strips and tiles, a few thousand.
-	maxNumbers = 1 << 16
+	// package reads are the tables of camera profiles, three numbers for
+	// each of up to some ten thousand entries, and the offsets of strips
+	// and tiles, a few thousand.
+	maxNumbers = 1 << 20
 )
 
 // tiff reads the directories and fields of a TIFF structure through an

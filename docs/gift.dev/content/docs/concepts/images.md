@@ -443,11 +443,38 @@ asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW})
 asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
 ```
 
-The previews of an Alpha 7 III are 1616 by 1080 pixels, which is as large as such a picture is shown for now.
+The previews of an Alpha 7 III are 1616 by 1080 pixels. With `Develop` the decoder develops the raw data instead,
+at the full resolution of the sensor, and a thumbnail from half of it, a fifth of a second for 24 megapixels:
+
+```go
+space := backend.WorkingSpace(nil) // the space the pipeline paints in
+asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW, Develop: true, Space: space})
+pipe := asset.NewPipeline(asset.Config{Space: space /* … */})
+```
+
+Developing is levels, white balance, highlights reconstructed from the channels that did not clip, and
+demosaicing by RCD, in tiles of float32 on all cores; then the camera's profile in the colour model of the DNG
+specification, which takes the colours of the sensor to the light of the scene in linear Rec. 2020; then a tone
+curve fitted to the pictures of an Alpha 7 III, and the colour space of the picture, colours beyond it compressed
+rather than clipped. A DNG carries its own profile, the package has the matrices of Sony's cameras up to 2018, and
+`raw.ParseProfile` reads a DNG camera profile of your own, a `.dcp` file, with its tables and tone curve. The
+camera's settings, a black and white creative style among them, do not act yet: the picture is a neutral
+development, not the camera's style. A file the package cannot develop, of a camera it has no matrix for, shows its
+preview. The decoder's version, `raw.ProcessVersion` and the space, is part of the cache key
+(`asset.Versioned`), so that a better development makes new thumbnails.
+
+`raw.Open` reads the file without its pixels; `File.RGBA`, `RGBA64` and `Develop` develop it outside the
+pipeline:
+
+```go
+f, err := raw.Open(file, size)
+img, err := f.RGBA(raw.Options{Half: true, Space: cms.DisplayP3()})
+```
+
 `asset.ReadExif` reads the time and place of a raw file as of a JPEG. `raw.Open` reads the rest of what a raw file
-says without its pixels: the size and levels of the sensor data, the white balance, and of a Sony camera its
-creative style with contrast, saturation and sharpness, the dynamic range optimiser and the white balance presets,
-from the MakerNote and the encrypted SR2 block.
+says: the size and levels of the sensor data, the white balance, and of a Sony camera its creative style with
+contrast, saturation and sharpness, the dynamic range optimiser and the white balance presets, from the MakerNote
+and the encrypted SR2 block.
 
 The default `MaxEncodedBytes` of 64 MiB holds the uncompressed raw of a 24 megapixel camera, some 49 MB; raise it
 for larger sensors.
@@ -484,6 +511,10 @@ See [Diagnostics](../diagnostics/) for the measurement report.
 {{< api-funcs pkg="asset" names="RegisterDecoder,Retryable" >}}
 
 {{< api pkg="raw" type="File" >}}
+
+{{< api pkg="raw" type="Options" >}}
+
+{{< api pkg="raw" type="Profile" >}}
 
 The fields of `asset.Config`, `asset.DiskCacheConfig` and `asset.BackoffPolicy` are documented in package
 [asset](https://pkg.go.dev/github.com/worldiety/gift/asset#Config).

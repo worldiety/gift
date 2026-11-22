@@ -1,7 +1,9 @@
 Package raw decrypts Sony's SR2 block as the function sony_decrypt of dcraw
 does, reads the levels and the white balance of that block from the tags
 dcraw reads them from, and decodes Sony's compressed raw and its curve as
-sony_arw2_load_raw and the handling of tag 0x7010 do.
+sony_arw2_load_raw and the handling of tag 0x7010 do. The colour matrices
+of Sony's cameras in cameras.go are those of dcraw's adobe_coeff, Adobe's
+matrices for D65, with the cameras each entry stands for named.
 
 dcraw
 https://www.dechifro.org/dcraw/
@@ -13,7 +15,8 @@ Foveon sensors, of which this package uses none.
 
 Its demosaicing is Ratio Corrected Demosaicing (RCD), as Luis Sanz Rodríguez
 described it in 2017, written anew for this package. Lossless JPEG is decoded
-as ITU-T Recommendation T.81 specifies it.
+as ITU-T Recommendation T.81 specifies it. The colour model, camera profiles
+and their tables follow Adobe's DNG specification.
 
 No code of LibRaw, RawSpeed, RawTherapee, darktable or ART, which are under
 the LGPL or the GPL, is in this package.

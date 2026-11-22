@@ -446,7 +446,7 @@ func TestDNGBlackLevelDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.WhiteBalance = [3]float64{1, 1, 1}
-	l, err := f.DevelopLinear(Options{Half: true})
+	l, err := f.DevelopPlanes(Options{Half: true, Output: OutputCamera})
 	if err != nil {
 		t.Fatal(err)
 	}

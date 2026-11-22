@@ -1,5 +1,7 @@
 package raw
 
+import "github.com/worldiety/gift/cms"
+
 // DNGColor is how a DNG describes the colours of its camera: the input of
 // the colour model of the DNG specification, which maps the camera's
 // colours to XYZ by two matrices measured under two illuminants and
@@ -39,6 +41,9 @@ type DNGColor struct {
 	// BaselineExposure is the exposure in stops that the camera's model
 	// needs to be shown right.
 	BaselineExposure float64
+	// CameraCalibrationSignature names the profile the camera
+	// calibrations were measured against; empty for any.
+	CameraCalibrationSignature string
 }
 
 // readDNG reads the colour tags of IFD 0 and, for the white balance and
@@ -75,7 +80,22 @@ func (f *File) readDNG(ifd0, mosaic dir) {
 	if v := look(0xc65b); len(v) > 0 {
 		c.CalibrationIlluminant2 = int(v[0])
 	}
+	c.CameraCalibrationSignature = t.strOf(ifd0, 0xc6f3)
+	// The camera profile is in the first directory; some writers put the
+	// matrices with the raw data.
+	if p, err := readProfile(t, ifd0); err == nil {
+		f.profile = p
+	} else if p, err := readProfile(t, mosaic); err == nil {
+		f.profile = p
+	}
 	if n := c.AsShotNeutral; len(n) == 3 && n[0] > 0 && n[1] > 0 && n[2] > 0 {
 		f.WhiteBalance = [3]float64{n[1] / n[0], 1, n[1] / n[2]}
+	} else if w := c.AsShotWhiteXY; len(w) == 2 && f.profile != nil && w[0] > 0 && w[1] > 0 && w[0]+w[1] < 1 {
+		// A white given as a chromaticity is the camera's neutral through
+		// the matrices for it.
+		n := f.model(f.profile).neutralOf(cms.Chromaticity{X: w[0], Y: w[1]})
+		if n[0] > 0 && n[1] > 0 && n[2] > 0 {
+			f.WhiteBalance = [3]float64{n[1] / n[0], 1, n[1] / n[2]}
+		}
 	}
 }

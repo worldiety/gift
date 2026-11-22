@@ -15,7 +15,8 @@
 // something to do. libjpeg-turbo is used when it is installed; it decodes the
 // first stage of a camera picture from the DC coefficients of its blocks.
 // Raw files of cameras, ARW and DNG, are shown as the preview the camera
-// embedded in them; see package raw.
+// embedded in them, or with -develop as their raw data developed; see
+// package raw.
 //
 // On Linux the touch screen is read directly, so pinching works on a
 // Raspberry Pi display; see [backend.Config.Touchscreen].
@@ -59,6 +60,7 @@ var (
 	stats      = flag.Bool("stats", false, "print frames per second and the stage decodes every five seconds")
 	workers    = flag.Int("workers", 0, "decode goroutines; zero is the pipeline's default")
 	upload     = flag.Int("upload", 0, "picture bytes uploaded per frame, in KiB; zero is the backend's default")
+	develop    = flag.Bool("develop", false, "show raw files developed from their raw data rather than as the camera's preview")
 )
 
 func main() {
@@ -78,8 +80,9 @@ func run() error {
 		asset.RegisterDecoder(asset.MIMEJPEG, turbojpeg.Decoder{})
 		logger.Info("JPEG through libjpeg-turbo")
 	}
-	asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW})
-	asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
+	space := backend.WorkingSpace(nil)
+	asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW, Develop: *develop, Space: space})
+	asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG, Develop: *develop, Space: space})
 	srcDir := *dir
 	if srcDir == "" {
 		var err error
@@ -108,7 +111,7 @@ func run() error {
 	}})
 	pipe := asset.NewPipeline(asset.Config{
 		Deliver: app.Post,
-		Space:   backend.WorkingSpace(nil),
+		Space:   space,
 		Workers: *workers,
 		// Rungs up to 4096 for the viewer: a screen of 1920 asks for 2048,
 		// and a zoomed picture for 4096. The large ones stay off the disk.

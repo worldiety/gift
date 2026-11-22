@@ -16,13 +16,15 @@ From a checkout of the [repository](https://github.com/worldiety/gift):
 ```bash
 go run ./cmd/example-photos                       # two dozen generated pictures of up to 12 megapixels
 go run ./cmd/example-photos -dir ~/Pictures       # your own, raw files of cameras (ARW, DNG) among them
+go run ./cmd/example-photos -dir ~/Pictures -develop  # raw files developed from their raw data
 go run ./cmd/example-photos -fullscreen -workers 2  # on a Raspberry Pi
 ```
 
 On first run without `-dir` the example writes its sample pictures into its cache directory: landscapes, portraits
 and panoramas with a fine grid that only the zoomed stage resolves. With `libturbojpeg0` installed it decodes JPEG
 with libjpeg-turbo. `-stats` prints the frame rate and the decodes every five seconds, `-upload` sets the bytes
-uploaded per frame, and `-open n` opens the viewer on the n-th picture at start.
+uploaded per frame, and `-open n` opens the viewer on the n-th picture at start. Raw files are shown as the
+preview the camera embedded; `-develop` develops their raw data instead, at the resolution of the sensor.
 
 ## What to try
 

@@ -23,35 +23,60 @@
 // # Showing raw files in a gallery
 //
 // [Decoder] is a decoder for package asset, which shows a raw file as its
-// largest preview, the photograph as the camera rendered it:
+// largest preview, the photograph as the camera rendered it, or, with
+// Decoder.Develop, as its raw data developed by this package:
 //
 //	asset.RegisterDecoder(raw.MIMEARW, raw.Decoder{Format: raw.ARW})
-//	asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
+//	asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG, Develop: true, Space: space})
 //
 // # Developing the raw data
 //
 // [File.ReadMosaic] decodes the sensor data: of an ARW uncompressed or in
 // Sony's compressed raw, of a DNG uncompressed in 8 to 16 bits, in lossless
 // JPEG or Deflate, in tiles or strips, through its linearization table.
-// [File.Develop] develops it in tiles of float32, in
-// parallel: black and white levels, white balance, the highlights that
-// clipped, which it reconstructs from the channels that did not, and
-// demosaicing by RCD, or at half size without. What comes out is linear
-// light in the colours of the camera, white at 1:
+// [File.Develop] develops it in tiles of float32, in parallel: black and
+// white levels, white balance, the highlights that clipped, which it
+// reconstructs from the channels that did not, and demosaicing by RCD, or
+// at half size without. [File.RGBA] and [File.RGBA64] make a picture of it:
 //
-//	err := f.Develop(raw.Options{}, func(t raw.Tile) {
-//	    // t.R, t.G, t.B for t.Rect of the picture; from several goroutines
-//	})
+//	img, err := f.RGBA(raw.Options{Half: true, Space: cms.DisplayP3()})
+//
+// # Colours and tones
+//
+// The colours of the camera become those of the light it saw through a
+// camera profile, [Profile], as the colour model of the DNG specification
+// has it: one or two colour matrices measured under two illuminants and
+// interpolated for the white of the photograph, forward matrices, and the
+// tables of hue, saturation and value and the look table of a profile that
+// has them. A DNG carries its profile; for an ARW the package has the
+// matrices of Sony's cameras up to 2018, the Alpha 7 III among them, as
+// dcraw tabulates them; a DNG camera profile of the user's, a .dcp file,
+// is read by [ParseProfile] and replaces either. The package ships no
+// profiles of others.
+//
+// The light of the scene is linear Rec. 2020, [OutputScene], the camera's
+// white at 1. A picture, [OutputPicture], is made from it by a tone curve
+// in the manner of a camera's: an S in stops, applied channel by channel,
+// which puts middle gray 3.7 stops below the camera's white and lets the
+// highlights above it roll off, as the Alpha 7 III's pictures do; a
+// profile that brings a tone curve has it applied instead, keeping the hue,
+// as Adobe's raw converters do. Last, the colours are brought into the
+// colour space of the picture, those beyond it compressed towards the
+// gray of their brightness rather than clipped. [ProcessVersion] versions
+// all of it.
 //
 // # What it does not do yet
 //
-// The colours of the camera are not yet those of a display, nor its tones
-// those of the camera's pictures: the stages R3 and R4 of the project plan,
-// section 51. Of DNG it does not decode floating point data, lossy JPEG,
-// JPEG XL and linear, already demosaiced data, and it does not apply the
-// opcode lists, such as the gain maps of phones.
+// The settings of the camera do not act yet: a photograph taken in black
+// and white develops in colour, and the creative style, its contrast,
+// saturation and sharpness and the dynamic range optimiser do not apply;
+// that is the stage R4 of the project plan, section 51. Of DNG it does not
+// decode floating point data, lossy JPEG, JPEG XL and linear, already
+// demosaiced data, and it does not apply the opcode lists, such as the gain
+// maps of phones. Profiles of a third illuminant are read as their first
+// two, and DefaultBlackRender is not applied.
 //
-// The decryption of the SR2 block and the decoding of Sony's compressed raw
-// follow dcraw by Dave Coffin, demosaicing the description of RCD by Luis
-// Sanz Rodríguez; see NOTICE.
+// The decryption of the SR2 block, the decoding of Sony's compressed raw
+// and the table of camera matrices follow dcraw by Dave Coffin,
+// demosaicing the description of RCD by Luis Sanz Rodríguez; see NOTICE.
 package raw
