@@ -48,7 +48,7 @@ func (r *Renderer) appendTriangles(l *render.List, op render.Op) {
 		if minX >= clip.Min.X && maxX <= clip.Max.X && minY >= clip.Min.Y && maxY <= clip.Max.Y {
 			base := uint32(len(r.verts))
 			for k := range 3 {
-				r.verts = append(r.verts, texturedVertex(d[k][0], d[k][1], u, v, vs[i+k].Color))
+				r.verts = append(r.verts, texturedVertex(d[k][0], d[k][1], u, v, r.ws.color(vs[i+k].Color)))
 			}
 			r.idx = append(r.idx, base, base+1, base+2)
 			wrote = true
@@ -70,8 +70,9 @@ func (r *Renderer) appendTriangles(l *render.List, op render.Op) {
 			continue
 		}
 		base := uint32(len(r.verts))
+		c := r.ws.color(vs[i].Color)
 		for k := range n {
-			r.verts = append(r.verts, texturedVertex(poly[k].dx, poly[k].dy, u, v, vs[i].Color))
+			r.verts = append(r.verts, texturedVertex(poly[k].dx, poly[k].dy, u, v, c))
 		}
 		for k := 1; k < n-1; k++ {
 			r.idx = append(r.idx, base, base+uint32(k), base+uint32(k)+1)

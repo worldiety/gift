@@ -278,8 +278,14 @@ func TestCacheKeyComponentsEachChangeTheKey(t *testing.T) {
 		"processing": {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 2},
 		"namespace":  {Namespace: "ns2", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1},
 		"id":         {Namespace: "ns1", ID: "file:///b.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1},
+		"space":      {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1, Space: "p3"},
 	}
 	baseName := asset.FileNameForTest(base)
+	// The name of an sRGB thumbnail is the one it had before the colour
+	// space was part of the key, so a cache survived the change.
+	if baseName != "spytkmjnvhmdmqbt553d37owk3f4pa6r.thumb" {
+		t.Errorf("the file name of an sRGB thumbnail changed to %s", baseName)
+	}
 	seen := map[string]string{baseName: "base"}
 	for name, v := range variants {
 		got := asset.FileNameForTest(v)

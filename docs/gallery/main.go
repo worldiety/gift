@@ -82,7 +82,7 @@ func run() error {
 	if err := showcase.Samples(filepath.Join(base, "gift", "docs-gallery")); err != nil {
 		return err
 	}
-	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post})
+	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post, Space: backend.WorkingSpace(nil)})
 	defer func() {
 		pipe.Close()
 		app.DrainPosts()

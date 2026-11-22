@@ -97,6 +97,7 @@ func run() error {
 	}})
 	pipe := asset.NewPipeline(asset.Config{
 		Deliver: app.Post,
+		Space:   backend.WorkingSpace(nil),
 		Disk:    asset.DiskCacheConfig{Dir: *cache},
 		Logger:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	})

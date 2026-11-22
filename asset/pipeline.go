@@ -3,6 +3,7 @@ package asset
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"image"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	xdraw "golang.org/x/image/draw"
+
+	"github.com/worldiety/gift/cms"
 )
 
 // Priority is the two level scheduling class of the project plan, section 9:
@@ -360,6 +363,24 @@ type Config struct {
 	// [xdraw.ApproxBiLinear], which is the quality per cycle compromise a
 	// Raspberry Pi wants.
 	Scaler xdraw.Interpolator
+
+	// Space is the colour space thumbnails are made in. Nil selects sRGB,
+	// what gift paints in on every platform but macOS.
+	//
+	// On a display that shows more than sRGB the renderer paints in a wider
+	// space, Display P3 on a Mac, and a thumbnail made in it keeps the
+	// colours of a photograph that has them: an iPhone's, an Adobe RGB
+	// camera's. The renderer converts a thumbnail in another space as it
+	// uploads it, on the UI goroutine, so one made in sRGB is shown right
+	// but without them. Pass what the backend paints in, for the Ebitengine
+	// backend
+	//
+	//	cfg.Space = ebiten.WorkingSpace(nil)
+	//
+	// It must be an RGB profile; another is logged and sRGB used instead.
+	// The space is part of every cache key but sRGB's, so a cache made in
+	// one space is not shown in another.
+	Space *cms.Profile
 }
 
 // The defaults of [Config]. They are sized for the reference machine of the
@@ -491,8 +512,11 @@ type Pipeline struct {
 	failMu sync.Mutex
 	fails  map[ID]*failure
 
-	// colour holds the conversions of the profiles pictures declared.
+	// colour holds the conversions of the profiles pictures declared into
+	// [Config.Space].
 	colour transforms
+	// spaceKey names [Config.Space] in cache keys; empty for sRGB.
+	spaceKey string
 
 	counters counters
 }
@@ -530,6 +554,8 @@ func NewPipeline(cfg Config) *Pipeline {
 		hints:  make(map[ID]hint),
 		fails:  make(map[ID]*failure),
 	}
+	p.colour.dst, p.spaceKey = thumbnailSpace(cfg.Space, cfg.Logger)
+	p.cfg.Space = p.colour.dst
 	p.sched = newScheduler(cfg.QueueLimit)
 	p.wg.Add(cfg.Workers)
 	for range cfg.Workers {
@@ -966,7 +992,7 @@ func (p *Pipeline) produce(ctx context.Context, j *job) (Result, *Thumbnail) {
 
 	if rev != "" && known.haveShape {
 		key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-			Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion}
+			Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
 		if t, ok := p.pix.get(key); ok {
 			p.counters.memHits.Add(1)
 			return Result{
@@ -1084,7 +1110,7 @@ func (p *Pipeline) fromDisk(ctx context.Context, key Key) (*Thumbnail, bool) {
 	}
 	t := &Thumbnail{pix: pix, w: w, h: h, stride: w * 4, bytes: n,
 		orientation: key.Orientation, ladder: key.Size, revision: key.Revision,
-		owner: p.pixels}
+		space: p.cfg.Space, owner: p.pixels}
 	t.refs.Store(1)
 	p.pix.put(key, t)
 	return t, true
@@ -1188,7 +1214,7 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 			p.putHint(ns, j.id, hint{Revision: rev, Expires: exp,
 				W: known.w, H: known.h, O: known.orientation, MIME: known.mime})
 			key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-				Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion}
+				Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
 			if t, ok := p.pix.get(key); ok {
 				return t, Result{FromMemory: true, Orientation: known.orientation,
 					Metadata: Metadata{ID: j.id, Revision: rev, Width: uint32(known.w), Height: uint32(known.h), MIMEType: known.mime}}, nil
@@ -1318,7 +1344,7 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 	}
 
 	key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-		Orientation: info.Orientation, ProcessingVersion: p.cfg.ProcessingVersion}
+		Orientation: info.Orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
 	p.pix.put(key, t)
 	if rev != "" {
 		if err := p.disk.put(key, t); err != nil && p.cfg.Logger != nil {
@@ -1382,16 +1408,18 @@ func (p *Pipeline) thumbnail(ctx context.Context, img image.Image, info probeInf
 	t := &Thumbnail{
 		pix: final.Pix, w: final.Rect.Dx(), h: final.Rect.Dy(), stride: final.Stride,
 		bytes: finalBytes, orientation: info.Orientation.Normalised(), ladder: rung,
-		owner: p.pixels,
+		space: p.cfg.Space, owner: p.pixels,
 	}
 	t.refs.Store(1)
 	return t, nil
 }
 
-// conversion is how the colours of an encoded picture become sRGB, or nil
-// when they are sRGB already or cannot be read. A profile the pipeline
-// cannot use is not an error of the picture: it is shown as sRGB, as every
-// program without colour management would, and the reason is logged.
+// conversion is how the colours of an encoded picture become those of
+// [Config.Space], or nil when they are in it already. A picture that
+// declares nothing is sRGB, or gray with the sRGB curve. A profile the
+// pipeline cannot use is not an error of the picture: it is shown as sRGB,
+// as every program without colour management would, and the reason is
+// logged.
 func (p *Pipeline) conversion(id ID, raw []byte) *conversion {
 	d, err := declaredColour(raw)
 	if err == nil && d.profile != nil && !d.fits() {
@@ -1401,14 +1429,40 @@ func (p *Pipeline) conversion(id ID, raw []byte) *conversion {
 	if err == nil && d.profile != nil {
 		c, err = p.colour.get(d.profile)
 	}
-	if err != nil {
-		if p.cfg.Logger != nil {
-			p.cfg.Logger.Debug("colour profile ignored, shown as sRGB",
-				slog.String("id", string(id)), slog.String("err", err.Error()))
+	if err != nil && p.cfg.Logger != nil {
+		p.cfg.Logger.Debug("colour profile ignored, shown as sRGB",
+			slog.String("id", string(id)), slog.String("err", err.Error()))
+	}
+	if err != nil || d.profile == nil {
+		if d.stored == cms.SpaceGray {
+			// sGray is gray in every space with the white and the curve
+			// of sRGB, which Config.Space has.
+			return nil
 		}
-		return nil
+		c, _ = p.colour.get(cms.SRGB())
 	}
 	return c
+}
+
+// thumbnailSpace checks [Config.Space] and returns it, nil for sRGB, with the
+// name it has in cache keys.
+func thumbnailSpace(space *cms.Profile, log *slog.Logger) (*cms.Profile, string) {
+	if space == nil || space == cms.SRGB() {
+		return nil, ""
+	}
+	_, err := cms.NewTransform(cms.SRGB(), space, thumbnailOptions)
+	if err == nil && space.Space() != cms.SpaceRGB {
+		err = fmt.Errorf("asset: thumbnails are RGB, not %s", space.Space())
+	}
+	if err != nil {
+		if log != nil {
+			log.Warn("thumbnail colour space ignored, sRGB used",
+				slog.String("space", space.Description()), slog.String("err", err.Error()))
+		}
+		return nil, ""
+	}
+	sum := sha256.Sum256(space.Bytes())
+	return space, cacheEncoding.EncodeToString(sum[:10])
 }
 
 // storedTarget is the size of a rung's thumbnail: ow by oh as shown, and sw by

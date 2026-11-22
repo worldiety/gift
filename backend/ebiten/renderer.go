@@ -9,6 +9,7 @@ import (
 	"time"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
+	"github.com/worldiety/gift/cms"
 	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/render"
 )
@@ -138,6 +139,8 @@ type Renderer struct {
 	// upload budget and eviction with an explicit Deallocate. It is the
 	// [render.Images] the application reaches through gift.App.SetImages.
 	textures *TextureCache
+	// ws is the working space, nil for sRGB; see [Renderer.SetWorkingSpace].
+	ws *workingSpace
 	// imageOpts are the draw options of the image material. Premultiplied,
 	// like the glyph options, because [render.Color] is and because
 	// asset.Thumbnail produces premultiplied RGBA — so a tint multiplies
@@ -637,7 +640,47 @@ func (r *Renderer) Textures() *TextureCache { return r.textures }
 
 // SetTextures replaces the texture cache. It is for tests; the one installed
 // by [NewRenderer] is the one an application wants.
-func (r *Renderer) SetTextures(t *TextureCache) { r.textures = t }
+func (r *Renderer) SetTextures(t *TextureCache) {
+	r.textures = t
+	if t != nil {
+		t.SetSpace(r.WorkingSpace())
+	}
+}
+
+// SetWorkingSpace sets the colour space the renderer paints in: nil or
+// [cms.SRGB], the default, or [cms.DisplayP3]. Any other is refused.
+//
+// It is the space of the numbers in the target, so the screen must be
+// tagged with it; [Run] does both. The colours of the display list stay
+// sRGB and are converted, and so are pictures in another space as they are
+// uploaded; see workingSpace in space.go for what that costs and where.
+// Textures uploaded before the call keep the space they were uploaded in, so
+// it is called before the first frame.
+func (r *Renderer) SetWorkingSpace(p *cms.Profile) error {
+	ws, err := newWorkingSpace(p)
+	if err != nil {
+		return err
+	}
+	if r.videos != nil {
+		if err := r.videos.setSpace(ws); err != nil {
+			return err
+		}
+	}
+	r.ws = ws
+	if r.textures != nil {
+		r.textures.SetSpace(r.WorkingSpace())
+	}
+	return nil
+}
+
+// WorkingSpace returns the colour space the renderer paints in, which is
+// [cms.SRGB] unless [Renderer.SetWorkingSpace] said otherwise.
+func (r *Renderer) WorkingSpace() *cms.Profile {
+	if r.ws == nil {
+		return cms.SRGB()
+	}
+	return r.ws.profile
+}
 
 // Atlas returns the glyph atlas of this renderer, for [GlyphAtlas.Stats] and
 // for a test that wants to configure the budget.
@@ -862,6 +905,7 @@ func (r *Renderer) appendOp(l *render.List, op render.Op) {
 	if op.Material != 0 && op.Kind != render.OpShadow {
 		if m := l.Material(op.Material); m.Kind == render.MaterialGradient {
 			grad, hasGrad = m.Gradient, true
+			grad.To = r.ws.color(grad.To)
 		}
 	}
 	if op.Color.IsTransparent() && (!hasGrad || grad.To.IsTransparent()) {

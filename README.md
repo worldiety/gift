@@ -148,8 +148,10 @@ err = t.Pixels(img.Pix, cms.RGBAPremul8, img.Pix, cms.RGBAPremul8)
 
 The image pipeline uses it for every picture: the ICC profile of a JPEG, PNG
 or WebP, the Adobe RGB a camera notes in its EXIF and the color chunks of a
-PNG are read, and thumbnails converted into sRGB, CMYK JPEGs included.
-`asset.EmbedProfile` writes a profile into a JPEG or PNG you export.
+PNG are read, and thumbnails converted into the space gift paints in, CMYK
+JPEGs included. That is sRGB, and Display P3 on a Mac, so that the photographs
+of a phone keep their colors on its display. `asset.EmbedProfile` writes a
+profile into a JPEG or PNG you export.
 
 ### Pictures And Gestures
 

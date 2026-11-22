@@ -85,7 +85,7 @@
       },
       "Config": {
         "synopsis": "Config configures a Pipeline.",
-        "decl": "type Config struct {\n\tWorkers           int\n\tSizes             []int\n\tHysteresis        float64\n\tMaxPixels         int\n\tMaxEncodedBytes   int64\n\tInputBudget       int64\n\tDecodeBudget      int64\n\tPixelBudget       int64\n\tQueueLimit        int\n\tReadyLimit        int\n\tTimeout           time.Duration\n\tBackoff           BackoffPolicy\n\tDisk              DiskCacheConfig\n\tProcessingVersion uint32\n\tDeliver           func(func())\n\tLogger            *slog.Logger\n\tNow               func() time.Time\n\tScaler            xdraw.Interpolator\n}",
+        "decl": "type Config struct {\n\tWorkers           int\n\tSizes             []int\n\tHysteresis        float64\n\tMaxPixels         int\n\tMaxEncodedBytes   int64\n\tInputBudget       int64\n\tDecodeBudget      int64\n\tPixelBudget       int64\n\tQueueLimit        int\n\tReadyLimit        int\n\tTimeout           time.Duration\n\tBackoff           BackoffPolicy\n\tDisk              DiskCacheConfig\n\tProcessingVersion uint32\n\tDeliver           func(func())\n\tLogger            *slog.Logger\n\tNow               func() time.Time\n\tScaler            xdraw.Interpolator\n\tSpace             *cms.Profile\n}",
         "constructors": [],
         "methods": []
       },
@@ -246,7 +246,7 @@
       },
       "Key": {
         "synopsis": "Key identifies one cached thumbnail.",
-        "decl": "type Key struct {\n\tNamespace         string\n\tID                ID\n\tRevision          string\n\tSize              int\n\tOrientation       Orientation\n\tProcessingVersion uint32\n}",
+        "decl": "type Key struct {\n\tNamespace         string\n\tID                ID\n\tRevision          string\n\tSize              int\n\tOrientation       Orientation\n\tProcessingVersion uint32\n\tSpace             string\n}",
         "constructors": [],
         "methods": [
           {
@@ -574,6 +574,11 @@
             "name": "Revision",
             "signature": "Revision() string",
             "synopsis": "Revision is the content version these pixels were produced from, or empty for a source that has none."
+          },
+          {
+            "name": "Space",
+            "signature": "Space() *cms.Profile",
+            "synopsis": "Space is the colour space of the pixels, Config.Space of the pipeline that made them: cms.SRGB unless it was told otherwise."
           },
           {
             "name": "Stride",
@@ -1802,6 +1807,11 @@
             "synopsis": "SetTextures replaces the texture cache."
           },
           {
+            "name": "SetWorkingSpace",
+            "signature": "SetWorkingSpace(p *cms.Profile) error",
+            "synopsis": "SetWorkingSpace sets the colour space the renderer paints in: nil or cms.SRGB, the default, or cms.DisplayP3."
+          },
+          {
             "name": "SkipFrame",
             "signature": "SkipFrame()",
             "synopsis": "SkipFrame tells the renderer that a display refresh went by without a frame being drawn, because nothing had changed; see Config.DrawOnDemand."
@@ -1830,6 +1840,11 @@
             "name": "Videos",
             "signature": "Videos() render.Videos",
             "synopsis": "Videos returns the video picture service, which Run installs into the app through gift.App.SetVideos."
+          },
+          {
+            "name": "WorkingSpace",
+            "signature": "WorkingSpace() *cms.Profile",
+            "synopsis": "WorkingSpace returns the colour space the renderer paints in, which is cms.SRGB unless Renderer.SetWorkingSpace said otherwise."
           }
         ]
       },
@@ -1942,6 +1957,11 @@
             "synopsis": "Resolve implements render.Images."
           },
           {
+            "name": "SetSpace",
+            "signature": "SetSpace(p *cms.Profile)",
+            "synopsis": "SetSpace sets the colour space the textures are drawn in, nil for sRGB."
+          },
+          {
             "name": "Stats",
             "signature": "Stats() TextureStats",
             "synopsis": "Stats returns a snapshot of the counters."
@@ -1961,7 +1981,7 @@
       },
       "TextureStats": {
         "synopsis": "TextureStats are the counters of the texture cache.",
-        "decl": "type TextureStats struct {\n\tUploads                                                  uint64\n\tUploadedBytes                                            uint64\n\tDeferred                                                 uint64\n\tRejected                                                 uint64\n\tMalformed                                                uint64\n\tResolves, Stale                                          uint64\n\tEvictions, AgeEvictions, ExplicitReleases, Deallocations uint64\n\tTextures                                                 int\n\tBytes                                                    int64\n\tPeakTextures                                             int\n\tPeakBytes                                                int64\n}",
+        "decl": "type TextureStats struct {\n\tUploads                                                  uint64\n\tUploadedBytes                                            uint64\n\tConverted                                                uint64\n\tDeferred                                                 uint64\n\tRejected                                                 uint64\n\tMalformed                                                uint64\n\tResolves, Stale                                          uint64\n\tEvictions, AgeEvictions, ExplicitReleases, Deallocations uint64\n\tTextures                                                 int\n\tBytes                                                    int64\n\tPeakTextures                                             int\n\tPeakBytes                                                int64\n}",
         "constructors": [],
         "methods": []
       },
@@ -2019,6 +2039,11 @@
         "name": "ShapeShaderSource",
         "signature": "ShapeShaderSource() []byte",
         "synopsis": "ShapeShaderSource returns the Kage source of the shared shape shader."
+      },
+      {
+        "name": "WorkingSpace",
+        "signature": "WorkingSpace(log *slog.Logger) *cms.Profile",
+        "synopsis": "WorkingSpace returns the colour space Run paints in on this machine: Display P3 on macOS and iOS, sRGB everywhere else."
       }
     ]
   },

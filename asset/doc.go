@@ -184,9 +184,10 @@
 //
 // # Colour
 //
-// Thumbnails are sRGB, what gift paints. A picture that declares another
-// colour space, with an ICC profile or the other ways [ReadProfile] lists,
-// is converted into sRGB with package cms, after scaling, so that a
+// Thumbnails are made in [Config.Space], sRGB unless the backend paints in
+// a wider space, Display P3 on a Mac. A picture in another colour space,
+// declared with an ICC profile or the other ways [ReadProfile] lists, or
+// sRGB by declaring nothing, is converted with package cms, after scaling, so that a
 // thumbnail pays for its own pixels and not for those of the photograph;
 // CMYK and 16 bit pictures are converted before, on every core. A camera
 // embeds the same profile in every picture, and the pipeline bakes each

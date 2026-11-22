@@ -11,6 +11,7 @@ import (
 
 	eb "github.com/hajimehoshi/ebiten/v2"
 	"github.com/worldiety/gift"
+	"github.com/worldiety/gift/cms"
 	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/internal/text"
 	"github.com/worldiety/gift/metrics"
@@ -394,6 +395,13 @@ func Run(app *gift.App, cfg Config) error {
 	if cfg.Textures != (TextureConfig{}) {
 		r.SetTextures(NewTextureCache(cfg.Textures))
 	}
+	if err := r.SetWorkingSpace(WorkingSpace(cfg.Logger)); err != nil {
+		// The wide video shaders did not compile. The frame is sRGB then,
+		// which is what it was before there was a choice.
+		if cfg.Logger != nil {
+			cfg.Logger.Warn("gift/backend/ebiten: painting in sRGB", slog.Any("err", err))
+		}
+	}
 	// The one route from a painter in ui to a texture in this package. gift
 	// carries the service and never uses it; see [gift.App.SetImages].
 	app.SetImages(r.Images())
@@ -497,7 +505,7 @@ func Run(app *gift.App, cfg Config) error {
 			slog.Int("tps", busy), slog.Int("idle_tps", cfg.IdleTPS))
 	}
 
-	opts := runOptions(cfg)
+	opts := runOptions(cfg, r.WorkingSpace())
 	if cfg.DirectToScreen {
 		// Ebitengine asks for the interface when RunGame is called; only a
 		// game that has the method gets the final screen.
@@ -522,17 +530,17 @@ func Run(app *gift.App, cfg Config) error {
 //
 // # The colour space
 //
-// Every colour gift paints is sRGB: the theme, text, and the pictures,
-// which package asset hands over as sRGB. Left unset, Ebitengine tags the
-// Metal layer on macOS and iOS as Display P3 instead (ebiten/v2@v2.10.5,
-// run.go), and Core Animation then shows sRGB values as the more saturated
-// P3 colours of the same numbers: pure red as the panel's red. Windows and
-// Linux are sRGB whatever this says.
-func runOptions(cfg Config) *eb.RunGameOptions {
+// The screen is tagged with the working space the renderer paints in, space,
+// and never left unset: Ebitengine then tags the Metal layer on macOS and
+// iOS as Display P3 whatever is painted into it (ebiten/v2@v2.10.5, run.go),
+// and Core Animation showed gift's sRGB values, before there was a working
+// space, as the more saturated P3 colours of the same numbers: pure red as
+// the panel's red. Windows and Linux are sRGB whatever this says.
+func runOptions(cfg Config, space *cms.Profile) *eb.RunGameOptions {
 	return &eb.RunGameOptions{
 		X11ClassName:    cfg.X11ClassName,
 		X11InstanceName: cfg.X11InstanceName,
-		ColorSpace:      eb.ColorSpaceSRGB,
+		ColorSpace:      screenColorSpace(space),
 	}
 }
 
@@ -1080,6 +1088,13 @@ func (g *game) capture(screen *eb.Image) Frame {
 		g.shot = g.shot[:n]
 	}
 	screen.ReadPixels(g.shot)
+	// A screenshot is sRGB on every platform, so that it means the same
+	// thing wherever it is looked at or compared. In a wider working space
+	// gift's own colours come back to within a step; what only the wider
+	// space holds is clipped.
+	if ws := g.r.ws; ws != nil {
+		_ = ws.toSRGB.Pixels(g.shot, cms.RGBAPremul8, g.shot, cms.RGBAPremul8)
+	}
 	return Frame{Width: w, Height: h, Pix: g.shot, Count: g.r.Stats().Frames}
 }
 

@@ -62,7 +62,7 @@ func run(show string, width, height int, keyboard bool) error {
 	ui.SetOnScreenKeyboard(nil, keyboard)
 
 	App = gift.New(gift.Options{Root: Screen})
-	pipe := asset.NewPipeline(asset.Config{Deliver: App.Post})
+	pipe := asset.NewPipeline(asset.Config{Deliver: App.Post, Space: backend.WorkingSpace(nil)})
 	defer func() {
 		pipe.Close()
 		App.DrainPosts()

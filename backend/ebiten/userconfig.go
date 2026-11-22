@@ -15,7 +15,7 @@ import (
 // userConfig is the configuration a person keeps for every gift application
 // they run, in .wdygift/config.json in their home directory:
 //
-//	{"scale": 2}
+//	{"scale": 2, "display": "srgb"}
 //
 // # Why it exists
 //
@@ -31,6 +31,30 @@ type userConfig struct {
 	// [Config.Density]. It is a factor from 1 to [gift.MaxDensity] and is
 	// rounded as every density is; see [gift.App.SetDensity].
 	Scale float64 `json:"scale"`
+
+	// Display says how the colours of the display are handled: "auto", the
+	// default, or "srgb" to take the display for an sRGB one; see
+	// [WorkingSpace].
+	Display string `json:"display"`
+}
+
+// readUserConfig reads the [userConfig], the zero one where there is none
+// or it cannot be read. It reports nothing: [userScale] reads the file first
+// and logs what is wrong with it.
+func readUserConfig() (userConfig, string) {
+	path, err := userConfigPath()
+	if err != nil {
+		return userConfig{}, ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return userConfig{}, path
+	}
+	var c userConfig
+	if json.Unmarshal(data, &c) != nil {
+		return userConfig{}, path
+	}
+	return c, path
 }
 
 // userConfigPath is the path of the [userConfig] file.

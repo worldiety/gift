@@ -12,23 +12,27 @@ import (
 	"github.com/worldiety/gift/cms"
 )
 
-// Thumbnails are sRGB, which is what gift paints, and they are made with the
-// perceptual intent, the one meant for photographs: for the matrix profiles
+// Thumbnails are made in [Config.Space], sRGB unless it says otherwise, and
+// with the perceptual intent, the one meant for photographs: for the matrix profiles
 // of displays and cameras it is the same as relative colorimetric, and the
 // tables of a printer profile compress its gamut as their maker chose.
 var thumbnailOptions = cms.Options{Intent: cms.Perceptual}
 
-// conversion turns the colours of a picture into sRGB.
+// conversion turns the colours of a picture into those of [Config.Space].
 type conversion struct {
 	t *cms.Transform
-	// gray is the sRGB colour of each of the 256 gray levels, for a gray
+	// gray is the colour of each of the 256 gray levels, for a gray
 	// profile: a thumbnail is RGBA, and a gray level is looked up in it.
 	gray []byte
 }
 
-// newConversion links p to sRGB, or returns nil when that changes nothing.
-func newConversion(p *cms.Profile) (*conversion, error) {
-	t, err := cms.NewTransform(p, cms.SRGB(), thumbnailOptions)
+// newConversion links p to dst, nil for sRGB, or returns nil when that
+// changes nothing.
+func newConversion(p, dst *cms.Profile) (*conversion, error) {
+	if dst == nil {
+		dst = cms.SRGB()
+	}
+	t, err := cms.NewTransform(p, dst, thumbnailOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +67,8 @@ func newConversion(p *cms.Profile) (*conversion, error) {
 // unchanged8 reports whether an RGB transform leaves 8 bit colours as they
 // are, on a grid of every fifth level, 140 608 colours: most sRGB profiles
 // in the wild differ from the one built in by less than half a step, which
-// rounds away, and converting with them would cost a thumbnail time and
-// change nothing.
+// rounds away, and converting with them into sRGB would cost a thumbnail
+// time and change nothing.
 func unchanged8(t *cms.Transform) bool {
 	const step, n = 5, 255/5 + 1
 	in := make([]byte, 0, 3*n*n*n)
@@ -95,8 +99,7 @@ func (c *conversion) early(m color.Model) bool {
 	return false
 }
 
-// full converts a whole decoded picture into an sRGB [image.RGBA] of its
-// size, for the pictures [conversion.early] names. It returns false for any
+// full converts a whole decoded picture into an [image.RGBA] of its size, for the pictures [conversion.early] names. It returns false for any
 // other kind.
 func (c *conversion) full(img image.Image) (*image.RGBA, bool) {
 	var (
@@ -196,6 +199,9 @@ const maxTransforms = 16
 // and baking it takes milliseconds that a thumbnail should not pay each
 // time.
 type transforms struct {
+	// dst is the space converted into, nil for sRGB. It is set before the
+	// first get and never changes.
+	dst   *cms.Profile
 	mu    sync.Mutex
 	m     map[[sha256.Size]byte]*transformEntry
 	order [][sha256.Size]byte // least recently used first
@@ -207,10 +213,13 @@ type transformEntry struct {
 	err  error
 }
 
-// get returns the conversion of p to sRGB, nil when there is nothing to
-// convert. Concurrent callers for the same profile bake it once.
+// get returns the conversion of p to the space of ts, nil when there is
+// nothing to convert. Concurrent callers for the same profile bake it once.
 func (ts *transforms) get(p *cms.Profile) (*conversion, error) {
-	if p == cms.SRGB() || p == cms.SGray() {
+	switch {
+	case p == ts.dst:
+		return nil, nil
+	case ts.dst == nil && (p == cms.SRGB() || p == cms.SGray()):
 		return nil, nil
 	}
 	key := sha256.Sum256(p.Bytes())
@@ -236,7 +245,7 @@ func (ts *transforms) get(p *cms.Profile) (*conversion, error) {
 	}
 	ts.order = append(ts.order, key)
 	ts.mu.Unlock()
-	e.once.Do(func() { e.c, e.err = newConversion(p) })
+	e.once.Do(func() { e.c, e.err = newConversion(p, ts.dst) })
 	return e.c, e.err
 }
 

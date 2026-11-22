@@ -191,7 +191,7 @@ func run(path, url, xyz, attribution string, debug, dark, noLabels bool, width, 
 		pixels = 4 * asset.DefaultPixelBudget
 	}
 	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post, Workers: workers, PixelBudget: pixels,
-		Disk: asset.DiskCacheConfig{Dir: cache}})
+		Space: backend.WorkingSpace(nil), Disk: asset.DiskCacheConfig{Dir: cache}})
 	defer func() {
 		pipe.Close()
 		app.DrainPosts()

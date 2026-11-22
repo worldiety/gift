@@ -53,6 +53,10 @@ type Key struct {
 	Orientation Orientation
 	// ProcessingVersion is the version of gift's thumbnail production.
 	ProcessingVersion uint32
+	// Space names the colour space of the pixels, [Config.Space], by a hash
+	// of its profile. It is empty for sRGB, which leaves the key of every
+	// thumbnail made before there was a choice as it was.
+	Space string
 }
 
 // String is a stable, printable form of the key.
@@ -64,7 +68,14 @@ func (k Key) String() string {
 		"/" + strconv.Itoa(k.Size) +
 		"/o" + strconv.Itoa(int(k.Orientation.Normalised())) +
 		"/p" + strconv.FormatUint(uint64(k.ProcessingVersion), 10) +
-		"/n" + k.Namespace
+		"/n" + k.Namespace + spaceSuffix(k.Space)
+}
+
+func spaceSuffix(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "/s" + s
 }
 
 // fileName is the name of this key's entry in the disk cache.
@@ -98,6 +109,9 @@ func writeKey(h interface{ Write([]byte) (int, error) }, k Key) {
 	put(strconv.Itoa(k.Size))
 	put(strconv.Itoa(int(k.Orientation.Normalised())))
 	put(strconv.FormatUint(uint64(k.ProcessingVersion), 10))
+	if k.Space != "" {
+		put(k.Space)
+	}
 }
 
 // hintName is the name of the revision hint for one picture. The hint is keyed

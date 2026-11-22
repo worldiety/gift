@@ -187,7 +187,7 @@ func main() {
 
 	app := gift.New(gift.Options{Root: root})
 
-	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post})
+	pipe := asset.NewPipeline(asset.Config{Deliver: app.Post, Space: backend.WorkingSpace(nil)})
 	defer func() {
 		pipe.Close()
 		app.DrainPosts()

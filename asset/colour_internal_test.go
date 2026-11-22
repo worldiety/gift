@@ -79,7 +79,7 @@ func TestGrayProfileThatChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := newConversion(p); c != nil || err != nil {
+	if c, err := newConversion(p, nil); c != nil || err != nil {
 		t.Errorf("sRGB gray converted: %v, %v", c, err)
 	}
 }
@@ -119,7 +119,7 @@ func BenchmarkConversion(b *testing.B) {
 		{"full-24MP-16bit-AdobeRGB", cms.AdobeRGB(), image.NewRGBA64(image.Rect(0, 0, 6000, 4000))},
 	} {
 		b.Run(c.name, func(b *testing.B) {
-			conv, err := newConversion(c.p)
+			conv, err := newConversion(c.p, nil)
 			if err != nil || conv == nil {
 				b.Fatal(err)
 			}
@@ -185,7 +185,7 @@ func TestNearlySRGBIsNotConverted(t *testing.T) {
 	if tr, _ := cms.NewTransform(near, cms.SRGB(), thumbnailOptions); tr.Identity() {
 		t.Fatal("the test profile is the identity already; it tests nothing")
 	}
-	if c, err := newConversion(near); c != nil || err != nil {
+	if c, err := newConversion(near, nil); c != nil || err != nil {
 		t.Errorf("nearly sRGB is converted: %v", err)
 	}
 	gamma, err := cms.NewRGBProfile("gamma 2.2", cms.WhiteD65,
@@ -193,7 +193,7 @@ func TestNearlySRGBIsNotConverted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := newConversion(gamma); c == nil {
+	if c, _ := newConversion(gamma, nil); c == nil {
 		t.Error("gamma 2.2 is not converted")
 	}
 }

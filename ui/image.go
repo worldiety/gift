@@ -285,7 +285,7 @@ func (s *imageService) lookup(ctx *gift.PaintContext, k imageKey) (render.ImageI
 	}
 	h, ok := im.Acquire(render.Pixels{
 		Pix: t.Pix(), W: t.Width(), H: t.Height(), Stride: t.Stride(),
-		Key: k.hash(),
+		Key: k.hash(), Space: t.Space(),
 	})
 	w, hh := t.Width(), t.Height()
 	t.Release()

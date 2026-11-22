@@ -4,6 +4,8 @@ import (
 	"image"
 	"sync"
 	"sync/atomic"
+
+	"github.com/worldiety/gift/cms"
 )
 
 // Thumbnail is one decoded, oriented, scaled picture in main memory.
@@ -47,6 +49,8 @@ type Thumbnail struct {
 	// written when the thumbnail enters the CPU cache, which is the only
 	// place that knows the key.
 	revision string
+	// space is the colour space of the pixels, nil for sRGB.
+	space *cms.Profile
 
 	refs atomic.Int32
 	// owner is the budget the bytes are charged against. It is nil for a
@@ -80,6 +84,15 @@ func (t *Thumbnail) LadderSize() int { return t.ladder }
 // found ui.Gallery doing exactly that on a cold gallery, where the catalogue
 // revision is still empty and the probed one is not.
 func (t *Thumbnail) Revision() string { return t.revision }
+
+// Space is the colour space of the pixels, [Config.Space] of the pipeline
+// that made them: [cms.SRGB] unless it was told otherwise.
+func (t *Thumbnail) Space() *cms.Profile {
+	if t.space == nil {
+		return cms.SRGB()
+	}
+	return t.space
+}
 
 // Orientation is the EXIF orientation that was *applied*. The pixels are
 // upright; this is here so that a cache entry can be checked against the key

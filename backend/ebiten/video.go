@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"image"
+	"strings"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
 
@@ -52,6 +53,12 @@ type VideoCache struct {
 	convert *eb.Shader
 	direct  *eb.Shader
 
+	// ws is the working space of the renderer, nil for sRGB. In another
+	// one the pictures are converted by wide variants of the two shaders;
+	// see [VideoCache.setSpace]. base keeps the sRGB pair.
+	ws   *workingSpace
+	base [2]*eb.Shader
+
 	// presented counts calls to Present, for tests and diagnostics.
 	presented uint64
 	// conversions counts runs of the RGB conversion.
@@ -85,7 +92,77 @@ func NewVideoCache() (*VideoCache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gift/backend/ebiten: compiling the direct video shader: %w", err)
 	}
-	return &VideoCache{recs: make([]videoRec, 1), convert: conv, direct: dir}, nil
+	return &VideoCache{recs: make([]videoRec, 1), convert: conv, direct: dir, base: [2]*eb.Shader{conv, dir}}, nil
+}
+
+// setSpace makes the two shaders convert into the working space ws, or into
+// sRGB for nil.
+//
+// # Why a variant and not a uniform
+//
+// The picture's RGB is taken to be sRGB, as on every other path, and in
+// another working space it is converted on the GPU: the curve undone, a
+// matrix, the curve again, six powers a pixel. A Mac does not notice. The
+// Raspberry Pi the direct shader exists for paints sRGB, and a uniform
+// switch would leave the code and the branch in its shader; the wide pair
+// is compiled only where it is used, from the same source.
+func (c *VideoCache) setSpace(ws *workingSpace) error {
+	if ws == c.ws {
+		return nil
+	}
+	conv, dir := c.base[0], c.base[1]
+	if ws != nil {
+		var err error
+		if conv, err = eb.NewShader(wideVideoSource(videoConvertSrc)); err != nil {
+			return fmt.Errorf("gift/backend/ebiten: compiling the wide video conversion shader: %w", err)
+		}
+		if dir, err = eb.NewShader(wideVideoSource(videoDirectSrc)); err != nil {
+			return fmt.Errorf("gift/backend/ebiten: compiling the wide direct video shader: %w", err)
+		}
+	}
+	c.ws, c.convert, c.direct = ws, conv, dir
+	for i := range c.recs {
+		if r := &c.recs[i]; r.live && r.uniforms != nil {
+			r.uniforms = videoUniforms(r.f, ws)
+			r.converted = 0
+		}
+	}
+	return nil
+}
+
+// The line both video shaders end with, and what the wide variants add.
+const (
+	videoReturn     = "return vec4(clamp(vec3(dot(RowR, yuv), dot(RowG, yuv), dot(RowB, yuv)), 0, 1), 1)"
+	videoWideReturn = "return vec4(toWorking(clamp(vec3(dot(RowR, yuv), dot(RowG, yuv), dot(RowB, yuv)), 0, 1)), 1)"
+	videoUniformsAt = "var RowB vec4\n"
+	videoWide       = `var RowB vec4
+
+// ToR, ToG and ToB turn linear sRGB into the linear working space.
+var ToR vec3
+var ToG vec3
+var ToB vec3
+
+// toWorking converts an sRGB colour into the working space, whose curve is
+// the sRGB curve.
+func toWorking(c vec3) vec3 {
+	lin := mix(c/12.92, pow((c+0.055)/1.055, vec3(2.4)), step(vec3(0.04045), c))
+	w := clamp(vec3(dot(ToR, lin), dot(ToG, lin), dot(ToB, lin)), 0, 1)
+	return mix(w*12.92, 1.055*pow(w, vec3(1/2.4))-0.055, step(vec3(0.0031308), w))
+}
+`
+)
+
+// wideVideoSource is a video shader that converts into the working space.
+// It panics when the shader no longer has the lines it is made from, which
+// TestWideVideoShadersCompile notices before anyone else.
+func wideVideoSource(src []byte) []byte {
+	s := string(src)
+	if strings.Count(s, videoReturn) != 1 || strings.Count(s, videoUniformsAt) != 1 {
+		panic("gift/backend/ebiten: a video shader no longer ends the way its wide variant expects")
+	}
+	s = strings.Replace(s, videoReturn, videoWideReturn, 1)
+	s = strings.Replace(s, videoUniformsAt, videoWide, 1)
+	return []byte(s)
 }
 
 // Present implements [render.Videos].
@@ -120,7 +197,7 @@ func (c *VideoCache) Present(h render.ImageHandle, f render.VideoFrame) (render.
 		return render.ImageHandle{ID: render.ImageID(i), Gen: r.gen}, true
 	}
 	if r.uniforms == nil || !sameParams(r.f, f) {
-		r.uniforms = videoUniforms(f)
+		r.uniforms = videoUniforms(f, c.ws)
 	}
 	r.f = withoutPix(f)
 	r.seq++
@@ -228,9 +305,9 @@ func (c *VideoCache) rgbTexture(r *videoRec) *eb.Image {
 
 // videoUniforms are the shader parameters of a picture. Both shaders declare
 // the same names; each ignores what it does not use.
-func videoUniforms(f render.VideoFrame) map[string]any {
+func videoUniforms(f render.VideoFrame, ws *workingSpace) map[string]any {
 	r, g, b := videoMatrix(f.Matrix, f.FullRange)
-	return map[string]any{
+	u := map[string]any{
 		"Layout":       float32(f.Layout),
 		"Width":        float32(f.Width),
 		"Height":       float32(f.Height),
@@ -241,6 +318,11 @@ func videoUniforms(f render.VideoFrame) map[string]any {
 		"RowG":         g[:],
 		"RowB":         b[:],
 	}
+	if ws != nil {
+		tr, tg, tb := ws.matrix()
+		u["ToR"], u["ToG"], u["ToB"] = tr[:], tg[:], tb[:]
+	}
+	return u
 }
 
 // videoMatrix returns the rows that turn normalised (Y, U, V, 1) into R, G and

@@ -376,6 +376,10 @@ func (r *Renderer) drawLayer(e *layerEntry, l *render.List, ops []render.Op, off
 func (r *Renderer) drawOps(l *render.List, ops []render.Op, off int) {
 	for i := 0; i < len(ops); i++ {
 		op := ops[i]
+		// The one place every operation passes, so the one place its
+		// colour turns into the working space; gradients, glass tints and
+		// vertices are converted where they are read.
+		op.Color = r.ws.color(op.Color)
 		if op.Kind == render.OpLayer {
 			sub := layerRange(ops, i)
 			r.appendLayer(l, op, sub, off+i+1)

@@ -850,6 +850,7 @@ func (r *Renderer) compositeGlass(back *eb.Image, vis, region geom.Rect,
 
 	r.passVerts = r.passVerts[:0]
 	r.passIdx = r.passIdx[:0]
+	tint := r.ws.color(g.Tint)
 	corners := [4][2]float32{
 		{vis.Min.X, vis.Min.Y}, {vis.Max.X, vis.Min.Y},
 		{vis.Max.X, vis.Max.Y}, {vis.Min.X, vis.Max.Y},
@@ -858,7 +859,7 @@ func (r *Renderer) compositeGlass(back *eb.Image, vis, region geom.Rect,
 		r.passVerts = append(r.passVerts, eb.Vertex{
 			DstX: c[0], DstY: c[1],
 			SrcX: c[0] - region.Min.X, SrcY: c[1] - region.Min.Y,
-			ColorR: g.Tint.R, ColorG: g.Tint.G, ColorB: g.Tint.B, ColorA: g.Tint.A,
+			ColorR: tint.R, ColorG: tint.G, ColorB: tint.B, ColorA: tint.A,
 			Custom0: halfW, Custom1: halfH, Custom2: radius, Custom3: packed,
 		})
 	}
@@ -901,6 +902,7 @@ func (r *Renderer) drawGlassFallback(vis, clip, region geom.Rect, halfW, halfH, 
 	if tint.IsTransparent() {
 		tint = render.DefaultGlassTint()
 	}
+	tint = r.ws.color(tint)
 	r.material(MaterialShape, nil)
 	sh := shapeParams{
 		color:   tint,

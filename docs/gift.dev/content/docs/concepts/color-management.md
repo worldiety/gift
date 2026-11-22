@@ -9,13 +9,49 @@ with an ICC profile. A display and a printer have color spaces of their own. Num
 made for are why a picture looks dull or garish. Package [`cms`](https://github.com/worldiety/gift/tree/main/cms)
 converts between color spaces with ICC profiles, the way LittleCMS does, in pure Go and without cgo.
 
-Everything gift paints is sRGB: the theme, text, and the pictures the image pipeline hands over. The Ebitengine
-backend tells the system so, which matters on a Mac, where the screen would otherwise be taken as Display P3 and
-every sRGB color shown more saturated than it is.
+Every color you give gift is sRGB: the theme, text, and the pixels of a picture that says nothing else. On Windows
+and Linux gift paints in sRGB. On a Mac it paints in Display P3, the space of the Mac's display, so that a
+photograph in P3 or Adobe RGB keeps the colors only a wide display shows; see [the working space](#the-working-space).
 
 The [image pipeline](../images/) reads the color space every picture declares and converts its thumbnails into
-sRGB, so a photograph in Adobe RGB looks in gift as it does in Lightroom or a browser. You only need `cms`
-yourself for pixels that do not come through the pipeline.
+the space gift paints in, so a photograph in Adobe RGB looks in gift as it does in Lightroom or a browser. You only
+need `cms` yourself for pixels that do not come through the pipeline.
+
+## The working space
+
+The Ebitengine backend paints in the space `ebiten.WorkingSpace` returns: Display P3 on macOS and iOS, sRGB
+everywhere else. It tags the screen with it, and the compositor of macOS converts from there into whatever display
+the window is on.
+
+Your sRGB colors look as they always did. The renderer converts each color of the display list into the working
+space, and a gray is the same number in both, so text and shadows are unchanged to the bit. Pictures you upload
+yourself are sRGB unless `render.Pixels.Space` says otherwise, and the renderer converts them as it uploads them,
+on the UI goroutine and on every core for a large one. Video is converted in its shader.
+
+Give the image pipeline the same space, and it makes its thumbnails in it on its own goroutines:
+
+```go
+pipe := asset.NewPipeline(asset.Config{
+	Deliver: app.Post,
+	Space:   ebiten.WorkingSpace(nil),
+})
+```
+
+Without it the thumbnails are sRGB: shown right, but without the colors only P3 has. The space is part of the key of
+the disk cache, so thumbnails made in one space are never shown in another. The keys of sRGB thumbnails are the ones
+they had before, so an existing cache stays valid.
+
+Blending and antialiasing happen in the numbers of the working space. Where text or an edge is drawn over a
+color, its partly covered pixels come out up to a few steps different in P3 than in sRGB. Screenshots of the
+[automation interface](../testing/) are converted back into sRGB, so that they mean the same thing on
+every platform.
+
+To paint in sRGB on a Mac anyway, to compare numbers with another machine, write this into
+`~/.wdygift/config.json`:
+
+```json
+{"display": "srgb"}
+```
 
 ## Pictures in the image pipeline
 

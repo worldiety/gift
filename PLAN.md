@@ -5919,6 +5919,40 @@ Stand F2 (21.11.2026):
 Nicht in F2: ein waehlbarer Arbeitsfarbraum (kommt mit F3, dann auch im
 Cache-Schluessel), WebP-Schreiben, eXIf in PNG, TIFF.
 
+Stand F3, Teil A: macOS malt in Display P3 (22.11.2026):
+
+- Arbeitsraum: `ebiten.WorkingSpace` ist auf macOS und iOS Display P3,
+  sonst sRGB; `"display": "srgb"` in `~/.wdygift/config.json` schaltet auf
+  sRGB zurueck. `Run` kennzeichnet die Metal-Ebene damit
+  (`runOptions(cfg, space)`) und gibt ihn dem Renderer
+  (`Renderer.SetWorkingSpace`, nur sRGB und P3).
+- Farben der Anzeigeliste bleiben sRGB und werden im Backend umgerechnet,
+  an der einen Stelle, die jede Operation durchlaeuft (`drawOps`), dazu
+  Verlaufsende, Glas-Toenung und Dreiecks-Ecken. Grau ist in beiden Raeumen
+  dieselbe Zahl und geht unveraendert durch. Matrix aus `cms` gelesen (auf
+  1e-4 die veroeffentlichte), Memo mit 256 Eintraegen: 1,9 ns je Treffer,
+  112 ns sonst, keine Allokation.
+- Texturen: `render.Pixels.Space` (nil = sRGB); `TextureCache.writeRows`
+  rechnet Fremdes beim Upload um, in Baendern bis 4 MiB, grosse auf allen
+  Kernen (512x512: 0,8 ms auf zehn Kernen, 2,1 ms auf einem).
+  `TextureStats.Converted`.
+- Pipeline: `asset.Config.Space`, Thumbnails gleich in P3 in den Workern
+  (auch unmarkierte sRGB-Bilder; Grau bleibt, ein P3-Profil aus der Datei
+  aendert nichts). Raum im Cache-Schluessel (`Key.Space`, Hash des
+  Profils), fuer sRGB leer: die Dateinamen bestehender Caches bleiben
+  (im Test festgenagelt). `Thumbnail.Space`; `ui/image.go` reicht ihn an den
+  Upload. Die Beispiele setzen `Space: backend.WorkingSpace(nil)`.
+- Video: beide Shader bekommen eine breite Variante (Kurve, Matrix, Kurve),
+  aus derselben Quelle erzeugt und nur in P3 kompiliert; der Pi behaelt
+  seine Shader.
+- Screenshots der Automation werden nach sRGB zurueckgerechnet.
+- Pruefung: GPU-Tests auf dem Mac (Metal): sRGB-Rot ist (234, 51, 35),
+  Grau bleibt, sRGB-Bild umgerechnet, P3-Bild nicht, Video auf beiden
+  Wegen. Kitchensink im echten Fenster in P3 und in sRGB, Screenshots
+  verglichen: 99,7 % gleich, 11 000 Pixel eine Stufe, gut 900 bis zu acht
+  Stufen, alle an Textkanten auf farbigen Knoepfen (Kantenglaettung mischt
+  in P3-Zahlen).
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

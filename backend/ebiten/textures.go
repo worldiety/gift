@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
+	"github.com/worldiety/gift/cms"
 	"github.com/worldiety/gift/render"
 )
 
@@ -213,6 +214,24 @@ type TextureCache struct {
 	// and accounting logic is testable without a graphics context. A nil
 	// value means [eb.NewImage].
 	newImage func(w, h int) *eb.Image
+
+	// conv converts pictures that are not in the working space as they are
+	// uploaded, and scratch holds the converted rows; see
+	// [TextureCache.SetSpace].
+	conv    pixelConversions
+	scratch []byte
+}
+
+// SetSpace sets the colour space the textures are drawn in, nil for sRGB. A
+// picture in another space, [render.Pixels.Space], is converted as it is
+// uploaded. The renderer calls it from [Renderer.SetWorkingSpace].
+func (t *TextureCache) SetSpace(p *cms.Profile) {
+	if p == cms.SRGB() {
+		p = nil
+	}
+	if p != t.conv.dst {
+		t.conv = pixelConversions{dst: p}
+	}
 }
 
 // NewTextureCache returns an empty cache. It allocates no GPU memory until the
@@ -393,7 +412,7 @@ func (t *TextureCache) Acquire(px render.Pixels) (render.ImageHandle, bool) {
 	t.bytes += need
 	img := t.newTexture(px.W, px.H)
 	if img != nil {
-		writeRows(img, px, 0, px.H)
+		t.writeRows(img, px, 0, px.H)
 	}
 	t.frameUploads++
 	t.frameBytes += need
@@ -501,7 +520,7 @@ func (t *TextureCache) acquirePartial(px render.Pixels, need int64) (render.Imag
 	rows := int(min(left/rowBytes, int64(px.H-p.row)))
 	if rows > 0 {
 		if p.img != nil {
-			writeRows(p.img, px, p.row, p.row+rows)
+			t.writeRows(p.img, px, p.row, p.row+rows)
 		}
 		if p.opaque {
 			p.opaque = opaquePixels(render.Pixels{Pix: px.Pix[p.row*px.Stride:], W: px.W, H: rows, Stride: px.Stride})
@@ -644,7 +663,37 @@ func (t *TextureCache) newTexture(w, h int) *eb.Image {
 	return eb.NewImage(w, h)
 }
 
-// writeRows uploads the rows y0 to y1 of the pixel data.
+// writeRows uploads the rows y0 to y1 of the pixel data, converted into the
+// working space if they are in another one.
+//
+// A conversion goes through scratch in bands of up to 4 MiB, each one
+// WritePixels. A picture that cannot be converted is uploaded as it is: the
+// only such space is one that is not RGB, which no producer in gift hands
+// over.
+func (t *TextureCache) writeRows(img *eb.Image, px render.Pixels, y0, y1 int) {
+	tr, err := t.conv.get(px.Space)
+	if tr == nil || err != nil {
+		writeRows(img, px, y0, y1)
+		return
+	}
+	n := px.W * 4
+	band := max(1, (4<<20)/n)
+	for y := y0; y < y1; y += band {
+		rows := min(band, y1-y)
+		if cap(t.scratch) < rows*n {
+			t.scratch = make([]byte, rows*n)
+		}
+		buf := t.scratch[:rows*n]
+		if convertPixels(tr, buf, px.Pix[y*px.Stride:], px.W, rows, px.Stride) != nil {
+			writeRows(img, px, y, y1)
+			return
+		}
+		img.SubImage(image.Rect(0, y, px.W, y+rows)).(*eb.Image).WritePixels(buf)
+	}
+	t.stats.Converted++
+}
+
+// writeRows uploads the rows y0 to y1 of the pixel data as they are.
 //
 // The rows are written one call at a time only when the stride is padded,
 // which asset.Thumbnail's never is; the common case is a single WritePixels of
@@ -714,6 +763,10 @@ type TextureStats struct {
 	// Uploads and UploadedBytes are what actually reached the GPU.
 	Uploads       uint64
 	UploadedBytes uint64
+	// Converted is the number of uploads, or bands of a picture uploaded in
+	// bands, whose pixels were converted into the working space on the way;
+	// see [TextureCache.SetSpace].
+	Converted uint64
 	// Deferred is the number of [TextureCache.Acquire] calls refused by the
 	// per drawn frame upload budget. It is not an error: the caller drew a
 	// placeholder and the picture arrived a frame or two later. A Deferred

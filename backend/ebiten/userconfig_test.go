@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/worldiety/gift"
+	"github.com/worldiety/gift/cms"
 )
 
 // withHome makes dir the home directory of the test, with a user
@@ -136,10 +138,43 @@ func TestLayoutFKeepsTheDensityOfItsOwn(t *testing.T) {
 	}
 }
 
-// TestTheScreenIsSRGB pins the colour space of the screen: unset, Ebitengine
-// shows gift's sRGB colours as Display P3 on macOS, too saturated.
-func TestTheScreenIsSRGB(t *testing.T) {
-	if cs := runOptions(Config{}).ColorSpace; cs != eb.ColorSpaceSRGB {
-		t.Errorf("colour space %v, want sRGB", cs)
+// TestTheScreenIsTaggedWithTheWorkingSpace pins the colour space of the
+// screen: unset, Ebitengine tags it Display P3 on macOS whatever the
+// renderer paints, and sRGB numbers came out too saturated.
+func TestTheScreenIsTaggedWithTheWorkingSpace(t *testing.T) {
+	if cs := runOptions(Config{}, cms.SRGB()).ColorSpace; cs != eb.ColorSpaceSRGB {
+		t.Errorf("colour space %v for sRGB", cs)
+	}
+	if cs := runOptions(Config{}, cms.DisplayP3()).ColorSpace; cs != eb.ColorSpaceDisplayP3 {
+		t.Errorf("colour space %v for Display P3", cs)
+	}
+}
+
+func TestTheWorkingSpaceFollowsTheDisplaySetting(t *testing.T) {
+	wide := runtime.GOOS == "darwin" || runtime.GOOS == "ios"
+	for _, c := range []struct {
+		name, file string
+		p3, warns  bool
+	}{
+		{"no file", "", wide, false},
+		{"auto", `{"display": "auto"}`, wide, false},
+		{"sRGB", `{"display": "sRGB"}`, false, false},
+		{"nonsense", `{"display": "vivid"}`, wide, wide},
+		{"broken file", `{"display": "srgb"`, wide, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			withHome(t, c.file)
+			var buf bytes.Buffer
+			got := WorkingSpace(slog.New(slog.NewTextHandler(&buf, nil)))
+			if (got == cms.DisplayP3()) != c.p3 {
+				t.Errorf("working space %s", got.Description())
+			}
+			if got != cms.DisplayP3() && got != cms.SRGB() {
+				t.Errorf("working space %s is neither", got.Description())
+			}
+			if warned := strings.Contains(buf.String(), "level=WARN"); warned != c.warns {
+				t.Errorf("warned %v, want %v; log:\n%s", warned, c.warns, buf.String())
+			}
+		})
 	}
 }

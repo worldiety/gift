@@ -103,6 +103,7 @@ func run() error {
 	}})
 	pipe := asset.NewPipeline(asset.Config{
 		Deliver: app.Post,
+		Space:   backend.WorkingSpace(nil),
 		Workers: *workers,
 		// Rungs up to 4096 for the viewer: a screen of 1920 asks for 2048,
 		// and a zoomed picture for 4096. The large ones stay off the disk.

@@ -440,13 +440,24 @@ func FuzzReadProfile(f *testing.F) {
 // thumbnail's pixels and the pipeline's statistics.
 func thumbOf(t *testing.T, name string, data []byte) (*image.RGBA, asset.Stats) {
 	t.Helper()
+	img, st, _ := thumbIn(t, nil, name, data)
+	return img, st
+}
+
+// thumbIn is [thumbOf] in a pipeline that makes thumbnails in space, and
+// returns the space the thumbnail says it is in.
+func thumbIn(t *testing.T, space *cms.Profile, name string, data []byte) (*image.RGBA, asset.Stats, *cms.Profile) {
+	t.Helper()
 	path := writeFile(t, t.TempDir(), name, data)
 	c := newCollector()
-	p := asset.NewPipeline(baseConfig(c))
+	cfg := baseConfig(c)
+	cfg.Space = space
+	p := asset.NewPipeline(cfg)
 	defer p.Close()
 	var (
 		mu  sync.Mutex
 		out *image.RGBA
+		in  *cms.Profile
 	)
 	p.Request(asset.Request{Source: asset.File(path), Size: 64, Priority: asset.Visible,
 		OnResult: func(r asset.Result) {
@@ -455,7 +466,7 @@ func thumbOf(t *testing.T, name string, data []byte) (*image.RGBA, asset.Stats) 
 				cp := image.NewRGBA(src.Rect)
 				copy(cp.Pix, src.Pix)
 				mu.Lock()
-				out = cp
+				out, in = cp, r.Image.Space()
 				mu.Unlock()
 			}
 			c.onResult(r)
@@ -466,7 +477,7 @@ func thumbOf(t *testing.T, name string, data []byte) (*image.RGBA, asset.Stats) 
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	return out, p.Stats()
+	return out, p.Stats(), in
 }
 
 // decoded is the centre pixel of a picture as the standard library decodes
@@ -494,10 +505,15 @@ func rgbAt(img *image.RGBA, x, y int) [3]int {
 	return [3]int{int(img.Pix[o]), int(img.Pix[o+1]), int(img.Pix[o+2])}
 }
 
-// convert8 converts one 8 bit colour exactly, as the expectation.
+// convert8 converts one 8 bit colour into sRGB exactly, as the expectation.
 func convert8(t *testing.T, p *cms.Profile, in ...uint8) [3]int {
 	t.Helper()
-	tr, err := cms.NewTransform(p, cms.SRGB(), cms.Options{Intent: cms.Perceptual})
+	return convert8To(t, p, cms.SRGB(), in...)
+}
+
+func convert8To(t *testing.T, p, dst *cms.Profile, in ...uint8) [3]int {
+	t.Helper()
+	tr, err := cms.NewTransform(p, dst, cms.Options{Intent: cms.Perceptual})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,6 +597,58 @@ func TestPipelineConvertsSixteenBitFirst(t *testing.T) {
 	// 12.92 * 0.002 * 255 = 6.6; through 8 bits it would be 13.
 	if v := rgbAt(got, 8, 8); !near(v, [3]int{7, 7, 7}, 0) || st.Converted != 1 {
 		t.Errorf("linear 0.002 is %v converted %d times, want 7", v, st.Converted)
+	}
+}
+
+// A pipeline told to make its thumbnails in Display P3 converts everything
+// into it: a picture that declares nothing from sRGB, an Adobe RGB one from
+// Adobe RGB. One in P3 already, and a gray one, it leaves alone.
+func TestPipelineMakesThumbnailsInItsSpace(t *testing.T) {
+	jpg := flatJPEG(t, color.RGBA{100, 150, 200, 255})
+	r, g, b, _ := decoded(t, jpg).At(24, 16).RGBA()
+	raw := [3]int{int(r >> 8), int(g >> 8), int(b >> 8)}
+
+	gray := image.NewGray(image.Rect(0, 0, 16, 16))
+	for i := range gray.Pix {
+		gray.Pix[i] = 90
+	}
+	var gj bytes.Buffer
+	if err := jpeg.Encode(&gj, gray, &jpeg.Options{Quality: 100}); err != nil {
+		t.Fatal(err)
+	}
+	gv, _, _, _ := decoded(t, gj.Bytes()).At(8, 8).RGBA()
+
+	for _, c := range []struct {
+		name      string
+		data      []byte
+		x, y      int
+		want      [3]int
+		converted uint64
+	}{
+		{"plain.jpg", jpg, 24, 16, convert8To(t, cms.SRGB(), cms.DisplayP3(), uint8(raw[0]), uint8(raw[1]), uint8(raw[2])), 1},
+		{"adobe.jpg", mustEmbed(t, jpg, cms.AdobeRGB()), 24, 16, convert8To(t, cms.AdobeRGB(), cms.DisplayP3(), uint8(raw[0]), uint8(raw[1]), uint8(raw[2])), 1},
+		{"p3.jpg", mustEmbed(t, jpg, cms.DisplayP3()), 24, 16, raw, 0},
+		{"gray.jpg", gj.Bytes(), 8, 8, [3]int{int(gv >> 8), int(gv >> 8), int(gv >> 8)}, 0},
+	} {
+		img, st, space := thumbIn(t, cms.DisplayP3(), c.name, c.data)
+		if got := rgbAt(img, c.x, c.y); !near(got, c.want, 1) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+		if st.Converted != c.converted {
+			t.Errorf("%s: converted %d times, want %d", c.name, st.Converted, c.converted)
+		}
+		if space != cms.DisplayP3() {
+			t.Errorf("%s: the thumbnail says it is %s", c.name, space.Description())
+		}
+	}
+	if near(convert8To(t, cms.SRGB(), cms.DisplayP3(), uint8(raw[0]), uint8(raw[1]), uint8(raw[2])), raw, 4) {
+		t.Fatalf("test colour %v is the same in sRGB and P3", raw)
+	}
+
+	// A space thumbnails cannot be made in is sRGB.
+	_, _, space := thumbIn(t, cms.SGray(), "plain.jpg", jpg)
+	if space != cms.SRGB() {
+		t.Errorf("a gray space gave %s thumbnails", space.Description())
 	}
 }
 

@@ -1,6 +1,9 @@
 package render
 
-import "github.com/worldiety/gift/geom"
+import (
+	"github.com/worldiety/gift/cms"
+	"github.com/worldiety/gift/geom"
+)
 
 // ImageID names one image resource that is resident in a backend right now.
 //
@@ -63,6 +66,12 @@ type Pixels struct {
 	// at a time, recognising the picture again when it is offered in the
 	// next frame; without a key such a picture is uploaded whole.
 	Key uint64
+	// Space is the colour space of the pixels; nil is sRGB, which is what
+	// a picture without other information is. A backend that paints in
+	// another space converts them when it uploads them, so a producer that
+	// can make its pixels in the backend's space, as package asset can,
+	// spares it that work on the UI goroutine.
+	Space *cms.Profile
 }
 
 // IsEmpty reports whether there is nothing to upload.
