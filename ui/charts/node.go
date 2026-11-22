@@ -328,24 +328,22 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 				c.pts, c.key = d.reduce(c.pts[:0], lo, hi, buckets), key
 			}
 		case *Source:
+			// A source the next build will ask counts as busy already, so
+			// that the chart does not say "No Data" for the frame between
+			// one answer and the next question.
 			ld := st.loads[d]
 			if ld == nil {
-				fetch = true
+				fetch, busy = true, true
 				continue
 			}
 			c.pts = ld.pts
-			busy = busy || ld.busy || ld.extBusy
+			lacks := ld.lacksPoints(lo, hi, buckets) || ld.lacksExtent(d)
+			busy = busy || ld.busy || ld.extBusy || lacks
+			fetch = fetch || lacks
 			if ld.err != nil {
 				st.errText = ld.err.Error()
 			} else if ld.extErr != nil {
 				st.errText = ld.extErr.Error()
-			}
-			if !covers(ld.have, lo, hi, buckets, ld.extent, ld.hasExt) &&
-				!((ld.busy || ld.err != nil) && covers(ld.want, lo, hi, buckets, ld.extent, ld.hasExt)) {
-				fetch = true
-			}
-			if !ld.hasExt && !ld.extBusy && ld.extErr == nil && d.cfg.Extent != nil {
-				fetch = true
 			}
 		case Func:
 			c.pts = c.pts[:0]
@@ -427,6 +425,10 @@ func (n *plotNode) reduce(ctx *gift.LayoutContext, lo, hi float64) {
 func (st *state) xTicks(lo, hi float64, px float32) []tick {
 	v := st.v
 	switch {
+	case !(hi > lo):
+		// Nothing to show yet, a source's extent still on its way: no
+		// tick, where the first would be at 0/0.
+		return nil
 	case len(v.cats) > 0:
 		var ts []tick
 		for i, c := range v.cats {

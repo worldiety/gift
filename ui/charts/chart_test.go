@@ -4,6 +4,7 @@ import (
 	"context"
 	"iter"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -314,6 +315,64 @@ func TestASourceThatFailsSaysSo(t *testing.T) {
 	})
 	h := mount(t, func(*gift.Context) gift.View { return charts.Chart(charts.Line(src)) })
 	await(t, h, "the error", func() bool { return h.Exists(gifttest.ByTextContains("disk on fire")) })
+}
+
+// A source that takes its time over its extent leaves the chart without a
+// range to show. Until the extent comes it waits, quietly: it builds and
+// lays out nothing more, puts no label at NaN, and says it is loading. It
+// used to ask for a build every frame for points the build would not ask
+// for, which a loaded machine, slower to run the extent's goroutine than
+// gifttest to draw 64 frames, turned into a test that did not settle.
+func TestAChartWaitsQuietlyForTheExtent(t *testing.T) {
+	gate := make(chan struct{})
+	src := charts.NewSource(charts.SourceConfig{
+		Extent: func(context.Context) (float64, float64, error) {
+			<-gate
+			return 0, 10, nil
+		},
+		Points: func(_ context.Context, r charts.Request) (iter.Seq[charts.Point], error) {
+			return func(yield func(charts.Point) bool) {
+				for x := 0.0; x <= 10; x++ {
+					if !yield(charts.Point{X: x, Y: x}) {
+						return
+					}
+				}
+			}, nil
+		},
+	})
+	defer func() {
+		select {
+		case <-gate:
+		default:
+			close(gate)
+		}
+	}()
+	h := mount(t, func(*gift.Context) gift.View { return charts.Chart(charts.Line(src)) })
+	before := h.Diagnostics()
+	for range 10 {
+		h.Frame()
+	}
+	if after := h.Diagnostics(); after.Builds != before.Builds || after.Layouts != before.Layouts {
+		t.Errorf("waiting for the extent cost %d builds and %d layouts in 10 frames",
+			after.Builds-before.Builds, after.Layouts-before.Layouts)
+	}
+	h.AssertExists(gifttest.ByText("Loading…"))
+	if d := h.Dump(); strings.Contains(d, "NaN") {
+		t.Errorf("a position is NaN while the extent is loading:\n%s", d)
+	}
+	// From the extent to the points the chart is loading, without a frame
+	// of "No Data" between the answer and the next question.
+	close(gate)
+	await(t, h, "the points", func() bool {
+		if h.Exists(gifttest.ByText("No Data")) {
+			t.Fatal("the chart said No Data between the extent and the points")
+		}
+		return !h.Exists(gifttest.ByText("Loading…"))
+	})
+	h.AssertExists(gifttest.ByText("10"))
+	if len(vertices(h)) == 0 {
+		t.Error("no line once the points came")
+	}
 }
 
 func TestAppendedPointsWidenTheChart(t *testing.T) {

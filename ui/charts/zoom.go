@@ -613,11 +613,20 @@ func (n *plotNode) rune(r rune) bool {
 }
 
 // plotX maps x to a local position on the plot.
+//
+// An empty range, before the chart knows what to show, maps everything to
+// the middle, as a linear scale of an empty domain does, and not to 0/0.
 func (st *state) plotX(x float64) float64 {
+	if !(st.hi > st.lo) {
+		return float64(st.plot.Min.X) + float64(st.plot.Width())/2
+	}
 	return float64(st.plot.Min.X) + (x-st.lo)/(st.hi-st.lo)*float64(st.plot.Width())
 }
 
 // plotY maps y to a local position on the plot.
 func (st *state) plotY(y float64) float64 {
+	if !(st.yhi > st.ylo) {
+		return float64(st.plot.Max.Y) - float64(st.plot.Height())/2
+	}
 	return float64(st.plot.Max.Y) - (y-st.ylo)/(st.yhi-st.ylo)*float64(st.plot.Height())
 }

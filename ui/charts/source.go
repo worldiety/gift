@@ -127,6 +127,28 @@ type loading struct {
 	err        error
 }
 
+// lacksExtent reports whether the extent of s is still to be asked for:
+// neither had, nor under way, nor failed.
+func (ld *loading) lacksExtent(s *Source) bool {
+	return !ld.hasExt && !ld.extBusy && ld.extErr == nil && s.cfg.Extent != nil
+}
+
+// lacksPoints reports whether the points for showing [lo, hi] across
+// buckets columns are still to be asked for: neither had, nor under way,
+// nor failed. An empty range, before the chart knows what to show, lacks
+// nothing.
+//
+// The layout asks for a build when a source lacks something, and the build
+// asks the source; both ask this, because when they disagreed the layout
+// asked every frame for a build that asked for nothing.
+func (ld *loading) lacksPoints(lo, hi float64, buckets int) bool {
+	if buckets <= 0 || !(hi > lo) {
+		return false
+	}
+	return !covers(ld.have, lo, hi, buckets, ld.extent, ld.hasExt) &&
+		!((ld.busy || ld.err != nil) && covers(ld.want, lo, hi, buckets, ld.extent, ld.hasExt))
+}
+
 // covers reports whether the points of r are good for showing [lo, hi]
 // across buckets columns: they reach both ends, and their columns are not
 // much wider than the chart's nor very much narrower.

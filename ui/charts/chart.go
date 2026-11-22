@@ -472,7 +472,7 @@ func (st *state) fetch() {
 			// New points: ask again, and show the old ones until they come.
 			ld.rev, ld.hasExt, ld.extErr, ld.err, ld.have = src.rev, false, nil, nil, Request{}
 		}
-		if !ld.hasExt && !ld.extBusy && ld.extErr == nil && src.cfg.Extent != nil {
+		if ld.lacksExtent(src) {
 			ld.extBusy = true
 			fetchExtent(src, st.tok.Post, func(lo, hi float64, err error) {
 				ld.extBusy, ld.extErr = false, err
@@ -482,15 +482,11 @@ func (st *state) fetch() {
 				st.bump()
 			})
 		}
-		lo, hi, buckets := st.need[0], st.need[1], int(st.need[2])
-		if buckets == 0 || !(hi > lo) {
-			continue
-		}
 		// What is had, what is under way and what failed is not asked for
 		// again; a failed request is asked again when the chart wants
 		// something else, or when the source has news.
-		if covers(ld.have, lo, hi, buckets, ld.extent, ld.hasExt) ||
-			(ld.busy || ld.err != nil) && covers(ld.want, lo, hi, buckets, ld.extent, ld.hasExt) {
+		lo, hi, buckets := st.need[0], st.need[1], int(st.need[2])
+		if !ld.lacksPoints(lo, hi, buckets) {
 			continue
 		}
 		if ld.cancel != nil {
