@@ -308,3 +308,45 @@ func BenchmarkNewTransformTable(b *testing.B) {
 		_ = mustTransform(b, SRGB(), p, Options{})
 	}
 }
+
+// The parts of a transform between two matrix profiles convert as the
+// transform does.
+func TestShaperIsTheTransform(t *testing.T) {
+	tr, err := NewTransform(SRGB(), AdobeRGB(), Options{Intent: Perceptual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := tr.Shaper()
+	if !ok {
+		t.Fatal("sRGB to Adobe RGB is not a shaper")
+	}
+	lerp := func(tab []float32, x float64) float64 {
+		x = min(max(x, 0), 1) * float64(len(tab)-1)
+		i := min(int(x), len(tab)-2)
+		f := x - float64(i)
+		return float64(tab[i]) + f*float64(tab[i+1]-tab[i])
+	}
+	for _, c := range [][3]float64{{1, 0, 0}, {0.2, 0.5, 0.9}, {0.01, 0.02, 0.005}, {1, 1, 1}} {
+		var lin, out [3]float64
+		for k := range 3 {
+			lin[k] = lerp(s.In[k], c[k])
+		}
+		want := tr.Color(c[0], c[1], c[2])
+		for r := range 3 {
+			v := float64(s.Matrix[3*r])*lin[0] + float64(s.Matrix[3*r+1])*lin[1] + float64(s.Matrix[3*r+2])*lin[2] + float64(s.Offset[r])
+			out[r] = lerp(s.Out[r], math.Sqrt(max(v, 0)))
+			if d := math.Abs(out[r] - want[r]); d > 1e-3 {
+				t.Errorf("%v: channel %d is %v, want %v", c, r, out[r], want[r])
+			}
+		}
+	}
+	lut, err := ParseProfile(rgbModular())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr, err := NewTransform(SRGB(), lut, Options{}); err != nil {
+		t.Fatal(err)
+	} else if _, ok := tr.Shaper(); ok {
+		t.Error("a table profile gave a shaper")
+	}
+}

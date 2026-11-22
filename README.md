@@ -150,8 +150,10 @@ The image pipeline uses it for every picture: the ICC profile of a JPEG, PNG
 or WebP, the Adobe RGB a camera notes in its EXIF and the color chunks of a
 PNG are read, and thumbnails converted into the space gift paints in, CMYK
 JPEGs included. That is sRGB, and Display P3 on a Mac, so that the photographs
-of a phone keep their colors on its display. `asset.EmbedProfile` writes a
-profile into a JPEG or PNG you export.
+of a phone keep their colors on its display. On Windows and X11 each frame is
+converted into the profile of the display on its way to the screen, as
+macOS does by itself. `asset.EmbedProfile` writes a profile into a JPEG or PNG
+you export.
 
 ### Pictures And Gestures
 

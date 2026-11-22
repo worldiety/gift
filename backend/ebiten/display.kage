@@ -1,0 +1,70 @@
+//kage:unit pixels
+
+package main
+
+// display.kage copies the frame onto the screen in the colours of the
+// display: every pixel looked up in a table of sRGB into the display's
+// profile. See displayPass in display.go.
+
+// N is the number of points of the table along each axis. Source image 1 is
+// the table: N slices of N by N texels side by side, red along x within a
+// slice, green along y, blue from slice to slice. The points are not evenly
+// spaced: point i is the colour (i/(N-1))², so that they lie close together
+// in the shadows, where the curve of a display profile is steepest; a pure
+// gamma's has no finite slope at black.
+var N float
+
+// lut is the texel of grid point (r, g, b). In pixel mode Ebitengine
+// addresses every source image in the coordinates of image 0, origin
+// included, and moves the position into image 1's region itself: adding
+// imageSrc1Origin here read four texels to the right on a Mac.
+func lut(r, g, b float) vec3 {
+	return imageSrc1UnsafeAt(imageSrc0Origin() + vec2(r+b*N+0.5, g+0.5)).rgb
+}
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	c := imageSrc0UnsafeAt(srcPos)
+	if c.a <= 0 {
+		return c
+	}
+	p := sqrt(clamp(c.rgb/c.a, 0, 1)) * (N - 1)
+	i := min(floor(p), vec3(N-2))
+	f := p - i
+	c000 := lut(i.r, i.g, i.b)
+	c111 := lut(i.r+1, i.g+1, i.b+1)
+
+	// Tetrahedral interpolation: the cube between the eight points is cut
+	// into six tetrahedra along its gray diagonal, so a gray is
+	// interpolated between grays only and stays gray.
+	var out vec3
+	if f.r >= f.g {
+		if f.g >= f.b {
+			c100 := lut(i.r+1, i.g, i.b)
+			c110 := lut(i.r+1, i.g+1, i.b)
+			out = c000 + f.r*(c100-c000) + f.g*(c110-c100) + f.b*(c111-c110)
+		} else if f.r >= f.b {
+			c100 := lut(i.r+1, i.g, i.b)
+			c101 := lut(i.r+1, i.g, i.b+1)
+			out = c000 + f.r*(c100-c000) + f.b*(c101-c100) + f.g*(c111-c101)
+		} else {
+			c001 := lut(i.r, i.g, i.b+1)
+			c101 := lut(i.r+1, i.g, i.b+1)
+			out = c000 + f.b*(c001-c000) + f.r*(c101-c001) + f.g*(c111-c101)
+		}
+	} else {
+		if f.b >= f.g {
+			c001 := lut(i.r, i.g, i.b+1)
+			c011 := lut(i.r, i.g+1, i.b+1)
+			out = c000 + f.b*(c001-c000) + f.g*(c011-c001) + f.r*(c111-c011)
+		} else if f.b >= f.r {
+			c010 := lut(i.r, i.g+1, i.b)
+			c011 := lut(i.r, i.g+1, i.b+1)
+			out = c000 + f.g*(c010-c000) + f.b*(c011-c010) + f.r*(c111-c011)
+		} else {
+			c010 := lut(i.r, i.g+1, i.b)
+			c110 := lut(i.r+1, i.g+1, i.b)
+			out = c000 + f.g*(c010-c000) + f.r*(c110-c010) + f.b*(c111-c110)
+		}
+	}
+	return vec4(clamp(out, 0, 1)*c.a, c.a)
+}

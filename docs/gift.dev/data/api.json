@@ -1458,6 +1458,12 @@
           }
         ]
       },
+      "Shaper": {
+        "synopsis": "Shaper is a transform between two matrix profiles written out as what it is: a curve for each input channel, a 3 by 3 matrix with an offset, and an inverse curve for each output channel.",
+        "decl": "type Shaper struct {\n\tIn     [3][]float32\n\tMatrix [9]float32\n\tOffset [3]float32\n\tOut    [3][]float32\n}",
+        "constructors": [],
+        "methods": []
+      },
       "Space": {
         "synopsis": "Space is the colour space of the data on one side of a profile, as the ICC signature in the profile header.",
         "decl": "type Space uint32",
@@ -1505,6 +1511,11 @@
             "name": "Pixels",
             "signature": "Pixels(dst []byte, df Format, src []byte, sf Format) error",
             "synopsis": "Pixels converts the pixels of src, in format sf, into dst, in format df."
+          },
+          {
+            "name": "Shaper",
+            "signature": "Shaper() (Shaper, bool)",
+            "synopsis": "Shaper returns the transform as a Shaper when it converts between two matrix profiles, an RGB colour space and a display say, and false otherwise."
           },
           {
             "name": "Source",

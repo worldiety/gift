@@ -461,6 +461,7 @@ func Run(app *gift.App, cfg Config) error {
 
 		systemScale: newSystemScale(),
 		density:     cfg.density(),
+		display:     newDisplayPass(cfg.Logger),
 	}
 	if cfg.NoInput {
 		g.input = nil
@@ -506,7 +507,7 @@ func Run(app *gift.App, cfg Config) error {
 	}
 
 	opts := runOptions(cfg, r.WorkingSpace())
-	if cfg.DirectToScreen {
+	if cfg.DirectToScreen || g.display != nil {
 		// Ebitengine asks for the interface when RunGame is called; only a
 		// game that has the method gets the final screen.
 		err = eb.RunGameWithOptions(directGame{g}, opts)
@@ -631,6 +632,10 @@ type game struct {
 	// density is the density that replaces the monitor's: the user's
 	// scale or [Config.Density]; see [Config.density].
 	density float64
+
+	// display converts the frame into the colours of the display on its
+	// way to the screen, nil where nothing does; see displayPass.
+	display *displayPass
 }
 
 // monitorScale is the density reading LayoutF uses: the seam if a test
@@ -724,6 +729,9 @@ func (g *game) LayoutF(outsideWidth, outsideHeight float64) (float64, float64) {
 		outsideHeight *= raw / g.density
 		raw = g.density
 	}
+	// Here, on the main thread, where the X server and Windows are asked
+	// which display the window is on, and at most every two seconds.
+	g.display.poll(time.Now())
 	if outsideWidth > 0 && outsideHeight > 0 {
 		g.w, g.h = int(outsideWidth), int(outsideHeight)
 	}
@@ -902,6 +910,7 @@ func (g *game) Draw(screen *eb.Image) {
 		g.lastDraw = start
 	}
 
+	g.display.upload()
 	b := screen.Bounds()
 	// Physical pixels, because [game.LayoutF] asked for a device sized
 	// screen. That is the space the renderer works in — clips, the glass
@@ -985,8 +994,9 @@ func (g *game) drawDirect(offscreen *eb.Image, size geom.Size) {
 
 	// A frame the framebuffer cannot hold as is, or one that has to be read
 	// back, takes the offscreen path, and so does every frame under a
-	// graphics library that clears the screen between two passes.
-	if capture || g.finalSize != size || !g.keepsScreen() {
+	// graphics library that clears the screen between two passes and every
+	// frame converted into the display's colours, which is a pass of its own.
+	if capture || g.finalSize != size || !g.keepsScreen() || g.display.active() {
 		g.renderOffscreen(offscreen, size, g.list)
 		g.viaOffscreen = true
 		if capture {
@@ -1028,18 +1038,28 @@ func (g *game) renderOffscreen(offscreen *eb.Image, size geom.Size, list *render
 	g.r.EndFrame()
 }
 
-// directGame is the game under [Config.DirectToScreen]: the same game with
-// the final screen hook.
+// directGame is the game with the final screen hook, under
+// [Config.DirectToScreen] and wherever the frame may be converted into the
+// colours of the display.
 type directGame struct{ *game }
 
-// DrawFinalScreen submits the display list onto the framebuffer. It also runs
-// for the few frames Ebitengine still presents after the last change; the
+// DrawFinalScreen copies the offscreen onto the framebuffer, through the
+// display's colours where they are converted, or under
+// [Config.DirectToScreen] submits the display list onto it. It also runs for
+// the few frames Ebitengine still presents after the last change; the
 // framebuffer is cleared before each, so the last list is drawn again.
 func (d directGame) DrawFinalScreen(screen eb.FinalScreen, offscreen *eb.Image, geoM eb.GeoM) {
 	g := d.game
 	b := screen.Bounds()
 	g.finalSize = geom.Sz(float32(b.Dx()), float32(b.Dy()))
 
+	if g.display.draw(screen, offscreen, geoM) {
+		return
+	}
+	if !g.direct {
+		eb.DefaultDrawFinalScreen(screen, offscreen, geoM)
+		return
+	}
 	if g.viaOffscreen || g.list == nil || g.finalSize != g.drawnSize {
 		op := &eb.DrawImageOptions{GeoM: geoM}
 		screen.DrawImage(offscreen, op)
@@ -1067,6 +1087,9 @@ func (g *game) mustDraw(size geom.Size) bool {
 	case g.app.NeedsPaint():
 		return true
 	case g.r.NeedsFrame():
+		return true
+	case g.display.takeChanged():
+		// The same frame in other colours, through the final screen.
 		return true
 	}
 	return false

@@ -45,16 +45,31 @@ func newSystemScale() func() float64 {
 }
 
 type xftReader struct {
-	dpy               uintptr
-	root              uint64
-	getWindowProperty func(dpy uintptr, w, property uint64, offset, length int64, del bool, reqType uint64, actualType, actualFormat, nitems, bytesAfter unsafe.Pointer, prop *unsafe.Pointer) int32
-	free              func(p unsafe.Pointer) int32
+	*x11Conn
 
 	next time.Time
 	last float64
 }
 
-func openXftReader() (x *xftReader, ok bool) {
+func openXftReader() (*xftReader, bool) {
+	c, ok := openX11()
+	if !ok {
+		return nil, false
+	}
+	return &xftReader{x11Conn: c}, true
+}
+
+// x11Conn is a connection of its own to the X server, through libX11 and
+// without cgo, for reading properties of the root window.
+type x11Conn struct {
+	dpy               uintptr
+	root              uint64
+	getWindowProperty func(dpy uintptr, w, property uint64, offset, length int64, del bool, reqType uint64, actualType, actualFormat, nitems, bytesAfter unsafe.Pointer, prop *unsafe.Pointer) int32
+	free              func(p unsafe.Pointer) int32
+	internAtom        func(dpy uintptr, name *byte, onlyIfExists bool) uint64
+}
+
+func openX11() (x *x11Conn, ok bool) {
 	var handle uintptr
 	for _, name := range []string{"libX11.so.6", "libX11.so"} {
 		if h, err := purego.Dlopen(name, purego.RTLD_NOW|purego.RTLD_GLOBAL); err == nil {
@@ -76,14 +91,15 @@ func openXftReader() (x *xftReader, ok bool) {
 		openDisplay       func(name *byte) uintptr
 		defaultRootWindow func(dpy uintptr) uint64
 	)
-	x = &xftReader{}
+	x = &x11Conn{}
 	purego.RegisterLibFunc(&openDisplay, handle, "XOpenDisplay")
 	purego.RegisterLibFunc(&defaultRootWindow, handle, "XDefaultRootWindow")
 	purego.RegisterLibFunc(&x.getWindowProperty, handle, "XGetWindowProperty")
 	purego.RegisterLibFunc(&x.free, handle, "XFree")
+	purego.RegisterLibFunc(&x.internAtom, handle, "XInternAtom")
 
 	// A connection of its own, used only from LayoutF on the main thread, so
-	// it shares nothing with GLFW's.
+	// it shares nothing with GLFW's. Each reader opens one.
 	x.dpy = openDisplay(nil)
 	if x.dpy == 0 {
 		return nil, false
@@ -103,7 +119,7 @@ func (x *xftReader) scale() float64 {
 }
 
 // resources reads the RESOURCE_MANAGER property of the root window.
-func (x *xftReader) resources() string {
+func (x *x11Conn) resources() string {
 	const (
 		xaResourceManager = 23 // predefined by the protocol
 		xaString          = 31

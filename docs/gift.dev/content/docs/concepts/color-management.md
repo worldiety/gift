@@ -53,6 +53,34 @@ To paint in sRGB on a Mac anyway, to compare numbers with another machine, write
 {"display": "srgb"}
 ```
 
+## The display on Windows and Linux
+
+macOS converts every window into the colors of the display it is on. Windows and X11 do not: they show a window's
+numbers as the display's own, so on a wide gamut display every color comes out more saturated, and on a calibrated
+one the calibration does not reach the window. gift converts there itself, as browsers and photo editors do. It
+reads the profile of the display the window is on, every two seconds, and converts each frame on its way to the
+screen, in the one copy every frame has anyway:
+
+| System | Where the profile comes from |
+|--------|------------------------------|
+| X11 | The property `_ICC_PROFILE` of the root window, `_ICC_PROFILE_1` for the second display and so on, where colord, GNOME, KDE, `dispwin` or `xcalib` put it. |
+| Windows | The default profile of the display in Color Management, the one a calibration installs. Not on a display with Advanced Color, HDR or the automatic color management of Windows 11, where Windows converts itself. |
+| Wayland | Nothing: whether the compositor converts what gift shows is its business. |
+
+A display profile that is a matrix with a curve per channel, as nearly all are, is evaluated exactly on the GPU,
+within one 8 bit step of `cms`. A profile made of tables is looked up in a table of 33 points per axis, within a
+few steps. A display that is sRGB, or has no profile, costs nothing.
+
+Where the system has no profile or the wrong one, name the file in `~/.wdygift/config.json`. It is used on X11,
+Wayland and Windows alike, and `"srgb"` switches the conversion off:
+
+```json
+{"display": "~/.local/share/icc/my-display.icc"}
+```
+
+Under `DirectToScreen`, a frame that is converted is drawn into the offscreen first, since the conversion is a pass of
+its own.
+
 ## Pictures in the image pipeline
 
 A picture says which color space its numbers are in, in one of these ways. `asset.ReadProfile` returns the profile

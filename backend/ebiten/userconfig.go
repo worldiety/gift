@@ -33,8 +33,9 @@ type userConfig struct {
 	Scale float64 `json:"scale"`
 
 	// Display says how the colours of the display are handled: "auto", the
-	// default, or "srgb" to take the display for an sRGB one; see
-	// [WorkingSpace].
+	// default, "srgb" to take the display for an sRGB one, or the path of
+	// the display's ICC profile where the system does not say or says
+	// wrong, on X11, Wayland and Windows. See [WorkingSpace] and displayPass.
 	Display string `json:"display"`
 }
 

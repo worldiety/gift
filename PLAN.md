@@ -5953,6 +5953,44 @@ Stand F3, Teil A: macOS malt in Display P3 (22.11.2026):
   Stufen, alle an Textkanten auf farbigen Knoepfen (Kantenglaettung mischt
   in P3-Zahlen).
 
+Stand F3, Teil B: Displayprofil unter X11 und Windows (22.11.2026):
+
+- `displayPass`: der Frame bleibt sRGB und wird in der Kopie aufs Display
+  umgerechnet (`directGame.DrawFinalScreen`, sonst
+  `eb.DefaultDrawFinalScreen`); unter `DirectToScreen` nimmt ein
+  umgerechneter Frame den Offscreen-Weg. Das Profil wird alle zwei Sekunden
+  aus `LayoutF` gelesen (Hauptthread), eine Aenderung zeichnet einen Frame.
+- Matrixprofile (fast alle Displays) exakt im Shader `displayshaper.kage`:
+  sRGB-Kurve, Matrix, Umkehrkurven aus einer Tabelle von 1025 Eintraegen
+  ueber der Wurzel des linearen Lichts; dafuer exportiert `cms` jetzt
+  `Transform.Shaper`. Tabellenprofile ueber `display.kage`: 3D-Tabelle 33^3,
+  Stuetzstellen bei (i/32)^2, tetraedrisch interpoliert. Ein Profil, das
+  keinen 8-Bit-Wert aendert, kostet nichts.
+- Warum nicht alles ueber die Tabelle: das von macOS aus EDID gemachte
+  Profil des externen Monitors (Matrix, Kurven mit 1024 Eintraegen) lag mit
+  ihr bis 7 Stufen (33) bzw. 4 (49) daneben, bei gesaettigten Farben, deren
+  Kanal am Display gegen null geht, wo die Umkehrkurve keine endliche
+  Steigung hat. Mit dem Shader: hoechstens eine Stufe.
+- In Kage adressiert der Pixel-Modus jedes Quellbild in den Koordinaten
+  von Bild 0; `imageSrc1Origin()` dazuzuzaehlen las auf dem Mac vier Texel
+  daneben.
+- X11: `_ICC_PROFILE` bzw. `_ICC_PROFILE_n` des Root-Fensters ueber
+  libX11 (purego, eigene Verbindung, `x11Conn` mit dem Xft-Leser geteilt),
+  Index des Monitors in Ebitengines Liste. Wayland (`WAYLAND_DISPLAY`):
+  nichts. Windows: Fenster der Klasse GLFW30 auf dem Hauptthread,
+  `MonitorFromWindow`, `GetICMProfileW` auf einem DC des Monitors; bei
+  Advanced Color (HDR oder automatisches Farbmanagement) nichts, geprueft
+  ueber `QueryDisplayConfig`/`DisplayConfigGetDeviceInfo`. Strukturgroessen
+  per Compile-Zeit-Assertion; auf Windows nicht gelaufen.
+- `"display"` in `~/.wdygift/config.json`: `"auto"`, `"srgb"` oder der Pfad
+  eines Profils (auch mit `~/`), unter X11, Wayland und Windows.
+- Pruefung: GPU-Test auf dem Mac (Metal) und auf dem Pi unter Xvfb
+  (Mesa, OpenGL): Matrixprofile (Display P3, Adobe RGB, ProPhoto, auf dem
+  Mac die beiden Displayprofile von macOS) hoechstens eine Stufe neben der
+  exakten Umrechnung, Tabellenprofil hoechstens zwei neben `cms`. X11-Leser
+  auf dem Pi gegen ein privates Xvfb (`GIFT_XVFB=1 xvfb-run`). Unter Xvfb
+  weicht das Glas-Golden `glass-full` in 2 Pixeln ab, auch vor F3.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

@@ -129,6 +129,38 @@ func (t *Transform) Destination() Space { return t.dst }
 // caller can skip it.
 func (t *Transform) Identity() bool { return t.identity }
 
+// Shaper is a transform between two matrix profiles written out as what it
+// is: a curve for each input channel, a 3 by 3 matrix with an offset, and an
+// inverse curve for each output channel. It is for a renderer that converts
+// on the GPU, where evaluating these is exact and a lookup table would
+// interpolate; see [Transform.Shaper].
+type Shaper struct {
+	// In are the input curves, from the encoded values of the source to
+	// linear light, sampled at len-1 even steps from 0 to 1.
+	In [3][]float32
+	// Matrix turns linear source light into linear destination light, row
+	// by row, and Offset is added to the result; it is not zero only with
+	// black point compensation.
+	Matrix [9]float32
+	Offset [3]float32
+	// Out are the output curves, from linear light to the encoded values of
+	// the destination, sampled at the squares of len-1 even steps: Out[c][i]
+	// is the value at linear (i/(len-1))². The square puts the samples where
+	// an inverse curve bends, near black.
+	Out [3][]float32
+}
+
+// Shaper returns the transform as a [Shaper] when it converts between two
+// matrix profiles, an RGB colour space and a display say, and false
+// otherwise. The slices are the transform's own and must not be changed.
+func (t *Transform) Shaper() (Shaper, bool) {
+	k, ok := t.k.(*matrixShaper)
+	if !ok {
+		return Shaper{}, false
+	}
+	return Shaper{In: k.in, Matrix: k.m, Offset: k.off, Out: k.out}, true
+}
+
 // Color converts one colour exactly, in float64 and without the lookup
 // table: in has a value from 0 to 1 per channel of the source space, the
 // result one per channel of the destination.

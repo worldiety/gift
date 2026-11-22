@@ -1,0 +1,45 @@
+//kage:unit pixels
+
+package main
+
+// displayshaper.kage copies the frame onto the screen in the colours of a
+// display whose profile is a matrix with a curve per channel, as nearly
+// every display's is: the sRGB curve, the matrix, the inverse curves of the
+// display. See displayPass in display.go.
+
+// ToR, ToG and ToB turn linear sRGB into the linear light of the display,
+// row by row, and Offset is added.
+var ToR vec3
+var ToG vec3
+var ToB vec3
+var Offset vec3
+
+// L is the number of entries of the inverse curves. Source image 1 is one
+// row of them, red, green and blue in the channels of a texel, entry i at
+// the linear value (i/(L-1))²: an inverse curve rises steeply near black,
+// and the square root spaces the entries where it bends.
+var L float
+
+// entry is the texel of entry i of the three inverse curves.
+func entry(i float) vec4 {
+	// Every source image is addressed in the coordinates of image 0; see
+	// display.kage.
+	return imageSrc1UnsafeAt(imageSrc0Origin() + vec2(i+0.5, 0.5))
+}
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	c := imageSrc0UnsafeAt(srcPos)
+	if c.a <= 0 {
+		return c
+	}
+	e := clamp(c.rgb/c.a, 0, 1)
+	lin := mix(e/12.92, pow((e+0.055)/1.055, vec3(2.4)), step(vec3(0.04045), e))
+	d := clamp(vec3(dot(ToR, lin), dot(ToG, lin), dot(ToB, lin))+Offset, 0, 1)
+	u := sqrt(d) * (L - 1)
+	i := min(floor(u), vec3(L-2))
+	f := u - i
+	r := mix(entry(i.r).r, entry(i.r+1).r, f.r)
+	g := mix(entry(i.g).g, entry(i.g+1).g, f.g)
+	b := mix(entry(i.b).b, entry(i.b+1).b, f.b)
+	return vec4(clamp(vec3(r, g, b), 0, 1)*c.a, c.a)
+}
