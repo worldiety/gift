@@ -57,6 +57,9 @@ type Key struct {
 	// of its profile. It is empty for sRGB, which leaves the key of every
 	// thumbnail made before there was a choice as it was.
 	Space string
+	// Decoder is the version of the decoder of the picture, [Versioned];
+	// empty for a decoder without one, which leaves the key as it was.
+	Decoder string
 }
 
 // String is a stable, printable form of the key.
@@ -68,7 +71,14 @@ func (k Key) String() string {
 		"/" + strconv.Itoa(k.Size) +
 		"/o" + strconv.Itoa(int(k.Orientation.Normalised())) +
 		"/p" + strconv.FormatUint(uint64(k.ProcessingVersion), 10) +
-		"/n" + k.Namespace + spaceSuffix(k.Space)
+		"/n" + k.Namespace + spaceSuffix(k.Space) + decoderSuffix(k.Decoder)
+}
+
+func decoderSuffix(d string) string {
+	if d == "" {
+		return ""
+	}
+	return "/d" + d
 }
 
 func spaceSuffix(s string) string {
@@ -111,6 +121,10 @@ func writeKey(h interface{ Write([]byte) (int, error) }, k Key) {
 	put(strconv.FormatUint(uint64(k.ProcessingVersion), 10))
 	if k.Space != "" {
 		put(k.Space)
+	}
+	if k.Decoder != "" {
+		put("decoder")
+		put(k.Decoder)
 	}
 }
 

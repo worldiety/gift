@@ -279,6 +279,10 @@ func TestCacheKeyComponentsEachChangeTheKey(t *testing.T) {
 		"namespace":  {Namespace: "ns2", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1},
 		"id":         {Namespace: "ns1", ID: "file:///b.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1},
 		"space":      {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1, Space: "p3"},
+		"decoder":    {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1, Decoder: "raw1"},
+		"both":       {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1, Space: "p3", Decoder: "raw1"},
+		// A space named as the decoder's framing is not the decoder.
+		"space named decoder": {Namespace: "ns1", ID: "file:///a.jpg", Revision: "r1", Size: 256, Orientation: asset.OrientationTopLeft, ProcessingVersion: 1, Space: "decoder"},
 	}
 	baseName := asset.FileNameForTest(base)
 	// The name of an sRGB thumbnail is the one it had before the colour

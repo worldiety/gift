@@ -992,7 +992,8 @@ func (p *Pipeline) produce(ctx context.Context, j *job) (Result, *Thumbnail) {
 
 	if rev != "" && known.haveShape {
 		key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-			Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
+			Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey,
+			Decoder: decoderVersion(known.mime)}
 		if t, ok := p.pix.get(key); ok {
 			p.counters.memHits.Add(1)
 			return Result{
@@ -1214,7 +1215,8 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 			p.putHint(ns, j.id, hint{Revision: rev, Expires: exp,
 				W: known.w, H: known.h, O: known.orientation, MIME: known.mime})
 			key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-				Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
+				Orientation: known.orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey,
+				Decoder: decoderVersion(known.mime)}
 			if t, ok := p.pix.get(key); ok {
 				return t, Result{FromMemory: true, Orientation: known.orientation,
 					Metadata: Metadata{ID: j.id, Revision: rev, Width: uint32(known.w), Height: uint32(known.h), MIMEType: known.mime}}, nil
@@ -1344,7 +1346,8 @@ func (p *Pipeline) fetchDecode(ctx context.Context, j *job, ns, rev string, know
 	}
 
 	key := Key{Namespace: ns, ID: j.id, Revision: rev, Size: j.rung,
-		Orientation: info.Orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey}
+		Orientation: info.Orientation, ProcessingVersion: p.cfg.ProcessingVersion, Space: p.spaceKey,
+		Decoder: decoderVersion(info.MIME)}
 	p.pix.put(key, t)
 	if rev != "" {
 		if err := p.disk.put(key, t); err != nil && p.cfg.Logger != nil {

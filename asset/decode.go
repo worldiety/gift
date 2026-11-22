@@ -104,6 +104,32 @@ type ProfileReader interface {
 	ReadProfile(encoded []byte) (*cms.Profile, error)
 }
 
+// Versioned is an optional extension of [Decoder]: a decoder whose pictures
+// change with a version of its own, beyond gift's [ProcessingVersion], such
+// as one that develops the raw data of cameras by a process that improves.
+// Its version is part of the cache key of every picture it decodes, so that
+// a new version makes new thumbnails; an empty version leaves the key as it
+// would be without it.
+type Versioned interface {
+	DecoderVersion() string
+}
+
+// decoderVersion is the version of the decoder registered for mimeType,
+// empty for one without.
+func decoderVersion(mimeType string) string {
+	decoderMu.RLock()
+	defer decoderMu.RUnlock()
+	for _, e := range decoders {
+		if e.mime == mimeType {
+			if v, ok := e.dec.(Versioned); ok {
+				return v.DecoderVersion()
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
 type decoderEntry struct {
 	mime string
 	dec  Decoder
