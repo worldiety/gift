@@ -444,7 +444,7 @@ asset.RegisterDecoder(raw.MIMEDNG, raw.Decoder{Format: raw.DNG})
 ```
 
 The previews of an Alpha 7 III are 1616 by 1080 pixels. With `Develop` the decoder develops the raw data instead,
-at the full resolution of the sensor, and a thumbnail from half of it, a fifth of a second for 24 megapixels:
+at the full resolution of the sensor, and a thumbnail from half of it, some 0.3 seconds for 24 megapixels:
 
 ```go
 space := backend.WorkingSpace(nil) // the space the pipeline paints in
@@ -454,14 +454,19 @@ pipe := asset.NewPipeline(asset.Config{Space: space /* … */})
 
 Developing is levels, white balance, highlights reconstructed from the channels that did not clip, and
 demosaicing by RCD, in tiles of float32 on all cores; then the camera's profile in the colour model of the DNG
-specification, which takes the colours of the sensor to the light of the scene in linear Rec. 2020; then a tone
-curve fitted to the pictures of an Alpha 7 III, and the colour space of the picture, colours beyond it compressed
-rather than clipped. A DNG carries its own profile, the package has the matrices of Sony's cameras up to 2018, and
-`raw.ParseProfile` reads a DNG camera profile of your own, a `.dcp` file, with its tables and tone curve. The
-camera's settings, a black and white creative style among them, do not act yet: the picture is a neutral
-development, not the camera's style. A file the package cannot develop, of a camera it has no matrix for, shows its
-preview. The decoder's version, `raw.ProcessVersion` and the space, is part of the cache key
-(`asset.Versioned`), so that a better development makes new thumbnails.
+specification, which takes the colours of the sensor to the light of the scene in linear Rec. 2020; then the look,
+and the colour space of the picture, colours beyond it compressed rather than clipped. A DNG carries its own
+profile, the package has the matrices of Sony's cameras up to 2018, and `raw.ParseProfile` reads a DNG camera
+profile of your own, a `.dcp` file, with its tables and tone curve.
+
+The look is the camera's by default, `raw.LookCamera`: measured file by file against the preview the camera
+rendered from the same raw data, a matrix and a tone curve that carry its style, contrast and saturation, the mean
+of its dynamic range optimiser, and black and white — a photograph taken in black and white develops in black and
+white. Against the Alpha 7 III's own JPEGs it comes within a ΔE of 1 to 3. `raw.LookNeutral` is the same for every
+file: a tone curve fitted to the Alpha 7 III's pictures, applied channel by channel as a camera does. A file the
+package cannot develop, of a camera it has no matrix for, shows its preview. The decoder's version,
+`raw.ProcessVersion`, the look and the space, is part of the cache key (`asset.Versioned`), so that a better
+development makes new thumbnails.
 
 `raw.Open` reads the file without its pixels; `File.RGBA`, `RGBA64` and `Develop` develop it outside the
 pipeline:

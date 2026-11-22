@@ -137,6 +137,8 @@ type File struct {
 	layout    layout
 	// profile is the camera profile a DNG carries, nil for none.
 	profile *Profile
+	// looks is the camera's look, measured once.
+	looks lookState
 }
 
 // Mosaic describes the sensor data of a raw file: what it covers and how

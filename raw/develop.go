@@ -38,6 +38,9 @@ type Options struct {
 	// Space is the colour space of [OutputPicture]: an RGB profile of
 	// curves and a matrix, as most are; nil is sRGB.
 	Space *cms.Profile
+	// Look is how [OutputPicture] makes the picture: as the camera did,
+	// the default, or neutral.
+	Look Look
 }
 
 // Highlights is what [File.Develop] does with photosites that clipped.
@@ -92,7 +95,8 @@ const (
 // [Options.Half], before the orientation of the file is applied; [Bounds]
 // tells it.
 func (f *File) Develop(opt Options, sink func(Tile)) error {
-	k, err := f.newPipe(opt, f.whiteBalance(opt))
+	wb := f.whiteBalance(opt)
+	k, err := f.newPipe(opt, wb, nil)
 	if err != nil {
 		return err
 	}
@@ -103,6 +107,13 @@ func (f *File) Develop(opt Options, sink func(Tile)) error {
 	d, err := newDeveloper(f, raw, opt)
 	if err != nil {
 		return err
+	}
+	if k != nil && opt.Output == OutputPicture && opt.Look == LookCamera && opt.Profile == nil {
+		if l := f.cameraLook(d); l != nil {
+			if k, err = f.newPipe(opt, wb, l); err != nil {
+				return err
+			}
+		}
 	}
 	if k != nil {
 		next := sink

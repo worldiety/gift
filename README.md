@@ -162,8 +162,11 @@ saturation, sharpness and DRO among them. It develops the raw data, Sony's
 compressed raw and the lossless JPEG of DNG among its forms, in float32 tiles
 on all cores: highlights reconstructed, demosaiced by RCD, the colours of the
 camera through its profile in the DNG color model — a DNG's own, the matrix
-of a Sony camera, or a `.dcp` of your own — and a tone curve fitted to the
-pictures of an Alpha 7 III, into sRGB, Display P3 or any matrix profile.
+of a Sony camera, or a `.dcp` of your own — and the look of the camera,
+measured file by file against the preview it rendered, so that a picture
+keeps the camera's style and a black and white photograph stays one; or
+neutral, by a tone curve fitted to the pictures of an Alpha 7 III. Into
+sRGB, Display P3 or any matrix profile.
 Registered with the image pipeline, it shows a raw file as the preview the
 camera rendered, or developed:
 

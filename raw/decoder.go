@@ -27,11 +27,10 @@ import (
 // was set to. The previews of an Alpha 7 III are 1616 by 1080 pixels.
 //
 // With Develop, it develops the raw data instead, as [File.RGBA] does: the
-// whole resolution, in the colours of the camera's profile and the tones
-// of this package, not the camera's style. A thumbnail takes the raw data
-// at half size, which is a fifth of a second for 24 megapixels; a file this
-// package cannot develop, of a camera it has no matrix for, shows its
-// preview.
+// whole resolution, as the camera made its pictures or neutral, by Look. A
+// thumbnail takes the raw data at half size, which is some 0.3 seconds for
+// 24 megapixels; a file this package cannot develop, of a camera it has no
+// matrix for, shows its preview.
 //
 // A Decoder is a value without state and safe for concurrent use.
 type Decoder struct {
@@ -44,6 +43,9 @@ type Decoder struct {
 	// sRGB: the space of the pipeline, asset.Config.Space, so that what
 	// the space can show of the camera's colours is not clipped twice.
 	Space *cms.Profile
+	// Look is how developed pictures are made: as the camera made its
+	// own, the default, or neutral.
+	Look Look
 }
 
 // Sniff reports whether head begins a raw file of the decoder's format.
@@ -143,7 +145,7 @@ func (d Decoder) DecodeScaled(r io.Reader, minW, minH int) (image.Image, error) 
 	if !s.develop {
 		return s.f.DecodePreview(s.p)
 	}
-	opt := Options{Space: d.Space}
+	opt := Options{Space: d.Space, Look: d.Look}
 	if half := s.f.Bounds(Options{Half: true}); minW <= half.Dx() && minH <= half.Dy() {
 		opt.Half = true
 	}
@@ -194,13 +196,13 @@ func (d Decoder) ReadProfile(encoded []byte) (*cms.Profile, error) {
 }
 
 // DecoderVersion is what the pictures of a developing decoder depend on,
-// for the keys of a cache of them: [ProcessVersion] and the colour space;
-// empty for previews, which are the camera's.
+// for the keys of a cache of them: [ProcessVersion], the look and the
+// colour space; empty for previews, which are the camera's.
 func (d Decoder) DecoderVersion() string {
 	if !d.Develop {
 		return ""
 	}
-	v := fmt.Sprintf("raw%d", ProcessVersion)
+	v := fmt.Sprintf("raw%d-%v", ProcessVersion, d.Look)
 	if d.Space != nil {
 		sum := sha256.Sum256(d.Space.Bytes())
 		v += "-" + hex.EncodeToString(sum[:6])

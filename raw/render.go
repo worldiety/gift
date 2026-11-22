@@ -45,8 +45,8 @@ func (o Output) String() string {
 // pictures: its demosaicing, its colours and its tones. It changes when a
 // picture changes visibly, so that a cache of developed pictures can be
 // keyed by it; within a version, the same file and options give the same
-// picture.
-const ProcessVersion = 1
+// picture. Version 2 makes the picture as the camera did, [LookCamera].
+const ProcessVersion = 2
 
 // pipe turns the camera's white balanced colours of a tile into the output.
 //
@@ -75,11 +75,17 @@ type pipe struct {
 	hue   bool
 	toOut [9]float32
 	enc   [3]encoder
+	// camera is the matrix of the camera's look, nil for the neutral
+	// one: it takes the scene to the preview's space before cameraTone,
+	// and gray makes a black and white picture.
+	camera     *[9]float32
+	cameraTone *toneCurve
+	gray       bool
 }
 
 // newPipe makes the pipe for opt and the white balance wb, nil for
-// OutputCamera.
-func (f *File) newPipe(opt Options, wb [3]float64) (*pipe, error) {
+// OutputCamera; with the camera's look l for a picture, when not nil.
+func (f *File) newPipe(opt Options, wb [3]float64, l *cameraLook) (*pipe, error) {
 	if opt.Output == OutputCamera {
 		return nil, nil
 	}
@@ -141,6 +147,22 @@ func (f *File) newPipe(opt Options, wb [3]float64) (*pipe, error) {
 
 	src := cms.LinearRec2020()
 	k.tone = defaultTone()
+	if l != nil {
+		// The look's matrix and curve make the preview's space, whose
+		// linear light goes to the picture's space through Rec. 2020.
+		out, err := outputOf(src, opt.Space)
+		if err != nil {
+			return nil, err
+		}
+		var o mat
+		for i := range 9 {
+			o[i/3][i%3] = float64(out.matrix[i])
+		}
+		lm := l.matrix.f32()
+		k.camera, k.cameraTone, k.gray = &lm, l.tone, l.gray
+		k.toOut, k.enc = o.mul(l.to2020).f32(), out.enc
+		return k, nil
+	}
 	if p.tone != nil {
 		k.tone, k.hue = profileTone(p.tone), true
 		k.toScene = identity.f32()
@@ -243,6 +265,16 @@ func (k *pipe) run(t Tile) {
 			case k.out == OutputScene:
 				rs[i], gs[i], bs[i] = r, g, b
 				continue
+			case k.camera != nil:
+				r, g, b = apply(k.camera, r, g, b)
+				if min(r, g, b) < 0 {
+					r, g, b = inGamut(r, g, b)
+				}
+				r, g, b = k.cameraTone.at(r), k.cameraTone.at(g), k.cameraTone.at(b)
+				if k.gray {
+					r = (r + g + b) / 3
+					g, b = r, r
+				}
 			case k.hue:
 				r, g, b = k.tone.rgb(r, g, b)
 			default:
@@ -254,6 +286,13 @@ func (k *pipe) run(t Tile) {
 				r, g, b = k.tone.at(r), k.tone.at(g), k.tone.at(b)
 			}
 			r, g, b = compress(apply(&k.toOut, r, g, b))
+			if k.gray {
+				// Gray in any space is gray: one channel for all three,
+				// without the rounding of the matrix between.
+				v := k.enc[1].at(g)
+				rs[i], gs[i], bs[i] = v, v, v
+				continue
+			}
 			rs[i], gs[i], bs[i] = k.enc[0].at(r), k.enc[1].at(g), k.enc[2].at(b)
 		}
 	}

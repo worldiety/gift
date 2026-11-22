@@ -325,7 +325,7 @@ func FuzzParseProfile(f *testing.F) {
 			return
 		}
 		fl := &File{WhiteBalance: [3]float64{2, 1, 1.5}}
-		if k, err := fl.newPipe(Options{Profile: p}, fl.WhiteBalance); err == nil {
+		if k, err := fl.newPipe(Options{Profile: p}, fl.WhiteBalance, nil); err == nil {
 			r := []float32{0.5, 2, -1, 0}
 			k.run(Tile{Rect: image.Rect(0, 0, 4, 1), R: r, G: append([]float32(nil), r...), B: append([]float32(nil), r...), Stride: 4})
 			for _, v := range r {
@@ -453,7 +453,7 @@ func TestGamutCompression(t *testing.T) {
 // render runs f's pipe on raw, as Develop does on the file's mosaic.
 func render(t *testing.T, f *File, raw []uint16, opt Options) *Planes {
 	t.Helper()
-	k, err := f.newPipe(opt, f.whiteBalance(opt))
+	k, err := f.newPipe(opt, f.whiteBalance(opt), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +692,7 @@ func TestTheDecoderDevelops(t *testing.T) {
 	if p, err := p3.ReadProfile(b); err != nil || p != cms.DisplayP3() {
 		t.Errorf("profile %v, %v", p, err)
 	}
-	if v, w, x := (Decoder{}).DecoderVersion(), d.DecoderVersion(), p3.DecoderVersion(); v != "" || w != "raw1" || len(x) <= len(w) || x[:4] != "raw1" {
+	if v, w, x := (Decoder{}).DecoderVersion(), d.DecoderVersion(), p3.DecoderVersion(); v != "" || w != "raw2-camera" || len(x) <= len(w) || x[:len(w)] != w {
 		t.Errorf("versions %q, %q, %q", v, w, x)
 	}
 

@@ -6381,7 +6381,7 @@
       },
       "Decoder": {
         "synopsis": "Decoder decodes raw files for package asset, whose Decoder, ScaledDecoder, Sniffer, ProfileReader and Versioned it is without this package importing asset.",
-        "decl": "type Decoder struct {\n\tFormat  Format\n\tDevelop bool\n\tSpace   *cms.Profile\n}",
+        "decl": "type Decoder struct {\n\tFormat  Format\n\tDevelop bool\n\tSpace   *cms.Profile\n\tLook    Look\n}",
         "constructors": [],
         "methods": [
           {
@@ -6402,7 +6402,7 @@
           {
             "name": "DecoderVersion",
             "signature": "DecoderVersion() string",
-            "synopsis": "DecoderVersion is what the pictures of a developing decoder depend on, for the keys of a cache of them: ProcessVersion and the colour space; empty for previews, which are the camera's."
+            "synopsis": "DecoderVersion is what the pictures of a developing decoder depend on, for the keys of a cache of them: ProcessVersion, the look and the colour space; empty for previews, which are the camera's."
           },
           {
             "name": "MemoryFactor",
@@ -6518,6 +6518,18 @@
         "constructors": [],
         "methods": []
       },
+      "Look": {
+        "synopsis": "Look is how OutputPicture makes a picture of the light of the scene.",
+        "decl": "type Look uint8",
+        "constructors": [],
+        "methods": [
+          {
+            "name": "String",
+            "signature": "String() string",
+            "synopsis": ""
+          }
+        ]
+      },
       "Mosaic": {
         "synopsis": "Mosaic describes the sensor data of a raw file: what it covers and how its numbers are to be read.",
         "decl": "type Mosaic struct {\n\tWidth, Height   int\n\tCrop            image.Rectangle\n\tBitsPerSample   int\n\tCompression     Compression\n\tSamplesPerPixel int\n\tCFA             string\n\tBlack           [4]float64\n\tWhite           float64\n}",
@@ -6526,7 +6538,7 @@
       },
       "Options": {
         "synopsis": "Options says how File.Develop develops the raw data.",
-        "decl": "type Options struct {\n\tHalf         bool\n\tWhiteBalance [3]float64\n\tHighlights   Highlights\n\tWorkers      int\n\tOutput       Output\n\tProfile      *Profile\n\tExposure     float64\n\tSpace        *cms.Profile\n}",
+        "decl": "type Options struct {\n\tHalf         bool\n\tWhiteBalance [3]float64\n\tHighlights   Highlights\n\tWorkers      int\n\tOutput       Output\n\tProfile      *Profile\n\tExposure     float64\n\tSpace        *cms.Profile\n\tLook         Look\n}",
         "constructors": [],
         "methods": []
       },

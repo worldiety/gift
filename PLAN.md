@@ -6158,6 +6158,46 @@ Stand R3: Farbe und Tonwerte (22.11.2026):
   Kunstlicht waermer und satter (Portrait 3 bis 12 % satter als wir); DRO
   Auto hebt in den JPEGs die Schatten. Eine echte DNG fehlt weiter.
 
+Stand R4, Teil A: kameratreu durch Abgleich mit der Vorschau (22.11.2026):
+
+- SR2 untersucht: 0x7800 ist je Stil eine Matrix mit Zeilensumme 1056
+  (Schwarzweiss: Einheitsmatrix), 0x7801 die Mischung 19:38:7, 0x7805/0x7806
+  eine Basiskurve des Stils (96 Punkte, Eingang bis 2^21 = Clip, Ausgang
+  bis 2^18, kodiert): Portrait, Landscape und Schwarzweiss je eigene, alle
+  Portrait-Dateien dieselbe. Gegen die JPEGs passt die Kurve nur mit einem
+  Versatz, der von -1 EV in den Schatten bis -1,9 EV am Weiss wandert: DRO
+  Auto wirkt darueber hinaus, die Basismatrix der Kamera steht nicht im
+  Block. Darum nicht nachgebaut, sondern gemessen.
+- `LookCamera` (Standard): je Datei gegen die groesste Vorschau gemessen,
+  wenn sie den Ausschnitt zeigt (Seitenverhaeltnis auf 1 %, mindestens 256
+  Pixel breit; das 160x120-Thumbnail mit Balken faellt heraus). Zellen von
+  4x4 Vorschaupixeln (A7 III: 404x270), Mittel der Photosites ohne
+  geclippte, linear in Rec. 2020 mit dem Weissabgleich der Aufnahme; die
+  Vorschau ueber die Kurven von `cms` linear in ihrem Raum. Modell: Matrix
+  (Szene -> Vorschauraum vor der Kurve), eine Kurve fuer alle Kanaele, je
+  Kanal; drei Runden: Kurve als Median je Achtelblende, monoton per PAV,
+  oben in 1,5 EV auf 1; Matrix per kleinster Quadrate des relativen
+  Fehlers, die schlechtesten 10 % verworfen. Ein Viertel der Zellen passt,
+  ein Viertel prueft: nur wenn der Rest unter dem neutralen Look und unter
+  Delta E 10 liegt, gilt der Look. Graue Vorschau (99 % der Zellen unter 3 %
+  Kanalabstand): Matrixzeilen gleich, Ausgabe exakt grau. 73 ms je Datei,
+  einmal (`sync.Once` am File); der Entwickler wird mitbenutzt, seine Pegel
+  auf den Weissabgleich der Aufnahme umgerechnet.
+- Ergebnis gegen die vollen Kamera-JPEGs (8x8-Bloecke, Delta E 76 Median,
+  neutral -> kamera): Schwarzweiss 10,5 -> 0,4; Portrait 2,2 -> 1,2 und
+  1,5 -> 1,2; See 3,4 -> 0,9; Kunstlicht 3,7 -> 1,8; Landscape ISO 16000
+  5,4 -> 2,9 (die Schatten bleiben heller, DRO wirkt dort lokal).
+- `Options.Look`, `Decoder.Look` (in `DecoderVersion`), `ProcessVersion` 2.
+  Ein Profil in `Options.Profile` entwickelt neutral bzw. mit seiner Kurve.
+- Tests: synthetische Kamera (Matrix, Kurve, Schwarzweiss vor der Kurve
+  gemischt) wird aus ihrer Vorschau zurueckgemessen, Delta E 1,1 bzw. 0,16
+  an anderen Farben durch die ganze Pipe; die Vorschau einer anderen Szene
+  wird abgelehnt; PAV.
+- Offen (Teil B): Kontrast, Saettigung, Schaerfe und DRO als eigene
+  Stufen, die man gegen die Wahl der Kamera verstellen kann; dafuer fehlen
+  Aufnahmen mit Creative Style Standard und Neutral, Kontrast +-3, DRO aus
+  und Lv5. DRO lokal nachbilden. Eine echte DNG fehlt weiter.
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb
