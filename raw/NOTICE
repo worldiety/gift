@@ -12,7 +12,8 @@ restrictions apply only to the functions it marks RESTRICTED, those for
 Foveon sensors, of which this package uses none.
 
 Its demosaicing is Ratio Corrected Demosaicing (RCD), as Luis Sanz Rodríguez
-described it in 2017, written anew for this package.
+described it in 2017, written anew for this package. Lossless JPEG is decoded
+as ITU-T Recommendation T.81 specifies it.
 
 No code of LibRaw, RawSpeed, RawTherapee, darktable or ART, which are under
 the LGPL or the GPL, is in this package.

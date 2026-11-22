@@ -145,11 +145,15 @@ type developer struct {
 	clip   []uint8
 	bw, bh int
 	ratio  [3]float32
+	// blackH and blackV are DNG's black level of each column and row
+	// above black, nil for none.
+	blackH, blackV []float32
 }
 
 func newDeveloper(f *File, raw []uint16, opt Options) (*developer, error) {
 	m := f.Mosaic
-	d := &developer{opt: opt, raw: raw, w: m.Width, h: m.Height, crop: m.Crop}
+	d := &developer{opt: opt, raw: raw, w: m.Width, h: m.Height, crop: m.Crop,
+		blackH: f.layout.blackH, blackV: f.layout.blackV}
 	if d.crop.Empty() || !d.crop.In(image.Rect(0, 0, d.w, d.h)) {
 		return nil, fmt.Errorf("%w: crop %v of %dx%d", ErrFormat, d.crop, d.w, d.h)
 	}
@@ -206,7 +210,14 @@ const clipFraction = 0.97
 func (d *developer) value(x, y int) float32 {
 	x, y = mirror(x, d.w), mirror(y, d.h)
 	p := (y&1)*2 + x&1
-	return max(0, (float32(d.raw[y*d.w+x])-d.black[p])*d.scale[p])
+	b := d.black[p]
+	if d.blackH != nil {
+		b += d.blackH[x]
+	}
+	if d.blackV != nil {
+		b += d.blackV[y]
+	}
+	return max(0, (float32(d.raw[y*d.w+x])-b)*d.scale[p])
 }
 
 func (d *developer) clipped(x, y int) bool {

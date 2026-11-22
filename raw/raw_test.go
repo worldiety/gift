@@ -227,6 +227,17 @@ func FuzzOpen(f *testing.F) {
 		f.Add(b[:8192])
 	}
 	f.Add(buildDNG(f))
+	m := testMosaic(40, 20)
+	f.Add(buildDNGData(40, 20, func(tw *tiffWriter) []tiffEntry {
+		ts := tiles(m, 40, 20, 32, 16, func(tile []uint16) []byte {
+			return encodeLJPEG(tile, 16, 16, 2, 12, 6, 4, []testTable{flatTable, longTable})
+		})
+		return append([]tiffEntry{shorts(0x0102, 12), shorts(0x0103, 7)}, tileEntries(tw, ts, 32, 16)...)
+	}))
+	f.Add(buildDNGData(40, 20, func(tw *tiffWriter) []tiffEntry {
+		ts := tiles(m, 40, 20, 32, 16, func(tile []uint16) []byte { return deflate(le16(tile)) })
+		return append([]tiffEntry{shorts(0x0102, 16), shorts(0x0103, 8), shorts(0x013d, 2)}, tileEntries(tw, ts, 32, 16)...)
+	}))
 	for _, name := range []string{"a7iii-crop-compressed.arw", "a7iii-crop-uncompressed.arw"} {
 		b, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {

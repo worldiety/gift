@@ -6078,6 +6078,29 @@ Stand R2, Teil A: ARW dekodieren und entwickeln (22.11.2026):
   ISO 16000 zeigt B mehr Feinzeichnung und mehr Korn. Fuer R4: Schwarzweiss
   zunaechst mit RCD + Mischung wie die Kamera; D als moegliche Option.
 
+Stand R2, Teil B: DNG-Rohdaten (22.11.2026):
+
+- `readDNGMosaic`: Kacheln oder Streifen, parallel auf allen Kernen;
+  unkomprimiert 8 und 16 Bit (Byteordnung der Datei) und gepackt 1 bis 15
+  Bit (MSB zuerst, Zeilen auf Bytegrenze), verlustfreies JPEG nach T.81
+  (SOF3, bis vier Komponenten, Praediktoren 1 bis 7, Punkt-Transformation,
+  Restart-Intervalle als ganze Zeilen, Huffman mit 10-Bit-Tabelle), Deflate
+  mit Praediktor 2, 34892, 34893. Die Samples einer Kachel fuellen ihre
+  Zeilen der Reihe nach (zwei Komponenten halber Breite = eine Zeile).
+  Danach die LinearizationTable. BlackLevelDeltaH/V gehen in die Pegel des
+  Entwickelns ein.
+- Schutz: Segmente werden gegen die Datei geprueft, bevor alloziert wird;
+  unkomprimiert muessen die Daten das Mosaik tragen, komprimiert hoechstens
+  1000 Photosites je Byte. Der Fuzzer fand vorher einen cRAW-Block mit
+  Maximum und Minimum an derselben Stelle, der ueber sich hinaus las.
+- Tests ohne echte DNG: ein LJ92-Encoder nach T.81 im Test (drei
+  Huffman-Tabellen, auch Codes ueber 10 Bit, Restarts, Differenz 32768),
+  DNGs in jeder Speicherart aus `buildDNGData`. 24 MP LJ92 synthetisch in
+  19 ms. Eine echte DNG (Adobe-Konverter, Handy) steht noch aus.
+- Nicht unterstuetzt: Gleitkomma-DNG, verlustbehaftetes JPEG, JPEG XL,
+  lineare DNG (schon demosaikt, z. B. ProRAW), OpcodeLists (Gain Maps der
+  Handys, Objektivkorrekturen).
+
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 
 Zur spaeteren Diskussion (31.10.2026). Der Fokusring sitzt heute innerhalb

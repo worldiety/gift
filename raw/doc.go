@@ -30,8 +30,10 @@
 //
 // # Developing the raw data
 //
-// [File.ReadMosaic] decodes the sensor data of an ARW, uncompressed or in
-// Sony's compressed raw. [File.Develop] develops it in tiles of float32, in
+// [File.ReadMosaic] decodes the sensor data: of an ARW uncompressed or in
+// Sony's compressed raw, of a DNG uncompressed in 8 to 16 bits, in lossless
+// JPEG or Deflate, in tiles or strips, through its linearization table.
+// [File.Develop] develops it in tiles of float32, in
 // parallel: black and white levels, white balance, the highlights that
 // clipped, which it reconstructs from the channels that did not, and
 // demosaicing by RCD, or at half size without. What comes out is linear
@@ -44,8 +46,10 @@
 // # What it does not do yet
 //
 // The colours of the camera are not yet those of a display, nor its tones
-// those of the camera's pictures, and the raw data of a DNG is not decoded:
-// the stages R2, part B, to R4 of the project plan, section 51.
+// those of the camera's pictures: the stages R3 and R4 of the project plan,
+// section 51. Of DNG it does not decode floating point data, lossy JPEG,
+// JPEG XL and linear, already demosaiced data, and it does not apply the
+// opcode lists, such as the gain maps of phones.
 //
 // The decryption of the SR2 block and the decoding of Sony's compressed raw
 // follow dcraw by Dave Coffin, demosaicing the description of RCD by Luis

@@ -134,6 +134,7 @@ type File struct {
 	segs []segment
 	// sonyCurve is the curve of Sony's compressed raw, tag 0x7010.
 	sonyCurve [4]uint16
+	layout    layout
 }
 
 // Mosaic describes the sensor data of a raw file: what it covers and how
@@ -369,6 +370,7 @@ func (f *File) readMosaic(d dir) {
 		}
 	}
 
+	f.readLayout(d)
 	offs, counts := t.intsOf(d, 0x0111), t.intsOf(d, 0x0117)
 	if len(offs) == 0 {
 		offs, counts = t.intsOf(d, 0x0144), t.intsOf(d, 0x0145)
