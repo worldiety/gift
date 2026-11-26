@@ -62,9 +62,18 @@ type Step struct {
 	// "meta". They stay in force until a later step changes them.
 	Mods []string `json:"mods,omitempty"`
 
-	// Text is typed character by character through [gift.App.TypeRune],
-	// which is the channel a real keyboard's characters arrive on.
+	// Text is, for "text", typed character by character through
+	// [gift.App.TypeRune], which is the channel a real keyboard's characters
+	// arrive on. For "replaceText" it is inserted in one go through
+	// [gift.App.ReplaceText], the channel of a system keyboard.
 	Text string `json:"text,omitempty"`
+
+	// DeleteBefore and DeleteAfter are, for "replaceText", the bytes deleted
+	// before and after the selection, counted in
+	// [gift.TextInputState.Before] and After as [gift.App.ReplaceText] counts
+	// them.
+	DeleteBefore int `json:"deleteBefore,omitempty"`
+	DeleteAfter  int `json:"deleteAfter,omitempty"`
 
 	// Ms, Frames and Ticks are the three waits. Milliseconds are wall clock,
 	// frames are drawn frames and ticks are updates.
@@ -298,7 +307,7 @@ func changedPixels(a, b *image.RGBA) int {
 //	pointerMove, pointerDown, pointerUp, pointerCancel, tap, click
 //	wheel
 //	keyDown, keyUp, key
-//	text
+//	text, replaceText
 //	focus
 //	dragOver, drop, dragLeave
 //	waitMs, waitFrames, waitTicks
@@ -380,6 +389,8 @@ func (d *driver) runStep(s Step) error {
 			}
 		}
 		return nil
+	case "replaceText":
+		return d.do(func(app *gift.App) { app.ReplaceText(s.DeleteBefore, s.DeleteAfter, s.Text) })
 	case "dragOver":
 		kinds, err := parseDropKinds(s.Kinds)
 		if err != nil {

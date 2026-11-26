@@ -149,12 +149,13 @@ type Element struct {
 	// is sitting on, which is the one failure the whole feature exists to
 	// prevent.
 	//
-	// What it is not: it is not a safe area, not an inset system and not a
-	// general occlusion model. Exactly one node can be the obstruction at a
-	// time — the last *unhidden* one built wins — and the only reader is the
-	// reveal. Layout, hit testing and painting ignore it completely. gift has
-	// no second consumer for a larger idea and inventing one here would be
-	// inventing it in the wrong place.
+	// What it is not: it is not a safe area — that is [App.SetSafeArea],
+	// the bars of the system that are there the whole time — not an inset
+	// system and not a general occlusion model. Exactly one node can be the
+	// obstruction at a time — the last *unhidden* one built wins — and the
+	// only reader is the reveal. Layout, hit testing and painting ignore it
+	// completely. gift has no second consumer for a larger idea and inventing
+	// one here would be inventing it in the wrong place.
 	//
 	// "Unhidden" rather than simply "last" because a [ui.OnScreenKeyboard]
 	// inside every tab of a [ui.TabBar] is an ordinary composition, and all
@@ -175,7 +176,10 @@ type Element struct {
 	// list's clip stack on the way into the subtree. A widget therefore
 	// cannot clip input without clipping paint or the other way round, which
 	// is exactly what ui.Button used to do — Clip(true) confined its hit area
-	// and let a 400x400 label paint over the window.
+	// and let a 400x400 label paint over the window. The one exception is
+	// [Element.ClipBleedsSafeArea], which widens only the paint clip, and
+	// only into the safe area at the edge of the window, where nothing of the
+	// application lies beside the node; input keeps the bounds.
 	//
 	// The clip surrounds the subtree and not the node's own drawing, so a
 	// shadow still extends past the bounds and a background still covers
@@ -198,6 +202,27 @@ type Element struct {
 	// for what a layer costs and keeps. A layer with glass in it has no
 	// picture of its own and keeps the square clip.
 	ClipRadius float32
+
+	// ClipBleedsSafeArea grows the paint clip of [Element.Clip] to the edge
+	// of the window at every edge where this node lies on the edge of the
+	// safe rectangle; see [App.SetSafeArea]. Hit testing keeps the bounds.
+	//
+	// It is for a container that clips for a reason that ends at the edge of
+	// the screen — a navigation stack cuts its screens so that one sliding
+	// out does not cover what is beside the stack — and that holds
+	// something that paints behind the system bars, a tab bar at the bottom
+	// of a screen: at an edge of the safe area nothing is beside the
+	// container but the bar of the system, so the cut moves there, and the
+	// bleed of the child survives it. Input is still confined to the
+	// container, as Clip promises, because Clip is one declaration with two
+	// readers and this changes only the one that paints. Without a safe area
+	// it does nothing, and under a transform that is not a scale and a
+	// translation it does nothing either, as [PaintContext.SafeAreaBleed]
+	// answers zero there. Nor does it with [Element.ClipRadius]: a rounded
+	// clip is a layer of the node's bounds, and its rounded corners are the
+	// shape of the container, just as a rounded background in ui keeps its
+	// bounds.
+	ClipBleedsSafeArea bool
 
 	// Transform maps this node and its subtree into the space of its parent.
 	// A nil Transform, the default, is the identity.

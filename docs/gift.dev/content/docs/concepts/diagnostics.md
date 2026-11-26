@@ -40,6 +40,7 @@ Most counters only ever grow, from the moment the `App` is created:
 | `Scrolls`          | times a scroll offset actually changed                                         |
 | `DiscardedTouches` | additional fingers that were recognized and dropped                            |
 | `RunesTyped`       | characters that arrived through `App.TypeRune`, focused or not                 |
+| `TextReplacements` | edits of a platform input method delivered through `App.ReplaceText`, focused or not |
 | `KeyRepeats`       | synthetic key presses produced from a held key                                 |
 
 The others describe the current state of the tree:

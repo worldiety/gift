@@ -629,14 +629,12 @@ func (n *entryNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	case gift.EventFocusGained:
 		es.Part, es.Digits = 0, 0
 		ctx.ScrollIntoView()
-		if onScreenKeyboard.Load() {
+		if softKeyboardWanted(ctx) {
 			ctx.RequestSoftKeyboard(true)
 		}
 
 	case gift.EventFocusLost:
-		if onScreenKeyboard.Load() {
-			ctx.RequestSoftKeyboard(false)
-		}
+		ctx.RequestSoftKeyboard(false)
 		es = n.finish(es)
 
 	case gift.EventPointerDown:

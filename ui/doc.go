@@ -159,24 +159,31 @@
 // instead of selecting. See [TextFieldView].
 //
 // [OnScreenKeyboard] is the other half of section 19: a German on-screen
-// keyboard with umlauts and ß, drawn by gift because Ebitengine can raise no
-// native one and the kiosk has none to raise. It appears when a field takes
-// the focus and only with the kiosk switch on — an explicit
-// [SetOnScreenKeyboard] and emphatically not the pointer kind, which on the
-// target hardware reports a finger as a mouse and would therefore never fire.
-// A drawn key injects through [gift.App.TypeRune] and [gift.App.KeyDown], so
-// what reaches a widget is the ordinary event and no widget has a second code
-// path for it. See [KeyboardView] for what it costs and for what its keyboard
-// avoidance cannot do.
+// keyboard with umlauts and ß, drawn by gift because the kiosk has no native
+// one to raise. It appears when a field takes the focus, where the kiosk
+// switch is on — an explicit [SetOnScreenKeyboard] and emphatically not the
+// pointer kind, which on the target hardware reports a finger as a mouse and
+// would therefore never fire — or where a backend reported a platform keyboard
+// with [gift.App.SetPlatformKeyboardAvailable], as the Ebitengine backend does
+// on Android and iOS unless its Config.NoNativeKeyboard is set. It stays down
+// while that system keyboard serves the field, so there it serves the fields
+// the system keyboard cannot, DateField and TimeField. A drawn key injects
+// through [gift.App.TypeRune] and [gift.App.KeyDown], so what reaches a widget
+// is the ordinary event and no widget has a second code path for it. See
+// [KeyboardView] for what it costs and for what its keyboard avoidance cannot
+// do.
 //
 // Copy, cut and paste go through [Clipboard], a seam with an in-process
 // default, so they work and are testable before the platform implementation of
 // section 19 exists. Install one with [SetClipboard].
 //
 // Umlauts, accents, AltGr and dead keys work, because they are ordinary
-// characters that arrive on [gift.EventRune] fully resolved. CJK composition,
-// a preedit string and a candidate window do not, and stay excluded by the
-// project plan, section 14. There is no undo and no multi line editing.
+// characters that arrive on [gift.EventRune] fully resolved. On the desktop
+// and on a kiosk CJK composition, a preedit string and a candidate window do
+// not, and stay excluded by the project plan, section 14. On Android and iOS
+// the system keyboard composes, with its own candidate bar, and the word
+// being composed shows in the field as ordinary text, without preedit
+// styling. There is no undo and no multi line editing.
 //
 // Only a view that declares an interactor is a hit target. A plain [VStack] is
 // transparent to input: a click in its padding or in the gap between two

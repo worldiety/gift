@@ -148,6 +148,51 @@ func (s Stack) Background(v Background) Stack { s.setBackgroundSpec(v); return s
 // does not change the layout.
 func (s Stack) Border(v Border) Stack { s.setBorder(v); return s }
 
+// BleedSafeArea lets the background of the stack reach the edge of the window
+// at the given edges, wherever the stack lies on the edge of the safe area
+// there; see [gift.App.SetSafeArea]. Its content and its hit area do not move.
+//
+//	ui.HStack(controls...).
+//		Frame(geom.Unbounded(), 56).
+//		Background(ui.ColorSurface).
+//		BleedSafeArea(ui.EdgesLeft | ui.EdgesRight | ui.EdgesBottom)
+//
+// A bar of an application's own at the bottom of a [Window] is laid out above
+// the navigation bar of a phone, like everything else in the window, and
+// would otherwise leave the strip under it in the page colour: a bar that
+// stops short of the edge it is drawn against. With the edges given, its
+// fill — and its glass, a [GlassMaterial] background — is painted down to the
+// edge of the window and behind the system bar, while the buttons on it stay
+// where the system bar does not cover them. The bars of [TabBar] and
+// [NavigationStack] do this without being asked.
+//
+// # What bleeds and what does not
+//
+// It is a paint operation and nothing else. The size of the stack, the place
+// of its children and the area a tap lands in are what layout made them; a
+// tap on the part of the fill that lies behind the navigation bar belongs to
+// the system. The border and the shadow keep the bounds too, because they
+// outline the view and the bleed is not part of it.
+//
+// An edge bleeds only where the window has a safe area and the stack touches
+// that edge of the safe rectangle, so the same view in the middle of a screen,
+// on a desktop, or in a window whose bars are hidden, paints its bounds and
+// nothing more. That is why the edges are a request and not an instruction:
+// naming the top edge of a bottom bar does nothing as long as the bar is at
+// the bottom. A background with a [Stack.CornerRadius] never bleeds: its
+// corners are the shape of a card, a dialog or a sheet, and a card that grew
+// into the navigation bar would lose its lower corners behind the bar; a
+// rounded surface that should reach the window edge has to grow its own
+// layout. The clips of the ancestors still apply, so a bar inside a clipped
+// container is cut at its edge.
+//
+// It is a modifier of the containers only — Stack, [Overlay] and [BoxView] —
+// and not of the shared set, because what reaches behind a system bar is a
+// bar, and a bar is a container. A control or a scroll view that bled would
+// paint its background where nobody asked for one; wrap it in a stack that
+// carries the background and the bleed instead.
+func (s Stack) BleedSafeArea(e Edges) Stack { s.setBleed(e); return s }
+
 // Shadow draws a blurred copy of the view's shape — its bounds, rounded by the
 // corner radius — behind the view. It is drawn from the shape and not from the
 // fill, so a view without a background casts one too.

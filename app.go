@@ -99,6 +99,9 @@ type App struct {
 	audio  render.AudioOutput
 
 	viewport geom.Size
+	// safeArea is the part of the viewport the system covers; see
+	// [App.SetSafeArea].
+	safeArea geom.Insets
 	// density is the integer device density; see [App.SetDensity]. It is 1
 	// until a backend says otherwise, and 1 is the identity everywhere.
 	density     float32

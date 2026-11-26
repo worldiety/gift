@@ -1581,8 +1581,8 @@
         "methods": []
       },
       "Config": {
-        "synopsis": "Config configures the window and the frame loop of Run.",
-        "decl": "type Config struct {\n\tTitle                         string\n\tX11ClassName, X11InstanceName string\n\tWidth, Height                 int\n\tLogger                        *slog.Logger\n\tTPS                           int\n\tIdleTPS                       int\n\tIdleFrames                    int\n\tDrawOnDemand                  bool\n\tDirectToScreen                bool\n\tNominalFrameInterval          time.Duration\n\tIntervalTolerance             time.Duration\n\tWarmupFrames                  int\n\tAudioSampleRate               int\n\tOnRenderer                    func(*Renderer)\n\tOnUpdate                      func() error\n\tAssetStats                    func() metrics.AssetStats\n\tGlassQuality                  render.GlassQuality\n\tTextures                      TextureConfig\n\tTouchscreen                   string\n\tNoMouse                       bool\n\tNoInput                       bool\n\tDensity                       float64\n}",
+        "synopsis": "Config configures the window and the frame loop of Run, and the game of NewGame.",
+        "decl": "type Config struct {\n\tTitle                         string\n\tX11ClassName, X11InstanceName string\n\tWidth, Height                 int\n\tLogger                        *slog.Logger\n\tTPS                           int\n\tIdleTPS                       int\n\tIdleFrames                    int\n\tDrawOnDemand                  bool\n\tDirectToScreen                bool\n\tNominalFrameInterval          time.Duration\n\tIntervalTolerance             time.Duration\n\tWarmupFrames                  int\n\tAudioSampleRate               int\n\tOnRenderer                    func(*Renderer)\n\tOnUpdate                      func() error\n\tAssetStats                    func() metrics.AssetStats\n\tGlassQuality                  render.GlassQuality\n\tTextures                      TextureConfig\n\tTouchscreen                   string\n\tNoMouse                       bool\n\tNoNativeKeyboard              bool\n\tNoInput                       bool\n\tDensity                       float64\n\tSafeArea                      geom.Insets\n}",
         "constructors": [],
         "methods": []
       },
@@ -2049,6 +2049,11 @@
         "synopsis": "KawaseShaderSources returns the downsample and upsample shaders of the dual-Kawase chain."
       },
       {
+        "name": "NewGame",
+        "signature": "NewGame(newApp func() *gift.App, cfg Config) (eb.Game, *eb.RunGameOptions)",
+        "synopsis": "NewGame returns an Ebitengine game that runs the App newApp creates, and the options it has to run with, for the platforms on which the program does not call RunGame itself: Android and iOS."
+      },
+      {
         "name": "RoundImageShaderSource",
         "signature": "RoundImageShaderSource() []byte",
         "synopsis": "RoundImageShaderSource returns the Kage source of the rounded picture shader, under the same rule as ShapeShaderSource."
@@ -2059,6 +2064,11 @@
         "synopsis": "Run opens a window and drives app until it is closed."
       },
       {
+        "name": "SetSafeArea",
+        "signature": "SetSafeArea(in geom.Insets)",
+        "synopsis": "SetSafeArea reports the safe area of the window: per edge, how much of the view the system covers or cuts off — the status bar, the navigation bar, the cutout of a camera — in Ebitengine's outside units, which are density independent pixels on Android and points on iOS."
+      },
+      {
         "name": "ShapeShaderSource",
         "signature": "ShapeShaderSource() []byte",
         "synopsis": "ShapeShaderSource returns the Kage source of the shared shape shader."
@@ -2066,7 +2076,7 @@
       {
         "name": "WorkingSpace",
         "signature": "WorkingSpace(log *slog.Logger) *cms.Profile",
-        "synopsis": "WorkingSpace returns the colour space Run paints in on this machine: Display P3 on macOS and iOS, sRGB everywhere else."
+        "synopsis": "WorkingSpace returns the colour space Run paints in on this machine: Display P3 on macOS, sRGB everywhere else, iOS included."
       }
     ]
   },
@@ -3559,6 +3569,16 @@
             "synopsis": "Paint produces the display list of this frame."
           },
           {
+            "name": "PlatformKeyboardActive",
+            "signature": "PlatformKeyboardActive() bool",
+            "synopsis": "PlatformKeyboardActive reports whether a platform input method serves the current keyboard request; see App.SetPlatformKeyboardActive."
+          },
+          {
+            "name": "PlatformKeyboardAvailable",
+            "signature": "PlatformKeyboardAvailable() bool",
+            "synopsis": "PlatformKeyboardAvailable reports whether a platform input method can serve a request for a keyboard; see App.SetPlatformKeyboardAvailable."
+          },
+          {
             "name": "PointerCancel",
             "signature": "PointerCancel(id PointerID)",
             "synopsis": "PointerCancel ends the pointer id without a release."
@@ -3609,9 +3629,24 @@
             "synopsis": "Post queues fn to run on the UI executor at the beginning of the next App.Update."
           },
           {
+            "name": "ReplaceText",
+            "signature": "ReplaceText(deleteBefore, deleteAfter int, text string)",
+            "synopsis": "ReplaceText delivers an EventTextReplace to the focused node: delete the selection, deleteBefore bytes before it and deleteAfter bytes after it, insert text, and put the caret after the insertion."
+          },
+          {
             "name": "Root",
             "signature": "Root() NodeRef",
             "synopsis": "Root returns the reference to the root node, which is the component instance mounted from Options.Root."
+          },
+          {
+            "name": "SafeArea",
+            "signature": "SafeArea() geom.Insets",
+            "synopsis": "SafeArea returns the safe area in force; see App.SetSafeArea."
+          },
+          {
+            "name": "SafeRect",
+            "signature": "SafeRect() geom.Rect",
+            "synopsis": "SafeRect returns the viewport without the safe area: the rectangle content is laid out in."
           },
           {
             "name": "ScrollBy",
@@ -3654,6 +3689,21 @@
             "synopsis": "SetModifiers records which modifier keys are currently held."
           },
           {
+            "name": "SetPlatformKeyboardActive",
+            "signature": "SetPlatformKeyboardActive(active bool)",
+            "synopsis": "SetPlatformKeyboardActive records whether a platform input method is serving the current request for a keyboard, and asks for a rebuild when that changed."
+          },
+          {
+            "name": "SetPlatformKeyboardAvailable",
+            "signature": "SetPlatformKeyboardAvailable(available bool)",
+            "synopsis": "SetPlatformKeyboardAvailable records whether a platform input method is there to serve a request for a keyboard at all."
+          },
+          {
+            "name": "SetSafeArea",
+            "signature": "SetSafeArea(in geom.Insets)",
+            "synopsis": "SetSafeArea sets the safe area of the window: per edge, how many logical pixels at that edge of the viewport the system covers or cuts off."
+          },
+          {
             "name": "SetVideos",
             "signature": "SetVideos(v render.Videos, out render.AudioOutput)",
             "synopsis": "SetVideos installs the video picture service and the sound device a painter reaches through PaintContext.Videos and PaintContext.Audio."
@@ -3662,6 +3712,11 @@
             "name": "SoftKeyboardRequested",
             "signature": "SoftKeyboardRequested() bool",
             "synopsis": "SoftKeyboardRequested reports whether the focused node asked for an on-screen keyboard; see EventContext.RequestSoftKeyboard."
+          },
+          {
+            "name": "TextInput",
+            "signature": "TextInput() (TextInputState, bool)",
+            "synopsis": "TextInput returns the input method state of the focused node, and false when nothing is focused or the focused node does not edit text."
           },
           {
             "name": "TypeRune",
@@ -3718,6 +3773,21 @@
             "synopsis": "DropCapabilities reports what the platform can drop into this application."
           },
           {
+            "name": "PlatformKeyboardActive",
+            "signature": "PlatformKeyboardActive() bool",
+            "synopsis": "PlatformKeyboardActive is App.PlatformKeyboardActive read from inside a build."
+          },
+          {
+            "name": "PlatformKeyboardAvailable",
+            "signature": "PlatformKeyboardAvailable() bool",
+            "synopsis": "PlatformKeyboardAvailable is App.PlatformKeyboardAvailable read from inside a build."
+          },
+          {
+            "name": "SafeArea",
+            "signature": "SafeArea() geom.Insets",
+            "synopsis": "SafeArea is App.SafeArea read from inside a build."
+          },
+          {
             "name": "SoftKeyboardRequested",
             "signature": "SoftKeyboardRequested() bool",
             "synopsis": "SoftKeyboardRequested reports whether the focused node asked for an on-screen keyboard."
@@ -3760,6 +3830,11 @@
             "synopsis": "Request starts a new asynchronous request for this component instance and returns the Token that identifies it."
           },
           {
+            "name": "SafeArea",
+            "signature": "SafeArea() geom.Insets",
+            "synopsis": "SafeArea is App.SafeArea read from a view function, for an application that places something against the edges itself — a full screen picture under ui.Window's IgnoresSafeArea, with its controls inside."
+          },
+          {
             "name": "State",
             "signature": "State[T comparable](name string, initial T) *State[T]",
             "synopsis": "State returns the typed state with the given name, creating it with the value initial on first use."
@@ -3774,7 +3849,7 @@
       },
       "Diagnostics": {
         "synopsis": "Diagnostics is a snapshot of the frame path counters.",
-        "decl": "type Diagnostics struct {\n\tFrames           uint64\n\tUpdates          uint64\n\tBuilds           uint64\n\tLayouts          uint64\n\tPaintedNodes     uint64\n\tPaintedOps       uint64\n\tLiveNodes        uint64\n\tLiveScopes       uint64\n\tOverflowNodes    uint64\n\tHitTests         uint64\n\tInputEvents      uint64\n\tScrolls          uint64\n\tDiscardedTouches uint64\n\tRunesTyped       uint64\n\tKeyRepeats       uint64\n\tAnimations       uint64\n\tAnimating        bool\n\tOverflowExtent   float32\n}",
+        "decl": "type Diagnostics struct {\n\tFrames           uint64\n\tUpdates          uint64\n\tBuilds           uint64\n\tLayouts          uint64\n\tPaintedNodes     uint64\n\tPaintedOps       uint64\n\tLiveNodes        uint64\n\tLiveScopes       uint64\n\tOverflowNodes    uint64\n\tHitTests         uint64\n\tInputEvents      uint64\n\tScrolls          uint64\n\tDiscardedTouches uint64\n\tRunesTyped       uint64\n\tTextReplacements uint64\n\tKeyRepeats       uint64\n\tAnimations       uint64\n\tAnimating        bool\n\tOverflowExtent   float32\n}",
         "constructors": [],
         "methods": []
       },
@@ -3848,7 +3923,7 @@
       },
       "Element": {
         "synopsis": "Element is the description of one retained node.",
-        "decl": "type Element struct {\n\tKey            string\n\tLabel          string\n\tLayouter       Layouter\n\tPainter        Painter\n\tChildren       []View\n\tFlex           float32\n\tInteractor     Interactor\n\tDropTarget     Interactor\n\tFocusable      bool\n\tDisabled       bool\n\tObstructs      bool\n\tClip           bool\n\tClipRadius     float32\n\tTransform      *geom.Affine2D\n\tScroll         *ScrollSpec\n\tHidden         bool\n\tLayer          bool\n\tFocusTrap      bool\n\tTransition     TransitionSpec\n\tKeyFallback    bool\n\tOverlay        View\n\tOverlayExit    time.Duration\n\tMultiTouch     bool\n\tPreservesFocus bool\n}",
+        "decl": "type Element struct {\n\tKey                string\n\tLabel              string\n\tLayouter           Layouter\n\tPainter            Painter\n\tChildren           []View\n\tFlex               float32\n\tInteractor         Interactor\n\tDropTarget         Interactor\n\tFocusable          bool\n\tDisabled           bool\n\tObstructs          bool\n\tClip               bool\n\tClipRadius         float32\n\tClipBleedsSafeArea bool\n\tTransform          *geom.Affine2D\n\tScroll             *ScrollSpec\n\tHidden             bool\n\tLayer              bool\n\tFocusTrap          bool\n\tTransition         TransitionSpec\n\tKeyFallback        bool\n\tOverlay            View\n\tOverlayExit        time.Duration\n\tMultiTouch         bool\n\tPreservesFocus     bool\n}",
         "constructors": [],
         "methods": []
       },
@@ -3946,6 +4021,11 @@
             "synopsis": "Now returns the timestamp of the event being dispatched, on the clock App.BeginInput is given: the clock a control's animation is started on."
           },
           {
+            "name": "PlatformKeyboardAvailable",
+            "signature": "PlatformKeyboardAvailable() bool",
+            "synopsis": "PlatformKeyboardAvailable is App.PlatformKeyboardAvailable read from inside an event handler, where a text field decides whether to ask for a keyboard."
+          },
+          {
             "name": "PointerIsDown",
             "signature": "PointerIsDown(id PointerID) bool",
             "synopsis": "PointerIsDown reports whether the pointer id is currently pressed: the mouse with its primary button held, or a finger on the glass."
@@ -4019,6 +4099,11 @@
             "name": "StealPointer",
             "signature": "StealPointer() bool",
             "synopsis": "StealPointer moves the capture of the pointer whose event is being dispatched to the receiving node, and reports whether the node holds it afterwards."
+          },
+          {
+            "name": "TextReplacement",
+            "signature": "TextReplacement() (TextReplacement, bool)",
+            "synopsis": "TextReplacement returns the edit the EventTextReplace being handled carries, and false for every other event."
           },
           {
             "name": "TypeRune",
@@ -4178,6 +4263,11 @@
             "synopsis": "Retained is EventContext.Retained for the node being laid out."
           },
           {
+            "name": "SafeArea",
+            "signature": "SafeArea() geom.Insets",
+            "synopsis": "SafeArea is the safe area of the window, not of the node being laid out."
+          },
+          {
             "name": "ScrollOffset",
             "signature": "ScrollOffset() float64",
             "synopsis": "ScrollOffset returns the current offset of this scroll container, for a layouter that virtualises its content and therefore has to know which part of the document it is being asked to produce."
@@ -4191,6 +4281,11 @@
             "name": "SetControlState",
             "signature": "SetControlState(v ControlState)",
             "synopsis": "SetControlState writes the control state of the node being laid out."
+          },
+          {
+            "name": "Viewport",
+            "signature": "Viewport() geom.Size",
+            "synopsis": "Viewport is App.Viewport read in layout, so that a layouter can tell whether it was given the whole window."
           }
         ]
       },
@@ -4356,6 +4451,11 @@
             "synopsis": "Retained is EventContext.Retained for the node being painted."
           },
           {
+            "name": "SafeAreaBleed",
+            "signature": "SafeAreaBleed() geom.Insets",
+            "synopsis": "SafeAreaBleed returns, per edge, how far the node being painted may draw its background past its own bounds to reach the edge of the window: the safe area of that edge where the node lies on the edge of App.SafeRect, and zero everywhere else."
+          },
+          {
             "name": "ScrollIndicator",
             "signature": "ScrollIndicator() (ScrollIndicatorState, bool)",
             "synopsis": "ScrollIndicator returns the indicator state of the scroll container being painted, and false when this node is not one."
@@ -4469,6 +4569,24 @@
             "synopsis": "Set stores v and invalidates every scope that read this state in its last build."
           }
         ]
+      },
+      "TextInputClient": {
+        "synopsis": "TextInputClient is implemented by the interactor of an element that edits text and takes EventTextReplace.",
+        "decl": "type TextInputClient interface{ TextInputState() TextInputState }",
+        "constructors": [],
+        "methods": []
+      },
+      "TextInputState": {
+        "synopsis": "TextInputState is what a platform input method needs to know about the focused text: the text around the selection, for prediction and for the replacements an autocorrection makes, and where the caret is, so that the keyboard leaves it visible.",
+        "decl": "type TextInputState struct {\n\tBefore, After string\n\tSelected      bool\n\tCaret         geom.Rect\n\tSecure        bool\n}",
+        "constructors": [],
+        "methods": []
+      },
+      "TextReplacement": {
+        "synopsis": "TextReplacement is the edit an EventTextReplace carries; see App.ReplaceText.",
+        "decl": "type TextReplacement struct {\n\tText                      string\n\tDeleteBefore, DeleteAfter int\n}",
+        "constructors": [],
+        "methods": []
       },
       "Token": {
         "synopsis": "Token identifies one asynchronous request of one component instance.",
@@ -4800,6 +4918,11 @@
             "synopsis": "ReleaseAt releases the mouse at p."
           },
           {
+            "name": "ReplaceText",
+            "signature": "ReplaceText(deleteBefore, deleteAfter int, text string)",
+            "synopsis": "ReplaceText delivers one edit of a platform input method, as a system keyboard sends it through the backend (see gift.App.ReplaceText), in an input phase of its own, and settles."
+          },
+          {
             "name": "Resize",
             "signature": "Resize(s geom.Size)",
             "synopsis": "Resize changes the viewport and settles."
@@ -4808,6 +4931,11 @@
             "name": "SetModifiers",
             "signature": "SetModifiers(mods ...gift.Mods)",
             "synopsis": "SetModifiers records which modifier keys are held from now on."
+          },
+          {
+            "name": "SetSafeArea",
+            "signature": "SetSafeArea(in geom.Insets)",
+            "synopsis": "SetSafeArea changes the safe area of the window and settles, the way a rotation of a phone changes it between two frames."
           },
           {
             "name": "Settle",
@@ -5225,7 +5353,7 @@
       },
       "Options": {
         "synopsis": "Options configures a Harness.",
-        "decl": "type Options struct {\n\tRoot      func(*gift.Context) gift.View\n\tView      gift.View\n\tSize      geom.Size\n\tLogger    *slog.Logger\n\tMaxFrames int\n\tDensity   float64\n\tTheme     ui.Theme\n\tFont      ui.Font\n}",
+        "decl": "type Options struct {\n\tRoot      func(*gift.Context) gift.View\n\tView      gift.View\n\tSize      geom.Size\n\tLogger    *slog.Logger\n\tMaxFrames int\n\tDensity   float64\n\tSafeArea  geom.Insets\n\tTheme     ui.Theme\n\tFont      ui.Font\n}",
         "constructors": [],
         "methods": []
       },
@@ -7262,6 +7390,11 @@
             "synopsis": "Background fills the bounds."
           },
           {
+            "name": "BleedSafeArea",
+            "signature": "BleedSafeArea(e Edges) BoxView",
+            "synopsis": "BleedSafeArea lets the background of the box reach the edge of the window at the given edges where the box lies on the edge of the safe area; its size and hit area stay."
+          },
+          {
             "name": "Border",
             "signature": "Border(v Border) BoxView",
             "synopsis": "Border strokes the inside of the bounds."
@@ -8404,6 +8537,12 @@
             "synopsis": "Files returns the paths of the dropped files and folders."
           }
         ]
+      },
+      "Edges": {
+        "synopsis": "Edges is a set of the four edges of a rectangle.",
+        "decl": "type Edges uint8",
+        "constructors": [],
+        "methods": []
       },
       "Font": {
         "synopsis": "Font is a loaded font, ready to shape and to rasterise with.",
@@ -9640,6 +9779,11 @@
             "synopsis": "Background fills the bounds behind the children."
           },
           {
+            "name": "BleedSafeArea",
+            "signature": "BleedSafeArea(e Edges) Overlay",
+            "synopsis": "BleedSafeArea lets the background reach the edge of the window at the given edges where this view lies on the edge of the safe area; see Stack.BleedSafeArea."
+          },
+          {
             "name": "Border",
             "signature": "Border(v Border) Overlay",
             "synopsis": "Border strokes the inside of the bounds after the children were drawn."
@@ -9663,6 +9807,11 @@
             "name": "Frame",
             "signature": "Frame(w, h float32) Overlay",
             "synopsis": "Frame fixes both axes."
+          },
+          {
+            "name": "IgnoresSafeArea",
+            "signature": "IgnoresSafeArea(v bool) Overlay",
+            "synopsis": "IgnoresSafeArea gives the content of a Window the whole window, the parts a phone covers with its status bar, its navigation bar and the cutout of its camera included."
           },
           {
             "name": "Key",
@@ -10523,6 +10672,11 @@
             "synopsis": "Background fills the bounds behind the children."
           },
           {
+            "name": "BleedSafeArea",
+            "signature": "BleedSafeArea(e Edges) Stack",
+            "synopsis": "BleedSafeArea lets the background of the stack reach the edge of the window at the given edges, wherever the stack lies on the edge of the safe area there; see gift.App.SetSafeArea."
+          },
+          {
             "name": "Border",
             "signature": "Border(v Border) Stack",
             "synopsis": "Border strokes the inside of the bounds after the children were drawn."
@@ -11036,6 +11190,11 @@
             "name": "MoveWordRight",
             "signature": "MoveWordRight(extend bool)",
             "synopsis": "MoveWordRight is TextEditor.MoveWordLeft in the other direction."
+          },
+          {
+            "name": "ReplaceAround",
+            "signature": "ReplaceAround(deleteBefore, deleteAfter int, s string) bool",
+            "synopsis": "ReplaceAround removes the selection together with deleteBefore bytes before it and deleteAfter bytes after it, inserts s in their place and leaves the caret after s."
           },
           {
             "name": "SelectAll",
@@ -12099,7 +12258,7 @@
       {
         "name": "OnScreenKeyboardEnabled",
         "signature": "OnScreenKeyboardEnabled() bool",
-        "synopsis": "OnScreenKeyboardEnabled reports whether the kiosk switch is on."
+        "synopsis": "OnScreenKeyboardEnabled reports whether the switch of SetOnScreenKeyboard is on."
       },
       {
         "name": "OnScreenKeyboardHeight",

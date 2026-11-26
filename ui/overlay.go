@@ -20,9 +20,12 @@ type Overlay struct {
 	coverContent bool
 
 	// plate marks child 0 as the window background of [Window]; see
-	// [node.layoutAvoiding] for why it is the one child that is not moved
-	// out from under the keyboard.
+	// [node.layoutWindow] for why it is the one child that is not moved
+	// out from under the keyboard and the system bars.
 	plate bool
+
+	// ignoreSafeArea is [Overlay.IgnoresSafeArea].
+	ignoreSafeArea bool
 }
 
 // ZStack draws its children on top of each other, first child at the bottom.
@@ -51,6 +54,14 @@ func (o Overlay) ViewType() gift.TypeID { return zstackType }
 // the layout pass then reads one int. See [Overlay.AvoidKeyboard].
 func (o Overlay) Build(*gift.BuildContext) gift.Element {
 	e := element(o.base, kindOverlay, 0, layout.Vertical, layout.CrossAlignPosition, o.children)
+	// The plate of a Window is copied whatever the keyboard does, because it
+	// is also what the safe area is decided by; see [node.layoutWindow]. A
+	// ZStack nobody made a Window has none, and keeps the plain overlay.
+	if o.plate {
+		n := e.Layouter.(*node)
+		n.plate = true
+		n.ignoreSafeArea = o.ignoreSafeArea
+	}
 	if o.coverContent {
 		return e
 	}
@@ -63,9 +74,7 @@ func (o Overlay) Build(*gift.BuildContext) gift.Element {
 		}
 	}
 	if kb >= 0 {
-		n := e.Layouter.(*node)
-		n.kb = kb + 1
-		n.plate = o.plate
+		e.Layouter.(*node).kb = kb + 1
 	}
 	return e
 }
@@ -142,6 +151,28 @@ func (o Overlay) Build(*gift.BuildContext) gift.Element {
 // scrim, where no key can be pressed.
 func (o Overlay) AvoidKeyboard(v bool) Overlay { o.coverContent = !v; return o }
 
+// IgnoresSafeArea gives the content of a [Window] the whole window, the parts
+// a phone covers with its status bar, its navigation bar and the cutout of its
+// camera included. The default is false: the content is laid out inside the
+// safe area of [gift.App.SetSafeArea], and only the page background reaches
+// the edges.
+//
+//	ui.Window(camera, controls).IgnoresSafeArea(true)
+//
+// It is for a screen whose picture is the point — a camera preview, a map, a
+// video — and that would rather be cut by a bar than framed by one. Such a
+// screen still has controls somebody must be able to read and press, and
+// keeping those clear of the bars is then the application's job: it reads
+// [gift.Context.SafeArea] in its view function and pads them by it. A
+// keyboard among the children gets the whole window too, so it sits behind
+// the navigation bar; an application that turns the safe area off and shows
+// an [OnScreenKeyboard] pads the keyboard as well.
+//
+// It changes nothing on a ZStack that is not a Window, which has no safe area
+// to ignore, nor on a Window that is nested in something smaller than the
+// window, which applies none; see [Window].
+func (o Overlay) IgnoresSafeArea(v bool) Overlay { o.ignoreSafeArea = v; return o }
+
 // Padding sets the same padding on all four edges, replacing any previous
 // padding. It must be finite and non negative; see [Stack.Padding].
 func (o Overlay) Padding(v float32) Overlay { o.setPadding(v); return o }
@@ -183,6 +214,11 @@ func (o Overlay) Background(v Background) Overlay { o.setBackgroundSpec(v); retu
 
 // Border strokes the inside of the bounds after the children were drawn.
 func (o Overlay) Border(v Border) Overlay { o.setBorder(v); return o }
+
+// BleedSafeArea lets the background reach the edge of the window at the
+// given edges where this view lies on the edge of the safe area; see
+// [Stack.BleedSafeArea].
+func (o Overlay) BleedSafeArea(e Edges) Overlay { o.setBleed(e); return o }
 
 // Shadow draws a blurred copy of the view's shape — its bounds, rounded by the
 // corner radius — behind the view. It is drawn from the shape and not from the

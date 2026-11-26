@@ -96,6 +96,10 @@ type inputBridge struct {
 	keyPressed  func(eb.Key) bool
 	appendChars func([]rune) []rune
 
+	// ime is the system keyboard, nil off Android and iOS and where
+	// [Config.NoNativeKeyboard] keeps it away.
+	ime *imeBridge
+
 	// cursor and wheel are the mouse readings, for the same reason and at
 	// the same cost.
 	//
@@ -154,6 +158,11 @@ type inputBridge struct {
 	// editing keys and the five shortcut letters — and polling that many
 	// booleans per tick is free, polling a hundred is not.
 	down [len(trackedKeys)]bool
+
+	// swallowed marks a key whose press was kept from gift because the
+	// system keyboard delivers its edit; its release is kept back too. See
+	// pollKeys.
+	swallowed [len(trackedKeys)]bool
 
 	mouse [3]bool
 
@@ -276,13 +285,27 @@ func (b *inputBridge) poll() {
 	b.app.BeginInput(now)
 	b.density = b.app.Density()
 	b.app.SetModifiers(b.modifiers())
+	handled := false
+	if b.ime != nil {
+		handled = b.ime.update()
+	}
 	b.pollKeys()
-	b.pollRunes()
+	if !handled {
+		// A character the system keyboard committed arrived through the
+		// text input session; see imeBridge.
+		b.pollRunes()
+	}
 	b.pollMouse(now)
 	b.pollDrops()
 	b.pollTouches()
 	if b.panel != nil {
 		b.pollPanel(now, b.screen())
+	}
+	if b.ime != nil {
+		// After every dispatch of this tick: a field this input focused is
+		// the system keyboard's in the build that follows; see
+		// imeBridge.report.
+		b.ime.report()
 	}
 }
 
@@ -295,8 +318,28 @@ func (b *inputBridge) pollKeys() {
 		}
 		b.down[i] = now
 		if now {
+			if b.ime != nil && b.app.PlatformKeyboardActive() && b.ime.canDelete(k.key) {
+				// The system keyboard deleted in its own buffer, and that
+				// deletion reaches the field as a replacement; see
+				// imeBridge. A keyboard that deletes with a key event rather
+				// than through its input connection makes Ebitengine report
+				// the key as well, and the field would delete twice.
+				//
+				// Only where the buffer had something to delete, though. At
+				// the start of the text, or with a selection that begins
+				// there, the buffer holds nothing before the caret, the
+				// keyboard's backspace deletes nothing in it, and the key is
+				// the only report there is of what the user meant: the field
+				// takes it, and deletes the selection. Its release follows it.
+				b.swallowed[i] = true
+				continue
+			}
 			b.app.KeyDown(k.key, mods)
 		} else {
+			if b.swallowed[i] {
+				b.swallowed[i] = false
+				continue
+			}
 			b.app.KeyUp(k.key, mods)
 		}
 	}
@@ -311,11 +354,14 @@ func (b *inputBridge) pollKeys() {
 // keyboard whose user pressed 'a', and would have no answer at all for an
 // umlaut, an accent or anything behind AltGr.
 //
-// It is also not an IME. Ebitengine has no composition API and the project
-// plan, section 14, keeps CJK candidate windows out of scope. What does pass
-// through here is everything a dead key or a compose sequence resolved to,
-// because by the time the platform reports a character the composition is
-// over — that is ordinary localised typing and not an IME.
+// It is also not an IME. On the desktop gift takes no composition: the
+// project plan, section 14, keeps preedit and CJK candidate windows out of
+// scope. What does pass through here is everything a dead key or a compose
+// sequence resolved to, because by the time the platform reports a character
+// the composition is over — that is ordinary localised typing and not an IME.
+// On Android and iOS the system keyboard composes instead, through
+// [imeBridge] and Ebitengine's exp/textinput, and the runes of a tick it
+// handled are skipped here.
 //
 // Two filters are already applied before the buffer is read, both by
 // Ebitengine and neither repeated here: its InputState.appendRune drops

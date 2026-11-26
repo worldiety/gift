@@ -3,17 +3,17 @@ title: Installation
 weight: 2
 ---
 
-Gift is a plain Go module. You add it with `go get`, and the Go toolchain builds it without a C compiler. This page
-lists what your machine needs, how to try the examples and which optional parts you can add.
+Gift is a plain Go module. You add it with `go get`, and the Go toolchain builds it for the desktop without a C
+compiler. This page lists what your machine needs, how to try the examples and which optional parts you can add.
 
 ## Requirements
 
 - **Go 1.27** or newer. The module declares `go 1.27`.
 - **A graphical session with GPU support.** Gift draws through [Ebitengine](https://ebitengine.org/) and opens a
   real window. It does not run headless; for tests without a window see [Testing](../../concepts/testing/).
-- **No CGO.** Gift and its Ebitengine backend build with `CGO_ENABLED=0`. Native libraries are loaded at run time
-  instead of being linked at build time. This also means you can cross-compile, for example for a Raspberry Pi
-  from your laptop:
+- **No CGO on the desktop.** Gift and its Ebitengine backend build with `CGO_ENABLED=0`. Native libraries are loaded
+  at run time instead of being linked at build time. This also means you can cross-compile, for example for a
+  Raspberry Pi from your laptop:
 
 ```bash
 GOOS=linux GOARCH=arm64 go build ./cmd/example-counter
@@ -37,6 +37,12 @@ installation, install them with:
 ```bash
 sudo apt install libx11-6 libxrandr2 libxcursor1 libxinerama1 libxi6 libxrender1 libxext6 libgl1 libegl1
 ```
+
+### Android and iOS (experimental)
+
+On a phone the application runs as a library that `ebitenmobile bind` builds, shown by a small host application in
+Kotlin or Swift. That build needs cgo: the Android SDK with an NDK for Android, Xcode on macOS for iOS. What the
+package and the host contain is on [Android and iOS](../../concepts/mobile/).
 
 ## Try the examples
 

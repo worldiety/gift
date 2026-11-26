@@ -22,10 +22,19 @@ import (
 // of that belongs below ui.
 
 // softInputState is the process's answer to "does the focused node want
-// characters, and what is covering the screen because of it".
+// characters, is there a platform input method to serve that and is it doing
+// so, and what drawn keyboard is covering the screen because of it".
 type softInputState struct {
 	// wanted is the last value passed to [EventContext.RequestSoftKeyboard].
 	wanted bool
+
+	// active is set while a platform input method serves the request; see
+	// [App.SetPlatformKeyboardActive].
+	active bool
+
+	// available is set when there is a platform input method to serve a
+	// request at all; see [App.SetPlatformKeyboardAvailable].
+	available bool
 
 	// obstruct is the node that most recently declared [Element.Obstructs],
 	// or the zero handle when none is mounted.
@@ -50,13 +59,14 @@ type softInputState struct {
 //
 // # What it is
 //
-// It is a declaration and not a command. gift has no keyboard to raise:
-// Ebitengine offers no way to open a native one and the kiosk of the project
-// plan, section 1, has no operating system keyboard to open. What this does is
-// publish one bit that [BuildContext.SoftKeyboardRequested] reads, so that a
-// view somewhere else in the tree — ui.OnScreenKeyboard is the one gift ships
-// — can decide to draw one. A backend on a platform that *does* have a native
-// keyboard would read the same bit.
+// It is a declaration and not a command. gift has no keyboard to raise: the
+// kiosk of the project plan, section 1, has no operating system keyboard to
+// open, and where there is one, Android or iOS, the backend opens it. What
+// this does is publish one bit that [BuildContext.SoftKeyboardRequested]
+// reads, so that a view somewhere else in the tree (ui.OnScreenKeyboard is the
+// one gift ships) can decide to draw one. The Ebitengine backend reads the
+// same bit to raise the system keyboard, and reports that it did through
+// [App.SetPlatformKeyboardActive]; see the project plan, section 52.
 //
 // The rebuild is included for the reason [ui.SetTheme] includes its
 // [App.Invalidate]: nothing on the screen changes until the views are built
@@ -65,8 +75,10 @@ type softInputState struct {
 //
 // # Policy is not here
 //
-// gift does not decide whether the keyboard is appropriate. A text field on a
-// desktop calls this only when the application turned the kiosk switch on; see
+// gift does not decide whether the keyboard is appropriate. A text field calls
+// this only where there is a keyboard to ask for: on a kiosk whose
+// application turned the kiosk switch on, or on a platform whose backend
+// reported a keyboard of its own with [App.SetPlatformKeyboardAvailable]. See
 // ui.SetOnScreenKeyboard for why that switch exists and why it is emphatically
 // not [Event.Device] or [PointerKind].
 func (c *EventContext) RequestSoftKeyboard(want bool) { c.app.requestSoftKeyboard(want) }

@@ -41,7 +41,9 @@ func screen(ctx *gift.Context) gift.View {
 }
 ```
 
-Until the switch is on and a field asks for it, the keyboard draws nothing and takes no space. A
+Until the switch is on and a field asks for it, the keyboard draws nothing and takes no space. On Android and iOS it
+needs no switch, unless `Config.NoNativeKeyboard` is set: it serves `DateField` and `TimeField` and stays down while the
+system keyboard serves the other fields; see [Android and iOS](../../../concepts/mobile/). A
 [ZStack](../../layout/zstack/) works the same way as a window, because a window is a ZStack.
 
 **A focused text field brings it up.** With the switch on, a [TextField](../../basic/text-field/) asks for the

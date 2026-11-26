@@ -4,12 +4,14 @@ import (
 	"runtime"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/worldiety/gift"
 	"github.com/worldiety/gift/geom"
 )
 
-// The rune channel and the key repeat, from the runtime's side.
+// The rune channel, the key repeat and the platform input method, from the
+// runtime's side.
 //
 // The two subjects of this file are one theme: a keyboard produces *keys* and
 // it produces *characters*, and they are not the same information. Everything
@@ -23,6 +25,11 @@ import (
 // question "does the platform really send 'ä' for that key" is answered in
 // backend/ebiten's own test against the poll seam. See TestRuneAndKeyAreTwo
 // Channels below for the part of that boundary the runtime itself owns.
+//
+// The third channel is the one a system keyboard uses, [gift.App.ReplaceText]:
+// an edit of the selection and the text around it rather than a key or a
+// character. Its tests are at
+// the end, under the platform input method.
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -33,9 +40,12 @@ var panelType = gift.RegisterType("test.Panel")
 // to travel outwards, and without an interactor on an ancestor there is
 // nowhere for it to travel to.
 type panelView struct {
-	key      string
-	w, h     float32
-	events   *[]gift.Event
+	key    string
+	w, h   float32
+	events *[]gift.Event
+	// replaced, when non nil, receives what
+	// [gift.EventContext.TextReplacement] answered for each replacement.
+	replaced *[]gift.TextReplacement
 	consume  bool
 	children []gift.View
 	offsets  []geom.Point
@@ -71,6 +81,9 @@ func (n *panelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Siz
 func (n *panelNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	if n.p.events != nil {
 		*n.p.events = append(*n.p.events, e)
+	}
+	if r, ok := ctx.TextReplacement(); ok && n.p.replaced != nil {
+		*n.p.replaced = append(*n.p.replaced, r)
 	}
 	return n.p.consume
 }
@@ -679,7 +692,7 @@ func TestHeldKeyKeepsPaintingAndReleaseSettles(t *testing.T) {
 // after which copy works on exactly one of the two supported platforms.
 func TestShortcutModifierFollowsTheHost(t *testing.T) {
 	want := gift.ModControl
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
 		want = gift.ModMeta
 	}
 	if gift.ShortcutModifier != want {
@@ -687,6 +700,22 @@ func TestShortcutModifierFollowsTheHost(t *testing.T) {
 	}
 	if !gift.ShortcutModifier.Has(want) {
 		t.Fatalf("Mods.Has disagrees with the value it was asked about")
+	}
+}
+
+// TestIOSKeepsTheAppleModifiers pins which systems take command for the
+// shortcut and option for the word: an iPad's hardware keyboard has the keys
+// of a Mac, and Ebitengine reports them as meta and alt there too, but Go's
+// ios port is a GOOS of its own, so a test for "darwin" alone gave the iPad
+// control-C.
+func TestIOSKeepsTheAppleModifiers(t *testing.T) {
+	for goos, apple := range map[string]bool{
+		"darwin": true, "ios": true,
+		"linux": false, "windows": false, "android": false, "freebsd": false,
+	} {
+		if got := gift.AppleKeyboardForTest(goos); got != apple {
+			t.Errorf("%s: Apple modifiers %v, want %v", goos, got, apple)
+		}
 	}
 }
 
@@ -814,4 +843,185 @@ func benchTypingApp(b *testing.B, evs *[]gift.Event) *gift.App {
 	}
 	*evs = (*evs)[:0]
 	return a
+}
+
+// --- the platform input method ----------------------------------------------
+
+// replacements is the log's [gift.EventTextReplace] events.
+func replacements(evs []gift.Event) []gift.Event {
+	var out []gift.Event
+	for _, e := range evs {
+		if e.Kind == gift.EventTextReplace {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// TestReplaceTextWithNothingFocusedIsCountedAndDropped is
+// TestUnfocusedApplicationSwallowsCharacters for a system keyboard:
+// [gift.Diagnostics.TextReplacements] is to it what RunesTyped is to the
+// character channel.
+func TestReplaceTextWithNothingFocusedIsCountedAndDropped(t *testing.T) {
+	var evs []gift.Event
+	root := func(*gift.Context) gift.View {
+		return frameView{w: 300, h: 300, offsets: []geom.Point{at(0, 0)},
+			children: []gift.View{target{name: "field", w: 100, h: 40, events: &evs}}}
+	}
+	a := newInputApp(t, root)
+
+	before := a.Diagnostics().TextReplacements
+	a.BeginInput(0)
+	a.ReplaceText(0, 0, "abc")
+	mustUpdate(t, a)
+	if got := replacements(evs); len(got) != 0 {
+		t.Fatalf("a replacement with nothing focused reached a node: %+v", got)
+	}
+	if got := a.Diagnostics().TextReplacements - before; got != 1 {
+		t.Fatalf("TextReplacements moved by %d, want 1", got)
+	}
+}
+
+var replaceProbeType = gift.RegisterType("test.ReplaceProbe")
+
+// replaceProbe is a focusable leaf that records what
+// [gift.EventContext.TextReplacement] answers, and that presses a key from
+// inside the replacement, so that the nested key event can be seen not to
+// carry it.
+type replaceProbe struct {
+	replaced *[]gift.TextReplacement
+	// nested receives, for every event other than the replacement, whether
+	// TextReplacement answered true for it.
+	nested *[]bool
+}
+
+func (replaceProbe) ViewType() gift.TypeID { return replaceProbeType }
+
+func (p replaceProbe) Build(*gift.BuildContext) gift.Element {
+	n := &replaceProbeNode{p}
+	return gift.Element{Key: "probe", Layouter: &frameLayout{f: frameView{w: 100, h: 40}}, Interactor: n, Focusable: true}
+}
+
+type replaceProbeNode struct{ p replaceProbe }
+
+func (n *replaceProbeNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
+	r, ok := ctx.TextReplacement()
+	if e.Kind != gift.EventTextReplace {
+		*n.p.nested = append(*n.p.nested, ok)
+		return false
+	}
+	*n.p.replaced = append(*n.p.replaced, r)
+	ctx.KeyDown(gift.KeyEnd, 0)
+	ctx.KeyUp(gift.KeyEnd, 0)
+	return false
+}
+
+// TestReplaceTextBubblesLikeAKey: it goes to the focused node and to its
+// ancestors after it, the counts arrive clamped to zero, and the payload is
+// in [gift.EventContext.TextReplacement] for the replacement and its bubbling
+// only — not for the key the focused node pressed from inside it, which
+// bubbles through the same ancestor before the replacement reaches it.
+func TestReplaceTextBubblesLikeAKey(t *testing.T) {
+	var leaf, panel []gift.TextReplacement
+	var nested []bool
+	root := func(*gift.Context) gift.View {
+		return frameView{w: 400, h: 400, offsets: []geom.Point{at(0, 0)},
+			children: []gift.View{
+				panelView{key: "panel", w: 200, h: 100, replaced: &panel,
+					offsets:  []geom.Point{at(0, 0)},
+					children: []gift.View{replaceProbe{replaced: &leaf, nested: &nested}}},
+			}}
+	}
+	a := newInputApp(t, root)
+	a.BeginInput(0)
+	a.KeyDown(gift.KeyTab, 0)
+	a.KeyUp(gift.KeyTab, 0)
+	nested = nested[:0]
+
+	a.ReplaceText(-3, 2, "x")
+	want := gift.TextReplacement{Text: "x", DeleteBefore: 0, DeleteAfter: 2}
+	for name, got := range map[string][]gift.TextReplacement{"focused node": leaf, "ancestor": panel} {
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("the %s received %+v, want one %+v", name, got, want)
+		}
+	}
+	if len(nested) != 2 || nested[0] || nested[1] {
+		t.Fatalf("the key pressed from inside the replacement saw it: %v, want [false false]", nested)
+	}
+	if _, ok := (*gift.EventContext)(nil).TextReplacement(); ok {
+		t.Fatal("a nil EventContext reports a replacement")
+	}
+	if (*gift.EventContext)(nil).PlatformKeyboardAvailable() {
+		t.Fatal("a nil EventContext reports a platform keyboard")
+	}
+}
+
+// TestEventStaysSmall pins the project plan, section 49: [gift.Event] points
+// at nothing and is copied on every pointer move along the bubbling path, so a
+// payload goes behind [gift.EventContext] — the drop's and the replacement's
+// — and not into the struct.
+func TestEventStaysSmall(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) != 8 {
+		t.Skip("the size is pinned for 64 bit platforms")
+	}
+	if got := unsafe.Sizeof(gift.Event{}); got != 64 {
+		t.Fatalf("gift.Event is %d bytes, want 64", got)
+	}
+}
+
+// TestReplaceTextDeliversWithoutAllocating extends the zero allocation
+// contract of the project plan, section 11, to the system keyboard: an edit
+// arrives on every keystroke there.
+func TestReplaceTextDeliversWithoutAllocating(t *testing.T) {
+	var leaf, panel []gift.TextReplacement
+	var nested []bool
+	root := func(*gift.Context) gift.View {
+		return panelView{key: "panel", w: 200, h: 100, replaced: &panel,
+			children: []gift.View{replaceProbe{replaced: &leaf, nested: &nested}}}
+	}
+	a := newInputApp(t, root)
+	a.BeginInput(0)
+	a.KeyDown(gift.KeyTab, 0)
+	a.KeyUp(gift.KeyTab, 0)
+	// Room for every run, so that the probe's own logs do not allocate.
+	leaf = make([]gift.TextReplacement, 0, 1024)
+	panel = make([]gift.TextReplacement, 0, 1024)
+	nested = make([]bool, 0, 2048)
+	if got := testing.AllocsPerRun(500, func() { a.ReplaceText(1, 0, "x") }); got != 0 {
+		t.Fatalf("ReplaceText allocated %.1f times per edit, want 0", got)
+	}
+}
+
+// TestThePlatformKeyboardBitsRebuildOnlyOnChange pins that
+// SetPlatformKeyboardActive and SetPlatformKeyboardAvailable cost a build only
+// when the value changes: a backend reports the system keyboard on every tick.
+func TestThePlatformKeyboardBitsRebuildOnlyOnChange(t *testing.T) {
+	a := newInputApp(t, func(*gift.Context) gift.View { return target{name: "field", w: 100, h: 40} })
+	if (*gift.BuildContext)(nil).PlatformKeyboardActive() || (*gift.BuildContext)(nil).PlatformKeyboardAvailable() {
+		t.Fatal("a nil BuildContext reports a platform keyboard")
+	}
+	builds := func(set func(bool), v bool) uint64 {
+		before := a.Diagnostics().Builds
+		set(v)
+		mustUpdate(t, a)
+		return a.Diagnostics().Builds - before
+	}
+	for _, c := range []struct {
+		name string
+		set  func(bool)
+		get  func() bool
+	}{
+		{"SetPlatformKeyboardActive", a.SetPlatformKeyboardActive, a.PlatformKeyboardActive},
+		{"SetPlatformKeyboardAvailable", a.SetPlatformKeyboardAvailable, a.PlatformKeyboardAvailable},
+	} {
+		if n := builds(c.set, true); n == 0 || !c.get() {
+			t.Fatalf("%s(true) built %d scopes and reads %v", c.name, n, c.get())
+		}
+		if n := builds(c.set, true); n != 0 {
+			t.Fatalf("%s(true) again built %d scopes, want none", c.name, n)
+		}
+		if n := builds(c.set, false); n == 0 || c.get() {
+			t.Fatalf("%s(false) built %d scopes and reads %v", c.name, n, c.get())
+		}
+	}
 }

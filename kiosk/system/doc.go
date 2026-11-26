@@ -10,7 +10,7 @@
 //     systemd for the host name, the clock, the power and the units, and
 //     apt-get for updates. Changes need root, which a kiosk has.
 //   - macOS, read only: what the device is, its storage and its network.
-//   - Anything else, with little more than its storage.
+//   - Anything else, iOS included, with little more than its storage.
 //
 // [Simulated] is a system that only pretends, with a Raspberry Pi on a
 // workshop network, for tests, demos and the documentation.

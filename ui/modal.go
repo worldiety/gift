@@ -294,6 +294,25 @@ func (s scrim) Build(bc *gift.BuildContext) gift.Element {
 // It reads [gift.PaintContext.TransitionPhase], which is the phase of the
 // nearest transitioning ancestor — the modal layer — so the scrim and the
 // dialog are driven by one number and cannot drift apart.
+//
+// # The system bars
+//
+// A modal inside a [Window] on a phone is laid out in the safe area of
+// [gift.App.SetSafeArea], and so is its scrim, which leaves the status bar and
+// the navigation bar undimmed: a bright frame round a dark screen, which says
+// that the bars are still in reach when they are exactly what the modal has
+// taken away. So the wash bleeds, on every edge where the scrim lies on the
+// edge of the safe area, on to the edge of the window. It is the bleed of the
+// bars — paint only — and the scrim's bounds, and with them the area a tap is
+// swallowed and dismisses in, stay the safe rectangle; outside it the system
+// has the touch. A scrim that is not at an edge of the safe area — a modal in
+// a nested Window, or in a frame — bleeds nowhere and paints its bounds, and
+// so does every scrim of a desktop, which has no safe area, without a single
+// operation more.
+//
+// It is the painter's own rectangle rather than [Stack.BleedSafeArea] on the
+// box, because the box has no background to bleed: see [scrim] for why the
+// wash is not a background.
 type scrimNode struct{ color Color }
 
 // Paint implements gift.Painter.
@@ -303,7 +322,9 @@ func (n scrimNode) Paint(ctx *gift.PaintContext) {
 	if c.A <= 0 {
 		return
 	}
-	ctx.Add(render.Op{Kind: render.OpFillRect, Bounds: ctx.Bounds(), Color: c})
+	// The wash reaches past the safe area to the edge of the window, at every
+	// edge the scrim lies on; see [gift.PaintContext.SafeAreaBleed].
+	ctx.Add(render.Op{Kind: render.OpFillRect, Bounds: ctx.Bounds().Outset(ctx.SafeAreaBleed()), Color: c})
 }
 
 // fadeBy scales a premultiplied colour towards transparent. Premultiplied is

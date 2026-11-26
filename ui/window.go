@@ -69,6 +69,42 @@ import (
 // [ZStack] holding a keyboard; [Overlay.AvoidKeyboard] has the reasons and the
 // way to turn it off.
 //
+// # The system bars
+//
+// A phone draws its status bar, its navigation bar and the cutout of its
+// camera on top of whatever the application draws, and an application that
+// draws edge to edge — every gift application on a phone does — is told by
+// how much, per edge: the safe area of [gift.App.SetSafeArea]. A Window that
+// is the root of the tree honours it the way it honours the keyboard. The
+// page background still covers the whole window, bars included, and every
+// other child — the content, a [Modal], the [OnScreenKeyboard] — is laid out
+// in the window without the safe area, so that nothing anybody has to read or
+// press is under a bar:
+//
+//	ui.Window(ui.TabBar(sel, pick, tabs...), ui.OnScreenKeyboard()).Align(geom.Bottom)
+//
+// is a complete edge to edge screen. The tab bar ends above the navigation
+// bar and the bar of a [NavigationStack] begins below the status bar, and
+// both paint their surface on to the edge of the window behind them, so the
+// bars of the system lie on the bars of the application rather than on a
+// strip of page. A bar of the application's own does the same with
+// [Stack.BleedSafeArea]. The keyboard sits on the safe bottom edge and the
+// content makes room for it inside the safe rectangle, so a phone with its
+// keyboard up is short by the keyboard and the navigation bar under it, not
+// by the navigation bar twice.
+//
+// Only a Window that is given the whole window does this. The root is; a
+// Window nested in something smaller — a preview in a gallery, a framed box
+// in a test — is not at the edge of the screen and applies no safe area, so
+// nothing is ever padded twice. On a desktop or a kiosk the safe area is zero
+// unless the application configured one for a bezel, and a Window then lays
+// out exactly as it did before there was one.
+//
+// [Overlay.IgnoresSafeArea] gives the content the whole window, for a camera
+// preview, a map or a video that should be cut by the bars rather than framed
+// by them; the application then reads [gift.Context.SafeArea] and keeps its
+// controls clear itself.
+//
 // # The two-level hierarchy this makes real
 //
 // [ColorBackground] is the page and [ColorSurface] is what is raised on it —

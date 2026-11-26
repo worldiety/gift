@@ -138,8 +138,10 @@
 //
 // # What it cannot do yet
 //
-//   - Compose CJK. There is no IME, no preedit string and no candidate
-//     window, and the project plan, section 14, keeps it that way. Umlauts,
+//   - Compose CJK. gift itself has no preedit string and no candidate
+//     window, and the project plan, section 14, keeps it that way; what a
+//     platform input method commits arrives through [gift.App.ReplaceText],
+//     which [Harness.ReplaceText] delivers as a system keyboard does. Umlauts,
 //     accents, AltGr and dead keys are not that and do work: by the time the
 //     platform reports a character the composition is over, and
 //     [Harness.TypeText] delivers exactly what it reported.

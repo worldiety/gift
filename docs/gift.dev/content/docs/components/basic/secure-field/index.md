@@ -33,10 +33,11 @@ ui.SecureField(password).Placeholder("Password").OnSubmit(signIn)
 
 ## The last character
 
-On a touch keyboard a mistyped letter is otherwise only found when the sign-in fails, so iOS shows the character
-just typed for a moment. `ShowsLastCharacter(true)` does the same: the character stays in the clear for
-`ui.SecureRevealDuration` (one and a half seconds), or until the next key, press or focus change. The default follows
-`ui.SetOnScreenKeyboard`: on for a kiosk, off on a desktop, where macOS never shows it.
+On a touch keyboard a mistyped letter is otherwise only found when the sign-in fails, so iOS shows the character just
+typed for a moment. `ShowsLastCharacter(true)` does the same: the character stays in the clear for
+`ui.SecureRevealDuration` (one and a half seconds), or until the next key, press or focus change. The default is on
+for a kiosk with `ui.SetOnScreenKeyboard` and where the backend reports a system keyboard (Android and iOS with the
+Ebitengine backend, unless `Config.NoNativeKeyboard`), off on a desktop, where macOS never shows it.
 
 ## Showing the password
 

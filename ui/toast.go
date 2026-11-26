@@ -140,14 +140,29 @@ func (l toastLayer) Build(*gift.BuildContext) gift.Element {
 
 type toastLayerLayout struct{ edge ToastEdge }
 
+// Layout places the capsule at its edge of the safe rectangle, not of the
+// window: the layer covers the whole window, as the top layer does, but on a
+// phone drawn edge to edge the top of the window is the status bar and the
+// bottom the navigation bar, and a toast that slid in there would sit under
+// the clock or under the home indicator, half covered and out of reach of the
+// finger that swipes it away. So the margin is measured from the edge of
+// [safeWindow], the width is the safe width, and a phone on its side centres
+// the capsule between its cutout and its navigation bar rather than between
+// the edges of the glass. Without a safe area the rectangle is the window and
+// the arithmetic is the one it always was.
 func (l toastLayerLayout) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 	win := c.Constrain(c.Max)
-	s := ctx.Measure(0, geom.Constraints{Max: geom.Sz(min(win.W-2*toastMargin, toastMaxW), win.H)})
-	y := toastMargin
+	r := safeWindow(ctx, win)
+	// A safe rectangle narrower than the two margins — a safe area larger
+	// than the window, which a backend may report for a frame while a phone
+	// folds — offers the capsule no width rather than a negative one, which
+	// constraints may not have.
+	s := ctx.Measure(0, geom.Constraints{Max: geom.Sz(max(0, min(r.Width()-2*toastMargin, toastMaxW)), r.Height())})
+	y := r.Min.Y + toastMargin
 	if l.edge == ToastBottom {
-		y = win.H - toastMargin - s.H
+		y = r.Max.Y - toastMargin - s.H
 	}
-	ctx.Place(0, geom.Pt((win.W-s.W)/2, y))
+	ctx.Place(0, geom.Pt(r.Min.X+(r.Width()-s.W)/2, y))
 	ctx.ReportOverflow(geom.Size{})
 	return win
 }
@@ -158,7 +173,7 @@ type toastCard struct{ v ToastView }
 
 func (toastCard) ViewType() gift.TypeID { return toastCardType }
 
-func (c toastCard) Build(*gift.BuildContext) gift.Element {
+func (c toastCard) Build(bc *gift.BuildContext) gift.Element {
 	v := c.v
 	var kids []gift.View
 	if v.hasIcon {
@@ -173,6 +188,15 @@ func (c toastCard) Build(*gift.BuildContext) gift.Element {
 		label += ", " + v.subtitle
 	}
 	n := &toastNode{v: v, bg: ResolveColor(ColorSurface), shadow: ResolveColor(RGBA(0, 0, 0, 60))}
+	// The capsule enters from beyond the edge of the window, which is the
+	// safe area further out than the edge of the safe rectangle it rests
+	// against; a change of the safe area rebuilds every scope, so this is
+	// read where it is current.
+	if v.edge == ToastBottom {
+		n.beyond = bc.SafeArea().Bottom
+	} else {
+		n.beyond = bc.SafeArea().Top
+	}
 	return gift.Element{
 		Key:      "toast-" + v.title + "\x00" + v.subtitle,
 		Label:    label,
@@ -195,6 +219,9 @@ type toastState struct {
 type toastNode struct {
 	v          ToastView
 	bg, shadow Color
+	// beyond is the safe area at the toast's edge: how much further the
+	// edge of the window is than the edge the card rests against.
+	beyond float32
 }
 
 func (n *toastNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
@@ -237,7 +264,7 @@ func (n *toastNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Siz
 // offset is how far the card is from its place towards its edge's outside,
 // negative for the top edge, and how opaque it is.
 func (n *toastNode) offset(ctx *gift.PaintContext, st *toastState, h float32) (dy, alpha float32, moving bool) {
-	away := -(h + toastMargin + 8)
+	away := -(h + toastMargin + 8 + n.beyond)
 	if n.v.edge == ToastBottom {
 		away = -away
 	}

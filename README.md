@@ -36,7 +36,7 @@ on-screen keyboard and switchable light/dark themes.
 Requires **Go 1.27** and a graphical session with GPU support. The examples
 include Inter as an embedded font. The intended Raspberry Pi setup is
 Raspberry Pi OS 64-bit with X11/XWayland and hardware-accelerated Mesa;
-builds do not require CGO.
+desktop builds do not require CGO.
 
 From the cloned repository, run one example at a time:
 
@@ -331,6 +331,90 @@ covers the same pixels as all of them. Data in memory keeps an index for it,
 so ten million points zoom like a hundred, and a `charts.Source` is asked, off
 the user interface goroutine, for just the points of what is shown, the way a
 map asks for tiles.
+
+### Android And iOS
+
+gift applications run on Android and iOS too; that support is experimental.
+There the operating system drives the frame loop, so `backend.Run` cannot
+open a window. `backend.NewGame` returns the game Run would drive, for
+Ebitengine's `mobile` package, and `ebitenmobile bind` turns the package into
+an Android library or an iOS framework. It takes a constructor rather than an
+App: Ebitengine runs the frame loop on a goroutine of its own, and the App has
+to be created on the goroutine that drives it.
+
+```go
+// Bound for Android with
+//   ebitenmobile bind -target android -javapkg com.example.app \
+//       -o mobile.aar ./mobile
+// and for iOS with
+//   ebitenmobile bind -target ios -iosversion 17.0 \
+//       -o Mobile.xcframework ./mobile
+package mobile
+
+import (
+    "github.com/hajimehoshi/ebiten/v2/mobile"
+    backend "github.com/worldiety/gift/backend/ebiten"
+    "github.com/worldiety/gift/geom"
+
+    "example.com/notes/app"
+)
+
+func init() {
+    g, opts := backend.NewGame(app.New, backend.Config{})
+    mobile.SetGameWithOptions(g, opts)
+}
+
+// SetSafeArea is called by the host: dp on Android, points on iOS; any thread.
+func SetSafeArea(left, top, right, bottom float64) {
+    backend.SetSafeArea(geom.Insets{Top: float32(top), Right: float32(right),
+        Bottom: float32(bottom), Left: float32(left)})
+}
+```
+
+The application lives in a package of its own, whose `New` also does the
+process wide setup, as a desktop's main would:
+
+```go
+func New() *gift.App {
+    ui.SetDefaultFont(ui.MustFont(ui.FontQuery{Family: inter.Family}))
+    return gift.New(gift.Options{Root: func(*gift.Context) gift.View {
+        return ui.Window(screen(), ui.OnScreenKeyboard()).Align(geom.Bottom)
+    }})
+}
+```
+
+The desktop's main calls `backend.Run(app.New(), cfg)`, the bound package
+`backend.NewGame(app.New, backend.Config{})`. A bound library has no main, so
+the font has to be installed in `New`: without a default font the first Text
+panics.
+
+`ebitenmobile` is a command of the Ebitengine module the application already
+requires, and it should be the same version; `-target android` builds the
+library for every Android ABI, the emulators included. Run inside the
+application's module, this installs the version go.mod requires:
+
+```sh
+go install github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile@$(go list -m -f '{{.Version}}' github.com/hajimehoshi/ebiten/v2)
+```
+
+The host reports the system bars and the display cutout through the bound
+package's `SetSafeArea` (`Mobile.setSafeArea` in Kotlin, `MobileSetSafeArea`
+in Swift, for the package named mobile above), because `backend/ebiten` is
+not bound and its `geom.Insets` parameter is not a type gobind carries.
+`ui.Window` then paints its page behind the bars and lays its content out
+inside them, and the bars of a `TabBar` and a `NavigationStack` reach behind
+them too. Text fields get the system keyboard, with its suggestions and
+autocorrection; password fields get it too, in its normal mode, because
+Ebitengine cannot ask for password mode, so the keyboard may learn and suggest
+what is typed into them. `DateField` and `TimeField` keep gift's drawn
+keyboard, which is why the window places `ui.OnScreenKeyboard` and is aligned
+to the bottom. The desktop is unchanged.
+
+What the Kotlin or Swift host has to do — edge to edge, `configChanges`,
+`adjustNothing`, suspend and resume, Back, one view controller per process —
+and which packages do nothing on a phone is on the
+[Android and iOS page](docs/gift.dev/content/docs/concepts/mobile.md) of the
+concepts on gift.dev and in the documentation of `backend.NewGame`.
 
 ## Testing And Automation
 

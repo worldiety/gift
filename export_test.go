@@ -85,3 +85,8 @@ func ObstructionForTest(a *App) (NodeRef, bool) {
 	}
 	return NodeRef{h}, true
 }
+
+// AppleKeyboardForTest is [appleKeyboard], so that the test of the modifier
+// convention can ask about iOS on a machine that is not one: the default
+// follows [runtime.GOOS], and the gate builds for iOS but runs nowhere near it.
+func AppleKeyboardForTest(goos string) bool { return appleKeyboard(goos) }

@@ -1,4 +1,4 @@
-//go:build !darwin && !(linux && !android && !faketime)
+//go:build (!darwin && !(linux && !android && !faketime)) || ios
 
 package clipboard
 

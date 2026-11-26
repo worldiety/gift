@@ -260,7 +260,14 @@ func (a *App) beginSubtree(h scene.Handle) (prev uint32, clip subtreeClip) {
 	nd := &n.Payload
 	prev = a.pctx.xform
 	if nd.clip {
-		a.list.PushClip(a.list.Xform(prev).TransformRect(n.Bounds))
+		m := a.list.Xform(prev)
+		r := m.TransformRect(n.Bounds)
+		if nd.clipBleed && nd.clipRadius == 0 && bleedsUnder(m) {
+			// Paint only; hitNode keeps n.Bounds. A rounded clip is a layer
+			// of the bounds and would cut the bleed again where it opens.
+			r = r.Outset(a.deviceBleed(r))
+		}
+		a.list.PushClip(r)
 		clip = clipRect
 		if nd.clipRadius > 0 {
 			// The rectangle stays pushed: it is the clip of the composite,

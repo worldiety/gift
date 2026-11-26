@@ -22,7 +22,9 @@ Ebitengine wird in Schritt 1 gepinnt.
   X11/XWayland, hardwarebeschleunigtes Mesa, 1920x1080 bei 60 Hz.
   Desktop-Ziele daneben: macOS und Linux; Windows 11 als Best-Effort-Ziel
   seit Abschnitt 43, geprueft auf einem Windows-PC des Nutzers, nicht in
-  der Abnahmematrix.
+  der Abnahmematrix. Android und iOS als experimentelle Ziele seit
+  Abschnitt 52, geprueft im Emulator und im Simulator (iPhone und iPad),
+  ebenfalls nicht in der Abnahmematrix.
 - Erster Aufschlag enthaelt VStack, HStack, Text, Button und eine virtuelle
   Bildergalerie mit 10.000 bis 100.000 Eintraegen.
 - Border, abgerundete Formen und Shadow gehoeren zum ersten Aufschlag.
@@ -156,6 +158,17 @@ Ressourcenvertrag weiter.
 `internal/text` liefert Shaping-Ergebnisse als Glyph-ID-, Position- und
 Font-Referenzlisten. Nur `backend/ebiten` kennt den Glyph-Atlas. Dadurch
 benutzen Messung und Ausgabe zwingend dieselben Shaping-Ergebnisse.
+
+Fuer Android und iOS (Abschnitt 52) kommen in `backend/ebiten` drei Dateien
+hinzu, ohne die Richtung zu aendern: `mobile.go` (`NewGame`), `ime.go` (die
+Systemtastatur ueber `exp/textinput`) und `safearea.go`. Letztere haelt
+prozessweiten Zustand, wie es das Backend schon fuer die Ablage unter
+macOS (`activeMacDrops`) tut: einen Briefkasten fuer `SetSafeArea` (die
+letzte Meldung und das Spiel, das sie weckt). Die Plattform meldet auf
+ihrem eigenen Thread, das Spiel holt die Meldung auf der UI-Goroutine ab.
+Kern und `ui` kennen nur rendererneutrale Begriffe (`App.SetSafeArea`,
+`TextInputClient`, `App.SetPlatformKeyboardActive`); `backend` importiert
+`ui` weiterhin nicht.
 
 Skalierung erfolgt entlang dieser Grenzen, nicht durch ein Package je Widget
 oder durch einen presentation/core-Sammelbereich. Loader und Caches koennen
@@ -1271,6 +1284,14 @@ Wachstum hier bemerkt und begruendet, statt im Code zu passieren.
   `render.Videos`, `render.AudioOutput`, das Paket `video` und
   `ui/videoplayer` setzen sie um.
 
+- `IME im Sinne der CJK-Komposition` bleibt ausgeschlossen, auch nach
+  Abschnitt 52. Dort kommt eine Naht zur Systemtastatur von Android und iOS
+  hinzu (`TextInputClient`, `EventTextReplace`, `App.ReplaceText`), aber
+  ohne Preedit, Unterstreichung und Kandidatenfenster: das Wort, das die
+  Systemtastatur noch zusammensetzt, steht als gewoehnlicher Text im Feld
+  und wird bei jeder Aenderung ersetzt. Das ist Wachstum, und es ist hier
+  vermerkt; die Komposition selbst bleibt der Plattform.
+
 Nicht aufgehoben, sondern nie enthalten: Zwischenablage und
 Bildschirmtastatur kommen in diesem Dokument bis hier nicht vor. Sie sind
 in Abschnitt 19 geregelt.
@@ -1552,9 +1573,11 @@ das ist Standardverhalten und kein Fehler.
 
 ### Bildschirmtastatur
 
-Ebitengine bietet weder IME noch eine Moeglichkeit, eine native
-Bildschirmtastatur zu oeffnen. Auf dem Kioskziel existiert ohnehin keine.
-gift zeichnet sie also selbst, als Overlay im vorhandenen `ZStack`,
+Auf dem Desktop und dem Kioskziel bietet Ebitengine weder IME noch eine
+Moeglichkeit, eine native Bildschirmtastatur zu oeffnen, und auf dem
+Kioskziel existiert ohnehin keine. (Auf Android und iOS oeffnet
+`exp/textinput` die Systemtastatur; siehe Abschnitt 52 und den Nachtrag
+unten.) gift zeichnet sie also selbst, als Overlay im vorhandenen `ZStack`,
 eingeblendet auf `EventFocusGained`. Fuer das Freihalten des Eingabefelds
 dient das bereits vorhandene und getestete `ScrollIntoView`.
 
@@ -1607,6 +1630,19 @@ dieser Umstand steht bereits in `backend/ebiten/input.go` und in
 Abschnitt 7. Auf Raspberry Pi OS mit X11 meldet sich ein Touchscreen als
 Maus. Eine an `PointerTouch` gebundene Einblendung wuerde auf genau der
 Hardware nie ausloesen, fuer die sie gebaut wird.
+
+Nachtrag (26.11.2026, Abschnitt 52): Auf Android und iOS bedient die
+Systemtastatur die Anforderung. Ein Feld fragt dort ohne den Kioskschalter
+nach einer Tastatur, weil das Backend mit
+`App.SetPlatformKeyboardAvailable` meldet, dass die Plattform eine hat; das
+ist dieselbe ausdrueckliche Aussage ueber das Geraet, nur vom Backend
+statt von `main`, und wieder nicht `PointerKind`. Solange die
+Systemtastatur oben ist (`App.SetPlatformKeyboardActive`), bleibt die
+gezeichnete unten und meldet keine Verdeckung; den Platz schafft die
+Plattform. Felder, die die Systemtastatur nicht bedienen kann (`DateField`,
+`TimeField`, kein `TextInputClient`), bekommen weiter die gezeichnete, wenn
+die Anwendung sie platziert hat. Ohne Meldung und ohne Schalter fragt kein
+Feld; das ist jeder Desktop, unveraendert.
 
 ## 20. Semantische Farben
 
@@ -5015,7 +5051,8 @@ GOOS=freebsd GOARCH=amd64 go vet ./filedialog/
 GOOS=js GOARCH=wasm go vet ./filedialog/
 ```
 
-Kein `GOOS=ios` (braucht externes cgo-Linken). Ab M5 zusaetzlich
+Kein `GOOS=ios` (braucht externes cgo-Linken); die Pruefung mit cgo und
+Xcode-Werkzeugen fuer Android und iOS steht in Abschnitt 52. Ab M5 zusaetzlich
 `go run ./docs/apigen`, `go test ./docs/...` und `hugo build` in
 `docs/gift.dev` ohne Warnungen.
 
@@ -6197,6 +6234,149 @@ Stand R4, Teil A: kameratreu durch Abgleich mit der Vorschau (22.11.2026):
   Stufen, die man gegen die Wahl der Kamera verstellen kann; dafuer fehlen
   Aufnahmen mit Creative Style Standard und Neutral, Kontrast +-3, DRO aus
   und Lv5. DRO lokal nachbilden. Eine echte DNG fehlt weiter.
+
+## 52. Android und iOS: mobiles Backend, Systemtastatur, Safe Area
+
+Anlass (26.11.2026): Eine gift-Anwendung soll ohne nennenswerten
+Zusatzcode auch auf Android und iOS laufen. Ein Demo (Kotlin-Activity,
+Swift-ViewController, Go-Paket fuer `ebitenmobile bind`) belegt das im
+Android-Emulator und im iOS-Simulator auf iPhone und iPad. Der Desktop
+verhaelt sich dabei unveraendert; jede Aenderung unten ist auf dem Desktop
+entweder nicht vorhanden (Build-Tags, `mobilePlatform`) oder eine Null, die
+nichts aendert. Die eine Ausnahme ist gelinkter Code: `backend/ebiten`
+importiert Ebitengines `exp/textinput` auf jeder Plattform. Dessen `init`
+registriert auf macOS eine Objective-C-Klasse
+(`EbitengineTextInputClient`) und ueberall passive Haken fuer Ebitengines
+VM-Gast; eine Eingabesitzung oeffnet auf dem Desktop nie etwas, weil die
+Bruecke nur bei `mobilePlatform` entsteht.
+
+### Das Spiel: `NewGame`
+
+Auf Android und iOS besitzt das Betriebssystem Prozess und Frame-Schleife;
+`Run` kann kein Fenster oeffnen und liefert dort einen Fehler.
+`backend/ebiten.NewGame(newApp func() *gift.App, Config)` gibt das Spiel und
+seine Optionen fuer Ebitengines Paket `mobile` zurueck. Es nimmt einen
+Konstruktor und keine App, wegen Abschnitt 5 und 6: die Goroutine, die eine
+App erzeugt, ist ihr UI-Executor, und die Frame-Schleife muss auf ihr
+laufen. `init` laeuft auf einer anderen Goroutine als Ebitengines Schleife,
+also erzeugt das Spiel die App bei seinem ersten Aufruf aus der Schleife.
+`Run` und `NewGame` teilen sich `newSession`, sodass Frame-Modell,
+Eingabebruecke und Renderer dieselben sind.
+
+`mobilePlatform` ist eine Konstante (`android || ios`). Sie schaltet ab, was
+ein Telefon nicht hat (Touchpanel unter `/dev/input`, Display-Durchgang) und
+setzt die mobilen Voreinstellungen: `NoMouse` ist dort immer an, weil
+Ebitengine v2.10.5 auf Android und iOS keine Maus liest und der Cursor
+sonst bei (0, 0) schweben wuerde; die Systemtastatur ist an, solange
+`Config.NoNativeKeyboard` sie nicht abschaltet. Eine leere `Config` ist
+damit die ganze mobile Einrichtung.
+
+### Safe Area
+
+Die Safe Area ist Fensterzustand wie Viewport und Dichte: das Backend setzt
+sie mit `App.SetSafeArea` auf der UI-Goroutine, in logischen Pixeln, auf
+ganze Pixel aufgerundet. Eine Aenderung baut alles neu, weil Views sie im
+Build lesen (`BuildContext.SafeArea`, `Context.SafeArea`,
+`LayoutContext.SafeArea`, `App.SafeRect`); sie aendert sich bei einer
+Drehung, also selten. Sie ist nicht `Element.Obstructs`, das der Tastatur
+gehoert und mit dem Fokus kommt und geht.
+
+Den Inhalt rueckt genau eine Stelle ein: `ui.Window`, wenn es den ganzen
+Viewport bekommt, legt seinen Inhalt in das sichere Rechteck
+(`IgnoresSafeArea` schaltet das ab). Ein verschachteltes Fenster wendet
+nichts an, sodass nichts doppelt eingerueckt wird. Zwei weitere Stellen
+lesen sie im Layout, ohne etwas einzuruecken: das Sheet legt seine
+abgerundete Flaeche bis an den Fensterrand aus (`sheetReach`), weil ein
+abgerundeter Hintergrund nicht ueberlaufen kann, und die oberste Ebene
+platziert Toast, Popover und Menue ueber `safeWindow` im sicheren
+Rechteck. Balken (TabBar, NavigationStack), Scrim und die gezeichnete
+Tastatur malen hinter die Systemleisten (`BleedSafeArea`, `ui.Edges`). Das
+Ueberlaufen der Balken ist nur Malen: `PaintContext.SafeAreaBleed` und
+`Element.ClipBleedsSafeArea` vergroessern Hintergrund und Malclip bis an
+den Fensterrand, die Trefferflaeche und das Layout bleiben, wo sie sind.
+`BleedSafeArea` gibt es nur an den Containern (Stack, Box, Overlay), weil
+ein Balken ein Container ist.
+
+Die Plattform kennt die Leisten auf ihrem eigenen Thread und oft bevor die
+App existiert. `backend/ebiten.SetSafeArea(geom.Insets)` nimmt sie deshalb
+von jedem Thread an, in Ebitengines aeusseren Einheiten (dp, Punkte), als
+prozessweiten Briefkasten; das Spiel rechnet sie vor dem naechsten Update
+mit dem Faktor um, den nur es kennt, und reicht sie an die App.
+Der Host ruft sie nicht direkt: `backend/ebiten` ist kein Paket, das eine
+Anwendung bindet, und gobind traegt eine Struktur wie `geom.Insets` nicht
+als Wert. Also leitet das gebundene Paket der Anwendung die Funktion mit
+einer Zeile weiter, die die vier Kanten einzeln nimmt.
+`Config.SafeArea` ist eine feste Safe Area fuer Desktop und Kiosk (Rahmen,
+Overscan). `gifttest.Options.SafeArea` und `Harness.SetSafeArea` testen
+sie.
+
+### Systemtastatur
+
+Die Naht ist `TextInputClient` (der Interaktor beschreibt den Text um die
+Auswahl: `Before`, `After`, `Selected`, `Caret`, `Secure`), `App.TextInput`
+(dasselbe fuer den fokussierten Knoten, Caret im Raum von `Event.Pos`) und
+`App.ReplaceText` mit `EventTextReplace` ("ersetze die Auswahl und diese
+Bytes um sie herum durch diesen Text"), gezaehlt in
+`Diagnostics.TextReplacements`. Das ist die eine Bearbeitung, die eine
+Eingabemethode braucht und ein Tastendruck nicht ausdruecken kann. Die
+Nutzlast folgt der Regel von Abschnitt 49: `Event` bleibt ohne Zeiger, der
+Text und die beiden Zaehler kommen ueber `EventContext.TextReplacement`,
+wie die Ablage ueber `EventContext.Drop`. Ein Client darf von langem Text
+nur ein Fenster um die Auswahl melden; `len(Before)` ist dann kein Offset
+im Dokument, und ein Backend vergleicht Zustaende als Text. `ui` meldet je
+Seite hoechstens 4 KiB. Kein Preedit (Abschnitt 14): die
+Komposition steht als Text im Feld. Die Return-Taste ist eine Taste
+(`KeyEnter`), kein Zeilenumbruch im Text. `ui.TextField`, `SecureField`,
+`SearchField`, `TextArea` und `CodeEditor` implementieren die Naht;
+`TextEditor.ReplaceAround` rechnet.
+
+`App.SetPlatformKeyboardAvailable` sagt, dass die Plattform eine Tastatur
+hat (das Backend setzt es einmal beim Einrichten), und ein Feld fragt dann
+ohne den Kioskschalter von Abschnitt 19 nach einer Tastatur. Ohne diese
+Meldung haette jedes Backend mit Systemtastatur von einem Schalter in `ui`
+abgehangen, den es nicht importieren darf (Abschnitt 3).
+`App.SetPlatformKeyboardActive` sagt, dass die Systemtastatur gerade bedient;
+die gezeichnete tritt dann zur Seite. Das Backend meldet das nach der
+Eingabe des Ticks und vor dem Build, damit ein Feld, das ein Tipp gerade
+fokussiert hat, die gezeichnete nicht einen Frame lang bekommt (deren
+Reveal-Scroll bliebe sonst stehen); ein Fokus, der erst in `App.Update`
+wandert, haengt einen Frame nach. Den Caret frei zu halten ist dann
+Sache des Backends oder der Plattform darunter (Ebitengine verschiebt
+unter Android und iOS das Bild anhand von `TextInputState.Caret`; deshalb
+`adjustNothing` unter Android, das Fenster aendert seine Groesse nicht).
+
+Kompromiss, ausdruecklich vom Auftraggeber entschieden: Passwortfelder
+bekommen die Systemtastatur im normalen Modus. Ebitengine kann keinen
+Passwortmodus anfordern, die Tastatur darf also lernen und vorschlagen, was
+in sie getippt wird. `TextInputState.Secure` wird gemeldet, damit ein
+Backend den Modus anfordert, sobald es das kann; `Config.NoNativeKeyboard`
+mit dem Kioskschalter gibt jedem Feld die gezeichnete Tastatur.
+
+### Plattformpakete
+
+`clipboard`, `notify`, `kiosk/system` und `typst/embedded` haben auf iOS
+ihren nicht unterstuetzten Weg (`darwin && !ios`), wie schon auf Android.
+Der Arbeitsfarbraum ist auf iOS sRGB, weil Ebitengine die Metal-Ebene dort
+nicht kennzeichnet (Abschnitt 51).
+
+### Pruefkommandos
+
+Zusaetzlich zu `go vet ./... && go test ./...`, mit NDK bzw. Xcode:
+
+```text
+GOOS=android GOARCH=arm64 CGO_ENABLED=1 CC=<NDK>/aarch64-linux-android24-clang \
+  go vet ./backend/ebiten ./ui/... .
+GOOS=ios GOARCH=arm64 CGO_ENABLED=1 \
+  CC="$(xcrun --sdk iphonesimulator --find clang) -isysroot $(xcrun --sdk iphonesimulator --show-sdk-path) -target arm64-apple-ios17.0-simulator" \
+  go build ./... && go vet ./backend/ebiten ./ui/... .
+go test -race ./ui ./backend/ebiten .
+```
+
+Beim Nutzer: Android-Geraet und iPhone, nicht nur Emulator und Simulator.
+
+Offen: `DateField` und `TimeField` als `TextInputClient` mit Ziffernmodus,
+sobald Ebitengine Eingabetypen kennt; eine rendererneutrale Meldung des
+Rechtecks der Systemtastatur an die vorhandene Freistellung.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

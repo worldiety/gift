@@ -6,7 +6,7 @@ weight: 1
 Gift is a declarative UI toolkit for Go. You describe your interface with SwiftUI-style views, keep its data in
 typed state, and gift draws it on the GPU with [Ebitengine](https://ebitengine.org/). There is no browser, no
 WebView and no web stack. Gift focuses on desktop applications and touchscreen kiosks, particularly on
-Raspberry Pi 4 and 5.
+Raspberry Pi 4 and 5. Android and iOS are experimental targets; see [Android and iOS](../concepts/mobile/).
 
 ```go
 func counter(ctx *gift.Context) gift.View {

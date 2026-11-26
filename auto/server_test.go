@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/worldiety/gift"
+	"github.com/worldiety/gift/geom"
 	"github.com/worldiety/gift/ui"
 )
 
@@ -297,5 +298,57 @@ func TestTheJSONSpellingOfARoleNameDropsTheColorPrefix(t *testing.T) {
 		if got := jsonRoleName(c.in); got != c.want {
 			t.Errorf("jsonRoleName(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+var editType = gift.RegisterType("auto.Edit")
+
+// editFixture is a focusable 100 by 40 node that keeps the text it is typed
+// and edited, the way a text field applies a system keyboard's edits.
+type editFixture struct{ text *string }
+
+func (editFixture) ViewType() gift.TypeID { return editType }
+
+func (f editFixture) Build(*gift.BuildContext) gift.Element {
+	n := &editNode{f: f}
+	return gift.Element{Key: "edit", Layouter: n, Interactor: n, Focusable: true}
+}
+
+type editNode struct{ f editFixture }
+
+func (n *editNode) Layout(*gift.LayoutContext, geom.Constraints) geom.Size { return geom.Sz(100, 40) }
+
+func (n *editNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
+	s := n.f.text
+	switch e.Kind {
+	case gift.EventRune:
+		*s += string(e.Rune)
+		return true
+	case gift.EventTextReplace:
+		r, _ := ctx.TextReplacement()
+		*s = (*s)[:max(len(*s)-r.DeleteBefore, 0)] + r.Text
+		return true
+	}
+	return false
+}
+
+func TestTheReplaceTextStepEditsTheFocusedNode(t *testing.T) {
+	var text string
+	l := newFakeLoop(t, func(*gift.Context) gift.View { return editFixture{text: &text} }, func() byte { return 0 })
+	h := (&server{d: l.d}).handler()
+	body, _ := json.Marshal(Batch{Steps: []Step{
+		{Op: "focus"},
+		{Op: "text", Text: "Hallo"},
+		{Op: "replaceText", DeleteBefore: 2, Text: "ö!"},
+	}})
+	if w := get(t, h, "POST", "/input", string(body)); w.Code != 200 {
+		t.Fatalf("/input: status %d: %s", w.Code, w.Body.String())
+	}
+	got, err := query(l.d, func(*gift.App) string { return text })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Halö!" {
+		t.Fatalf("the node holds %q, want %q", got, "Halö!")
 	}
 }

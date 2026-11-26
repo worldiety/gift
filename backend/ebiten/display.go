@@ -17,7 +17,7 @@ import (
 )
 
 // WorkingSpace returns the colour space [Run] paints in on this machine:
-// Display P3 on macOS and iOS, sRGB everywhere else.
+// Display P3 on macOS, sRGB everywhere else, iOS included.
 //
 // # Why P3 on a Mac
 //
@@ -30,6 +30,18 @@ import (
 // Elsewhere the frame is sRGB, and on Windows and X11 converted into the
 // colours of the display on its way to the screen; see displayPass.
 //
+// # Why not on an iPhone
+//
+// The argument above rests on the tag, and on iOS there is none.
+// Ebitengine v2.10.5 tags the Metal layer on macOS only; on iOS it leaves
+// the layer's colour space unset ("TODO: Enable this on iOS as well", in its
+// internal/graphicsdriver/metal/ca), and Core Animation takes an untagged
+// layer of eight bit pixels for sRGB without matching it. A frame painted in
+// P3 would then show its numbers as sRGB numbers, every colour paler than it
+// was meant to be. So iOS paints in sRGB until Ebitengine tags the layer, and
+// the display entry of the user configuration is not read there: there is
+// nothing for it to choose between.
+//
 // A person who wants the frame in sRGB on a Mac anyway, to compare numbers
 // with another machine say, writes "display": "srgb" into
 // ~/.wdygift/config.json.
@@ -37,7 +49,14 @@ import (
 // It is also the space to make thumbnails in, asset.Config.Space. log
 // receives a note when the configuration chose; it may be nil.
 func WorkingSpace(log *slog.Logger) *cms.Profile {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "ios" {
+	return workingSpaceOn(runtime.GOOS, log)
+}
+
+// workingSpaceOn is [WorkingSpace] on the operating system goos, a value of
+// [runtime.GOOS]. Only "darwin" is macOS: Go's ios port is a port of its
+// own, although its files build under the darwin constraint as well.
+func workingSpaceOn(goos string, log *slog.Logger) *cms.Profile {
+	if goos != "darwin" {
 		return cms.SRGB()
 	}
 	set, path := readDisplaySetting()
@@ -59,8 +78,9 @@ func WorkingSpace(log *slog.Logger) *cms.Profile {
 }
 
 // screenColorSpace is how Ebitengine tags the screen for a working space.
-// Ebitengine heeds it only on macOS and iOS, where the compositor converts
-// from it; elsewhere it is sRGB whatever this says.
+// Ebitengine v2.10.5 heeds it only on macOS, where the compositor converts
+// from it; elsewhere, iOS included, the screen is sRGB whatever this says,
+// and [WorkingSpace] is sRGB there to match.
 func screenColorSpace(space *cms.Profile) eb.ColorSpace {
 	if space == cms.DisplayP3() {
 		return eb.ColorSpaceDisplayP3
@@ -195,10 +215,13 @@ var (
 )
 
 // newDisplayPass returns the conversion into the display for this machine,
-// or nil where there is none: on macOS and iOS, under "display": "srgb", and
-// where no profile of the display can be read and the person named none.
+// or nil where there is none: on macOS, whose compositor converts into the
+// display itself; on iOS and Android, which show the sRGB frame as it is and
+// have no user configuration to name a profile in, which [NewGame] relies on;
+// under "display": "srgb"; and where no profile of the display can be read and
+// the person named none.
 func newDisplayPass(log *slog.Logger) *displayPass {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+	if runtime.GOOS == "darwin" || mobilePlatform {
 		return nil
 	}
 	set, path := readDisplaySetting()

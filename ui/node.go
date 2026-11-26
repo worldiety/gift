@@ -51,15 +51,21 @@ type node struct {
 	// kb is one more than the index of the child that is an on-screen
 	// keyboard the other children avoid, or zero when there is none. It is
 	// read by kindOverlay only and set by [Overlay.Build]; see
-	// [node.layoutAvoiding]. Offset by one so that the zero value, which is
+	// [node.layoutWindow]. Offset by one so that the zero value, which is
 	// what every other container gets, means "no keyboard" without a
 	// separate flag.
 	kb int
 
 	// plate says that child 0 is the window background of [Window], which
-	// keeps the whole box while the other children avoid the keyboard. It is
-	// only read when kb is set.
+	// keeps the whole box while the other children avoid the keyboard and
+	// the safe area. A node with a plate is always laid out by
+	// [node.layoutWindow], keyboard or not, because the safe area is decided
+	// there.
 	plate bool
+
+	// ignoreSafeArea is [Overlay.IgnoresSafeArea]: the children of a Window
+	// are laid out in the whole window, bars and all. Read only with plate.
+	ignoreSafeArea bool
 
 	// row is the shrink state of a kindRow node and is unused by every other
 	// kind, for the reason bar is here.
@@ -152,8 +158,8 @@ func (n *node) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 		// more than the constraints offer.
 		res.Size = cc.Constrain(size)
 	default:
-		if n.kb > 0 && n.kb <= k {
-			res = n.layoutAvoiding(cc, k)
+		if n.plate || n.kb > 0 && n.kb <= k {
+			res = n.layoutWindow(ctx, cc, k)
 		} else {
 			res = layout.Overlay(n.spec.Padding, n.spec.Alignment, cc, k, n, n.items, n.origins)
 		}
@@ -354,31 +360,64 @@ func (n *node) layoutLayer(ctx *gift.LayoutContext, cc geom.Constraints, k int) 
 		clampLow(size.W-outer.W), clampLow(size.H-outer.H))}
 }
 
-// layoutAvoiding is the overlay algorithm of a [ZStack] that holds an
-// on-screen keyboard: the keyboard is laid out against the whole box, and every
-// other child in the band of the box the keyboard leaves free. It is the
-// "adjust resize" of the mobile platforms, and [Overlay.AvoidKeyboard] says why
-// it is the default.
+// layoutWindow is the overlay algorithm of a [Window] and of every [ZStack]
+// that holds an on-screen keyboard. Two things are decided here that the plain
+// overlay does not know about, and both are the same move: some children are
+// laid out in a smaller rectangle than the box, and the rest keep the box.
+//
+//   - The safe area. A Window laid out against the whole window — the root of
+//     the tree — measures and places every child but its background plate
+//     inside the window without the safe area of [gift.App.SetSafeArea], so
+//     that nothing is drawn under the status bar, the navigation bar or the
+//     cutout of a phone. The plate keeps the whole window and the page is
+//     painted behind the bars.
+//   - The keyboard. The keyboard is laid out against that safe rectangle, and
+//     every other child in the band of it the keyboard leaves free. It is the
+//     "adjust resize" of the mobile platforms, and [Overlay.AvoidKeyboard]
+//     says why it is the default.
 //
 // # The algorithm
 //
-// The keyboard is measured first, with exactly the constraints
-// [layout.Overlay] would have given it, because its height is the one number
-// the rest depends on. A hidden keyboard measures zero — see [kbHidden] — and
-// then nothing below differs from [layout.Overlay] by a single pixel: the
-// constraints, the size and the origins are the same expressions with a
-// reserve of zero. That is what keeps every screen of an application without a
-// focused field, and every golden taken of one, exactly as it was.
+// The keyboard is measured first, with exactly the constraints the other
+// children get before it reserves anything, because its height is the one
+// number the rest depends on. A hidden keyboard measures zero — see
+// [kbHidden] — and a window without a safe area has an inset of zero, and
+// with both at zero nothing below differs from [layout.Overlay] by a single
+// pixel: the constraints, the size and the origins are the same expressions
+// with zeroes added. That is what keeps every screen of a desktop or kiosk
+// application without a focused field, and every golden taken of one, exactly
+// as it was.
 //
-// With a keyboard up, the other children are measured with the maximum height
-// lowered by the keyboard's, and aligned inside the band between the keyboard
-// and the opposite edge rather than inside the whole box. A flexible layout
-// therefore re-flows into the smaller band — a scroll container gets a shorter
-// viewport, a control pinned to the bottom of a screen moves up to sit on the
-// keyboard — and a scroll reveal of the focused field needs no help, because
-// there is nothing left to obstruct.
+// With a safe area, the children other than the plate are measured with the
+// constraints of the box deflated by it and placed with its top and left edge
+// added, which is padding by another name; the keyboard among them, so it sits
+// on the safe bottom edge, above the navigation bar of a phone and not behind
+// it. With a keyboard up, the others are measured with the maximum height of
+// that safe rectangle lowered by the keyboard's, and aligned inside the band
+// between the keyboard and the opposite edge rather than inside the whole box.
+// A flexible layout therefore re-flows into the smaller band — a scroll
+// container gets a shorter viewport, a control pinned to the bottom of a
+// screen moves up to sit on the keyboard — and a scroll reveal of the focused
+// field needs no help, because there is nothing left to obstruct.
 //
-// # When nothing is reserved
+// The keyboard's reserve is counted inside the safe rectangle, and that is
+// the rule "the larger of the two, not the sum" in another form: the bottom of
+// a phone with its keyboard up loses the keyboard plus the navigation bar it
+// sits on, which is exactly what is covered, and never the navigation bar
+// twice.
+//
+// # When the safe area is not applied
+//
+// Only a Window, and only one given the whole window: the constraints it lays
+// out against have the size of [gift.LayoutContext.Viewport] as their maximum.
+// The root of a tree is laid out against exactly that. A Window nested in
+// something smaller — a preview of a screen in a gallery, a test in a framed
+// box, a second Window inside the first one, which is already in the safe
+// rectangle — is not at the edge of the screen, or not all of it is, and
+// insetting it as well would pad it twice. [Overlay.IgnoresSafeArea] turns it
+// off for the one that is.
+//
+// # When nothing is reserved for the keyboard
 //
 // Three cases, and each falls back to plain overlap rather than to a guess:
 //
@@ -388,50 +427,71 @@ func (n *node) layoutLayer(ctx *gift.LayoutContext, cc geom.Constraints, k int) 
 //     a child cannot be laid out into two bands;
 //   - the keyboard is hidden, which is the zero reserve above.
 //
-// The window background of [Window] is the one other child that keeps the
-// whole box, so that the page is painted behind the keyboard too. A keyboard
-// with a translucent or rounded panel would otherwise show a strip of
+// The window background of [Window] is the one child that keeps the whole box,
+// so that the page is painted behind the keyboard and behind the bars too. A
+// keyboard with a translucent or rounded panel would otherwise show a strip of
 // unpainted framebuffer, which is exactly the defect [Window] exists to
-// prevent.
+// prevent; a phone would show one under its status bar.
 //
 // It allocates nothing: the scratch buffers are the node's, as for every other
 // kind.
-func (n *node) layoutAvoiding(cc geom.Constraints, k int) layout.Result {
+func (n *node) layoutWindow(ctx *gift.LayoutContext, cc geom.Constraints, k int) layout.Result {
 	pad := n.spec.Padding
 	align := n.spec.Alignment
-	kb := n.kb - 1
+	kb := -1
+	if n.kb > 0 && n.kb <= k {
+		kb = n.kb - 1
+	}
+	plate := n.plate && k > 0
 	inner := cc.Deflate(pad).Loosen()
 
-	kbs := n.MeasureChild(kb, inner)
-	n.items[kb].Size = kbs
+	// The safe area applies to a Window that fills the window and nowhere
+	// else; see "When the safe area is not applied" above. Zero is the
+	// desktop, and every expression below then reduces to the plain overlay.
+	var s geom.Insets
+	if plate && !n.ignoreSafeArea && cc.Max == ctx.Viewport() {
+		s = ctx.SafeArea()
+	}
+	safe := inner.Deflate(s)
+
+	var kbs geom.Size
+	if kb >= 0 {
+		kbs = n.MeasureChild(kb, safe)
+		n.items[kb].Size = kbs
+	}
 
 	var reserve float32
-	if inner.HasBoundedHeight() && (align.Y == 0 || align.Y == 1) && kbs.H > 0 {
+	if kb >= 0 && safe.HasBoundedHeight() && (align.Y == 0 || align.Y == 1) && kbs.H > 0 {
 		reserve = kbs.H
 	}
-	rest := inner
-	rest.Max.H = clampLow(inner.Max.H - reserve)
+	rest := safe
+	rest.Max.H = clampLow(safe.Max.H - reserve)
 
+	// What every child needs of the inside of the box to be shown whole: its
+	// own size, plus the safe area for everything but the plate, plus the
+	// keyboard for everything in the band.
 	w, h := kbs.W, kbs.H
+	if kb >= 0 {
+		w, h = kbs.W+s.Horizontal(), kbs.H+s.Vertical()
+	}
 	for i := range k {
 		if i == kb {
 			continue
 		}
-		fill := n.plate && i == 0
+		fill := plate && i == 0
 		c := rest
 		if fill {
 			c = inner
 		}
 		sz := n.MeasureChild(i, c)
 		n.items[i].Size = sz
-		if sz.W > w {
-			w = sz.W
-		}
-		// A child in the band needs its own height plus the keyboard's to be
-		// shown whole; the plate and the keyboard need only their own.
-		eh := sz.H
+		ew, eh := sz.W, sz.H
 		if !fill {
-			eh += reserve
+			ew += s.Horizontal()
+			eh += reserve + s.Vertical()
+		}
+		if ew > w {
+			w = ew
 		}
 		if eh > h {
 			h = eh
@@ -444,22 +504,34 @@ func (n *node) layoutAvoiding(cc geom.Constraints, k int) layout.Result {
 		clampLow(outer.W-pad.Horizontal()),
 		clampLow(outer.H-pad.Vertical()),
 	)
-	// The band the keyboard leaves free: above it when it sits on the bottom
-	// edge, below it when it sits on the top one. With no reserve it is the
+	// The safe rectangle inside the padding, and in it the band the keyboard
+	// leaves free: above it when it sits on the bottom edge, below it when it
+	// sits on the top one. With no safe area and no reserve both are the
 	// whole inside, which is the plain overlay.
-	bandTop := pad.Top
+	safeX, safeY := pad.Left+s.Left, pad.Top+s.Top
+	safeW := clampLow(inside.W - s.Horizontal())
+	safeH := clampLow(inside.H - s.Vertical())
+	bandTop := safeY
 	if align.Y == 0 {
 		bandTop += reserve
 	}
-	bandH := clampLow(inside.H - reserve)
+	bandH := clampLow(safeH - reserve)
 	for i := range k {
 		sz := n.items[i].Size
-		x := pad.Left + (inside.W-sz.W)*align.X
-		if i == kb || (n.plate && i == 0) {
-			n.origins[i] = geom.Pt(x, pad.Top+(inside.H-sz.H)*align.Y)
-			continue
+		switch {
+		case plate && i == 0:
+			n.origins[i] = geom.Pt(
+				pad.Left+(inside.W-sz.W)*align.X,
+				pad.Top+(inside.H-sz.H)*align.Y)
+		case i == kb:
+			n.origins[i] = geom.Pt(
+				safeX+(safeW-sz.W)*align.X,
+				safeY+(safeH-sz.H)*align.Y)
+		default:
+			n.origins[i] = geom.Pt(
+				safeX+(safeW-sz.W)*align.X,
+				bandTop+(bandH-sz.H)*align.Y)
 		}
-		n.origins[i] = geom.Pt(x, bandTop+(bandH-sz.H)*align.Y)
 	}
 	return layout.Result{Size: outer, Overflow: geom.Sz(
 		overflowBy(content.W, outer.W), overflowBy(content.H, outer.H))}
