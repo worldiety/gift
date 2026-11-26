@@ -160,6 +160,16 @@ const (
 	// EventDrop delivers the dropped content, in [EventContext.Drop].
 	// Returning true takes it; false hands it to the next drop target above.
 	EventDrop
+
+	// EventTextReplace is an edit a platform input method made, in
+	// [EventContext.TextReplacement]: delete the selection,
+	// [TextReplacement.DeleteBefore] bytes before it and
+	// [TextReplacement.DeleteAfter] bytes after it, insert
+	// [TextReplacement.Text], and put the caret after the insertion. It goes
+	// to the focused node like a key and bubbles like one. The return key of
+	// a platform keyboard is not one of these but a [KeyEnter]; see
+	// [App.ReplaceText] and [TextInputClient].
+	EventTextReplace
 )
 
 // Key is a physical key, in the small set gift's own navigation, activation
@@ -253,7 +263,7 @@ const (
 func (s Mods) Has(m Mods) bool { return s&m == m }
 
 // ShortcutModifier is the modifier that turns a letter into an editing
-// command: command on macOS, control everywhere else.
+// command: command on macOS and iOS, control everywhere else.
 //
 // # Why this is one variable and not a rule each view invents
 //
@@ -298,7 +308,7 @@ func (s Mods) Has(m Mods) bool { return s&m == m }
 var ShortcutModifier = defaultShortcutModifier()
 
 // WordModifier is the modifier that turns a caret move into a word move:
-// option on macOS, control everywhere else.
+// option on macOS and iOS, control everywhere else.
 //
 // It is the sibling of [ShortcutModifier] and everything that variable says
 // about itself applies here: it is a property of the keyboard and not of a
@@ -318,10 +328,10 @@ var ShortcutModifier = defaultShortcutModifier()
 // Binding rule, and it belongs here rather than in each view, because the
 // collision is a property of these two values and not of any one widget: where
 // this modifier and [ShortcutModifier] are the same key — which is every
-// platform except macOS, and therefore the platform of the project plan,
-// section 1 — a caret motion key held with it means the *word* motion. Home
-// and end are then the only way to the ends of the line, which is exactly what
-// the paragraph above says the X11 convention is.
+// platform except macOS and iOS, and therefore the platform of the project
+// plan, section 1 — a caret motion key held with it means the *word* motion.
+// Home and end are then the only way to the ends of the line, which is exactly
+// what the paragraph above says the X11 convention is.
 //
 // It cannot be resolved here, by making the two values distinct. Control is
 // genuinely both "the shortcut key" and "the word key" on X11: copy is
@@ -334,15 +344,24 @@ var ShortcutModifier = defaultShortcutModifier()
 // unaffected: there is no word motion on a letter key to collide with.
 var WordModifier = defaultWordModifier()
 
+// appleKeyboard reports whether goos, a value of [runtime.GOOS], keeps
+// Apple's convention for the modifiers: macOS, and iOS, where a hardware
+// keyboard on an iPad has command and option and Ebitengine reports them as
+// meta and alt, as it does on a Mac. Go's ios port is a GOOS of its own, so a
+// test for "darwin" alone would give an iPad control-C.
+func appleKeyboard(goos string) bool {
+	return goos == "darwin" || goos == "ios"
+}
+
 func defaultShortcutModifier() Mods {
-	if runtime.GOOS == "darwin" {
+	if appleKeyboard(runtime.GOOS) {
 		return ModMeta
 	}
 	return ModControl
 }
 
 func defaultWordModifier() Mods {
-	if runtime.GOOS == "darwin" {
+	if appleKeyboard(runtime.GOOS) {
 		return ModAlt
 	}
 	return ModControl
@@ -896,6 +915,10 @@ type inputState struct {
 
 	// drag is the drag session from outside the application; see drop.go.
 	drag dragState
+
+	// replace is the edit of a platform input method being delivered; see
+	// textinput.go.
+	replace replaceState
 }
 
 // keyRepeat is the state of the one key gift repeats.
@@ -1779,8 +1802,14 @@ func (a *App) deliver(h scene.Handle, e Event, direct bool) bool {
 			// see [EventContext.Drop].
 			prevDel := a.in.drag.delivering
 			a.in.drag.delivering = false
+			// Only the replacement and its bubbling see the edit, not an
+			// event a handler of it causes; see
+			// [EventContext.TextReplacement].
+			prevRep := a.in.replace.delivering
+			a.in.replace.delivering = a.in.replace.armed && e.Kind == EventTextReplace
 			handled := nd.interactor.HandleEvent(c, e)
 			a.in.drag.delivering = prevDel
+			a.in.replace.delivering = prevRep
 			c.cur, c.nd = prevH, prevD
 			if handled || direct {
 				return handled

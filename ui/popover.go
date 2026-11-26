@@ -111,8 +111,21 @@ type panelNode struct {
 	tip          geom.Point
 }
 
+// Layout places the card against its anchor inside the safe rectangle of the
+// window, [safeWindow], rather than inside the window itself. The panel node
+// covers the whole window — its scrim and its dismissing press do — but on a
+// phone drawn edge to edge the window includes the status bar, the navigation
+// bar and, on its side, the cutout of the camera, and a menu that opened
+// under the clock or behind the home indicator would have rows nobody can
+// read or tap. So every room, every clamp and the widest card are measured
+// from the edges of that rectangle: a menu of a button just above a tab bar
+// that does not fit below flips above, and one that fits on neither side is
+// clamped to stop panelMargin short of the navigation bar, not of the glass.
+// Without a safe area the rectangle is the window, and the arithmetic is the
+// one it always was.
 func (n *panelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Size {
 	win := c.Constrain(c.Max)
+	r := safeWindow(ctx, win)
 	if st := ctx.Retained[panelState](); st.since == 0 {
 		st.since = max(ctx.Now(), 1)
 		ctx.Animate(panelAppear)
@@ -127,12 +140,12 @@ func (n *panelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Siz
 		gap = panelArrow
 	}
 	pad := n.p.padding
-	maxW := min(n.p.maxWidth, win.W-2*panelMargin)
+	maxW := min(n.p.maxWidth, r.Width()-2*panelMargin)
 	room := [...]float32{
-		EdgeBelow:    win.H - panelMargin - (a.Max.Y + gap),
-		EdgeAbove:    a.Min.Y - gap - panelMargin,
-		EdgeLeading:  a.Min.X - gap - panelMargin,
-		EdgeTrailing: win.W - panelMargin - (a.Max.X + gap),
+		EdgeBelow:    r.Max.Y - panelMargin - (a.Max.Y + gap),
+		EdgeAbove:    a.Min.Y - gap - (r.Min.Y + panelMargin),
+		EdgeLeading:  a.Min.X - gap - (r.Min.X + panelMargin),
+		EdgeTrailing: r.Max.X - panelMargin - (a.Max.X + gap),
 	}
 	vertical := n.p.edge == EdgeAuto || n.p.edge == EdgeBelow || n.p.edge == EdgeAbove
 	measure := func(w, h float32) geom.Size {
@@ -168,7 +181,7 @@ func (n *panelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Siz
 		if room[side] < room[other] && room[side] < min(maxW, 200) {
 			side = other
 		}
-		s = measure(min(maxW, room[side]), win.H-2*panelMargin)
+		s = measure(min(maxW, room[side]), r.Height()-2*panelMargin)
 	}
 
 	var x, y float32
@@ -178,23 +191,23 @@ func (n *panelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geom.Siz
 		x = cx - s.W/2
 		if n.p.align == alignLeading {
 			x = a.Min.X
-			if x+s.W > win.W-panelMargin {
+			if x+s.W > r.Max.X-panelMargin {
 				x = a.Max.X - s.W
 			}
 		}
-		x = clampf(x, panelMargin, win.W-panelMargin-s.W)
+		x = clampf(x, r.Min.X+panelMargin, r.Max.X-panelMargin-s.W)
 		y = a.Max.Y + gap
 		if side == EdgeAbove {
 			y = a.Min.Y - gap - s.H
 		}
-		y = clampf(y, panelMargin, win.H-panelMargin-s.H)
+		y = clampf(y, r.Min.Y+panelMargin, r.Max.Y-panelMargin-s.H)
 	default:
-		y = clampf(cy-s.H/2, panelMargin, win.H-panelMargin-s.H)
+		y = clampf(cy-s.H/2, r.Min.Y+panelMargin, r.Max.Y-panelMargin-s.H)
 		x = a.Max.X + gap
 		if side == EdgeLeading {
 			x = a.Min.X - gap - s.W
 		}
-		x = clampf(x, panelMargin, win.W-panelMargin-s.W)
+		x = clampf(x, r.Min.X+panelMargin, r.Max.X-panelMargin-s.W)
 	}
 	n.card = geom.Rc(x, y, x+s.W, y+s.H)
 	n.side = side
@@ -248,6 +261,11 @@ func (n *panelNode) Paint(ctx *gift.PaintContext) {
 	f, moving := n.progress(ctx)
 	alpha := clampf(f, 0, 1)
 	if !n.p.scrim.IsTransparent() {
+		// The scrim is the panel's own bounds, and those are the whole
+		// window, the system bars included: it dims the status bar and the
+		// navigation bar with the rest of the screen, as the scrim of a modal
+		// does, without a bleed of its own. Only the card keeps to the safe
+		// rectangle; see [panelNode.Layout].
 		sc := scaleColor(n.p.scrim, alpha)
 		if n.p.spotlight {
 			// A ring so wide that it covers the window, whose inner contour
@@ -363,6 +381,18 @@ func (n *panelNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	return e.IsPointer()
 }
 
+// safeWindow is the rectangle a node of the top layer places what it shows
+// in: the window of size win without the safe area of
+// [gift.App.SetSafeArea]. The top layer is laid out against the whole window
+// and stays so — its scrims cover the system bars, which is what dims them
+// with the rest of the screen — but a toast, the card of a popover and an
+// open menu are things to read and to touch, and those stay where the system
+// draws nothing on top. A safe area larger than the window leaves a rectangle
+// of no size in the middle rather than an inverted one; see [geom.Rect.Inset].
+func safeWindow(ctx *gift.LayoutContext, win geom.Size) geom.Rect {
+	return geom.Rc(0, 0, win.W, win.H).Inset(ctx.SafeArea())
+}
+
 func clampf(v, lo, hi float32) float32 {
 	if hi < lo {
 		return lo
@@ -410,8 +440,9 @@ type PopoverView struct {
 //	).Presented(ctx.Read(open)).OnDismiss(func() { open.Set(false) })
 //
 // The popover is a card with an arrow that points at the anchor, below it when
-// it fits there and above otherwise, kept inside the window. It grows out of
-// the arrow with a spring when it appears and shrinks back when it is
+// it fits there and above otherwise, kept inside the window — inside the part
+// of it the system bars of a phone leave free, [gift.App.SafeRect]. It grows
+// out of the arrow with a spring when it appears and shrinks back when it is
 // withdrawn, as on iOS. It lives in the top layer, so no clipping scroll view
 // and no sibling hides it; see [gift.Element.Overlay].
 //

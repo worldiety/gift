@@ -523,7 +523,10 @@ type MenuView struct {
 // press that lifts where it went down leaves the menu open for a tap on an
 // item. A press outside closes the menu, and so does escape; the arrow keys,
 // enter and space choose with the keyboard. The menu lives in the top layer;
-// see [gift.Element.Overlay].
+// see [gift.Element.Overlay]. It is kept inside the part of the window the
+// system bars of a phone leave free, [gift.App.SafeRect]: a menu of a button
+// just above the navigation bar opens above the button, and none opens under
+// the status bar or into the cutout of a phone on its side.
 func Menu(label gift.View, items ...MenuElement) MenuView {
 	return MenuView{label: label, items: items}
 }

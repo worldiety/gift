@@ -19,9 +19,10 @@ need `cms` yourself for pixels that do not come through the pipeline.
 
 ## The working space
 
-The Ebitengine backend paints in the space `ebiten.WorkingSpace` returns: Display P3 on macOS and iOS, sRGB
-everywhere else. It tags the screen with it, and the compositor of macOS converts from there into whatever display
-the window is on.
+The Ebitengine backend paints in the space `ebiten.WorkingSpace` returns: Display P3 on macOS, sRGB everywhere
+else. It tags the screen with it, and the compositor of macOS converts from there into whatever display the window
+is on. iOS paints in sRGB: Ebitengine leaves the screen of an iPhone untagged, and an untagged screen shows its
+numbers as sRGB.
 
 Your sRGB colors look as they always did. The renderer converts each color of the display list into the working
 space, and a gray is the same number in both, so text and shadows are unchanged to the bit. Pictures you upload

@@ -58,6 +58,11 @@ type styleSpec struct {
 	shadow Shadow
 	radius float32
 	clip   bool
+	// bleed is the set of edges at which the background and the glass reach
+	// past the safe area to the edge of the window; see [bleedRect]. It is
+	// set by BleedSafeArea and by the bars of [TabBar] and [NavigationStack],
+	// and is never themed, so it has no bit in set.
+	bleed Edges
 	// set records which of the fields above a caller actually assigned.
 	//
 	// This is the "was this field set" bit the project plan, section 20,
@@ -449,8 +454,14 @@ func paintBackground(ctx *gift.PaintContext, st styleSpec, b geom.Rect) {
 		})
 	}
 
+	// The fill and the glass reach past the safe area where the node asked
+	// for it; the shadow above and the border after the content keep the
+	// bounds, because they outline the node and the bleed is not part of it.
+	// See [bleedRect].
+	fill := bleedRect(ctx, st, b)
+
 	if !st.background.IsTransparent() || st.grad && !st.gradTo.IsTransparent() {
-		op := render.Op{Kind: render.OpFillRect, Bounds: b, Color: st.background}
+		op := render.Op{Kind: render.OpFillRect, Bounds: fill, Color: st.background}
 		if st.radius > 0 {
 			op.Kind = render.OpFillRoundRect
 			op.CornerRadius = st.radius
@@ -475,7 +486,7 @@ func paintBackground(ctx *gift.PaintContext, st styleSpec, b geom.Rect) {
 	if st.material.IsVisible() {
 		ctx.Add(render.Op{
 			Kind:         render.OpMaterial,
-			Bounds:       b,
+			Bounds:       fill,
 			CornerRadius: st.radius,
 			Material:     ctx.AddMaterial(st.material),
 		})

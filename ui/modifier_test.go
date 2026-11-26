@@ -213,6 +213,12 @@ var views = []struct {
 			"SheetView.MaxWidth. See ui/sheet.go.",
 	},
 	{
+		name: "ui.sheetHost", set: setInternal,
+		why: "the node a presented sheet's scrim and panel are laid out in: ZStack(scrim, panel).Align(Bottom) " +
+			"that places the panel by its content's rectangle, so the panel can reach behind the system bars. " +
+			"It has no settings. See ui/sheet.go.",
+	},
+	{
 		name: "ui.Alert", set: setMinimal, v: ui.Alert("a", "b"),
 		why: "an alert is a card with a fixed width, a fixed radius and the surface " +
 			"colour, because those three are what makes it recognisable as an alert " +
@@ -564,6 +570,39 @@ func TestAFlexedCardWithAHeaderInARowHoldsItsContent(t *testing.T) {
 		}
 		if card.Height() > 150 {
 			t.Errorf("row flex %v: the card is %v, stretched to the row instead of shrink-wrapped", rowFlex, card)
+		}
+	}
+}
+
+// TestTheContainersCarryBleedSafeArea pins where [ui.Stack.BleedSafeArea]
+// is: on Stack, Overlay and BoxView (VStack/HStack, ZStack, Box) and on no
+// other view type, for the reason its documentation gives.
+func TestTheContainersCarryBleedSafeArea(t *testing.T) {
+	edgesType := reflect.TypeOf(ui.Edges(0))
+	for _, v := range []any{ui.VStack(), ui.HStack(), ui.ZStack(), ui.Box()} {
+		rt := reflect.TypeOf(v)
+		m, ok := rt.MethodByName("BleedSafeArea")
+		if !ok {
+			t.Errorf("%s has no method BleedSafeArea; a container is what bleeds behind a system bar", rt)
+			continue
+		}
+		ft := m.Type
+		if ft.NumIn() != 2 || ft.In(1) != edgesType || ft.NumOut() != 1 || ft.Out(0) != rt {
+			t.Errorf("%s.BleedSafeArea is %v, want func(ui.Edges) %v", rt, ft, rt)
+		}
+	}
+	containers := map[reflect.Type]bool{
+		reflect.TypeOf(ui.Stack{}):   true,
+		reflect.TypeOf(ui.Overlay{}): true,
+		reflect.TypeOf(ui.BoxView{}): true,
+	}
+	for _, e := range views {
+		if e.v == nil {
+			continue
+		}
+		rt := reflect.TypeOf(e.v)
+		if _, ok := rt.MethodByName("BleedSafeArea"); ok != containers[rt] {
+			t.Errorf("%s: BleedSafeArea present = %v, want %v; see ui.Stack.BleedSafeArea", e.name, ok, containers[rt])
 		}
 	}
 }

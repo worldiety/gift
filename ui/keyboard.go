@@ -17,11 +17,33 @@ var keyboardType = gift.RegisterType("ui.OnScreenKeyboard")
 //
 // # Why gift draws one at all
 //
-// Ebitengine offers no IME and no way to ask the platform for a soft keyboard,
-// and the kiosk of section 1 — a Raspberry Pi behind a touchscreen, X11, no
-// desktop — has no operating system keyboard that could be asked. A touch
-// application on that machine has no way to enter text unless the framework
-// draws the keys itself. So it does.
+// The kiosk of section 1 — a Raspberry Pi behind a touchscreen, X11, no
+// desktop — has no operating system keyboard that could be asked, and
+// Ebitengine has no way to ask for one there. A touch application on that
+// machine has no way to enter text unless the framework draws the keys itself.
+// So it does.
+//
+// # And why it steps aside for the platform's
+//
+// Android and iOS do have a keyboard, a better one than this — the user's own
+// layout, their language, prediction, dictation — and a backend that can raise
+// it does, through [gift.TextInputClient] and [gift.App.ReplaceText]; see
+// textinput.go in package gift. Both keyboards answer the same request,
+// [gift.BuildContext.SoftKeyboardRequested], so the split is a matter of who
+// answers it: while a backend reports that the system keyboard is up, with
+// [gift.App.SetPlatformKeyboardActive], this view stays down and declares no
+// obstruction, and the platform keeps the field visible. Where there is no
+// system keyboard, or where a backend declines to hand a field to one, nothing
+// reports it, and this view serves the request as it always has.
+//
+// A backend declines a field that is not a [gift.TextInputClient]: DateField
+// and TimeField are not, so on a phone they keep this keyboard, and a mobile
+// application places [OnScreenKeyboard] in its [Window] for them. TextField,
+// SecureField, SearchField, TextArea and CodeEditor get the system keyboard.
+// On a platform that reports a keyboard of its own with
+// [gift.App.SetPlatformKeyboardAvailable] this view serves such a field
+// without the kiosk switch, because the platform's report is the statement
+// about the machine the switch would otherwise have to make.
 //
 // # Why it is not raised by the pointer kind
 //
@@ -36,7 +58,11 @@ var keyboardType = gift.RegisterType("ui.OnScreenKeyboard")
 // failures at once, from the same line. The gate is [SetOnScreenKeyboard], an
 // explicit statement about the machine.
 
-// onScreenKeyboard is the kiosk switch. It is one bit for the whole process.
+// onScreenKeyboard is the kiosk switch. It is one bit for the whole process,
+// and it says that the machine has no hardware keyboard and no keyboard of its
+// own: text fields ask for one, and gift draws it. A platform with a system
+// keyboard says the same through [gift.App.SetPlatformKeyboardAvailable],
+// which a backend sets, and needs no switch; see [softKeyboardWanted].
 //
 // # Why process wide, and why with the App
 //
@@ -73,8 +99,14 @@ var onScreenKeyboard atomic.Bool
 // pointer kind is not the evidence it looks like.
 //
 // With the switch on, a [TextFieldView] asks for the keyboard when it gains
-// the focus and dismisses it when it loses it. The keyboard itself is a view
-// the application places, once, at the top of its window:
+// the focus and dismisses it when it loses it, and a [SecureField] shows the
+// last character typed into it for a moment, as touch keyboards do. A backend
+// that reports a system keyboard with [gift.App.SetPlatformKeyboardAvailable]
+// has the same effect without the switch — Android and iOS with the
+// Ebitengine backend — so an application that runs there and on a desktop
+// leaves the switch off and gets the system keyboard on the phone and none on
+// the desktop. The keyboard itself is a view the application places, once, at
+// the top of its window:
 //
 //	ui.Window(
 //	    form,
@@ -98,8 +130,30 @@ func SetOnScreenKeyboard(app *gift.App, on bool) {
 	}
 }
 
-// OnScreenKeyboardEnabled reports whether the kiosk switch is on.
+// OnScreenKeyboardEnabled reports whether the switch of [SetOnScreenKeyboard]
+// is on. It does not see a platform keyboard; see
+// [gift.App.PlatformKeyboardAvailable].
 func OnScreenKeyboardEnabled() bool { return onScreenKeyboard.Load() }
+
+// softKeyboardWanted reports whether a text field that gains the focus asks
+// for a keyboard: where the kiosk switch says gift draws one, or where the
+// backend reported one of the platform's. Both are one load, so a desktop
+// application that is neither pays that per focus change and no rebuild.
+//
+// It is asked only when a field gains the focus. A field that loses it takes
+// the request back without asking, so that a request made before the backend
+// withdrew its keyboard does not outlive the field; that costs one compare,
+// because [gift.EventContext.RequestSoftKeyboard] does nothing when the
+// request does not change. [keyboardOffered] is the same rule in a build.
+func softKeyboardWanted(ctx *gift.EventContext) bool {
+	return onScreenKeyboard.Load() || ctx.PlatformKeyboardAvailable()
+}
+
+// keyboardOffered is [softKeyboardWanted] read from inside a build: whether
+// text typed here is typed on a screen, gift's drawn keyboard or a phone's.
+func keyboardOffered(bc *gift.BuildContext) bool {
+	return onScreenKeyboard.Load() || bc.PlatformKeyboardAvailable()
+}
 
 // OnScreenKeyboardHeight is how tall [OnScreenKeyboard] makes itself, in
 // logical pixels, with its default padding and no [KeyboardView.Frame]. It is
@@ -343,6 +397,10 @@ type keyboardSlide struct {
 	from, frac float64
 	at         time.Duration
 	stamped    bool
+	// bleed is how far the panel reached past the keyboard behind the
+	// system bars on the last frame it was in place, and bleedSafe the safe
+	// area of the window it was measured in; see [keyboardNode.panelBleed].
+	bleed, bleedSafe geom.Insets
 }
 
 var kbSlide = keyboardSlide{frac: 1}
@@ -390,9 +448,12 @@ func (s *keyboardSlide) step(now time.Duration) (frac float64, moving bool) {
 // subtree per cell buys nothing and costs a build, a layout and a paint per
 // cell.
 //
-// It draws nothing, occupies nothing and allocates nothing unless the kiosk
-// switch is on *and* a field has asked for it; see [SetOnScreenKeyboard] and
-// [gift.EventContext.RequestSoftKeyboard].
+// It draws nothing, occupies nothing and allocates nothing unless a keyboard
+// can be asked for (the kiosk switch, or a platform keyboard reported with
+// [gift.App.SetPlatformKeyboardAvailable]) *and* a field has asked for it
+// *and* no platform keyboard serves that request; see [SetOnScreenKeyboard],
+// [gift.EventContext.RequestSoftKeyboard] and
+// [gift.App.SetPlatformKeyboardActive].
 //
 // # What it deliberately is not
 //
@@ -433,6 +494,34 @@ func (s *keyboardSlide) step(now time.Duration) (frac float64, moving bool) {
 // frame after the keyboard appeared, when the layout has already shrunk the
 // content, which is the order that makes the second reveal see the final
 // viewport.
+//
+// # The system bars
+//
+// In a [Window] that fills a phone's screen the keyboard is laid out like the
+// rest of the content, inside the safe area of [gift.App.SetSafeArea]: its
+// lowest row of keys sits above the navigation bar, where a finger can reach
+// it without starting the home gesture. Its panel does not stop there. The
+// background is painted on down to the edge of the window behind the
+// navigation bar, and, on a phone turned on its side, out to the side edges
+// behind the cutout and the side bar, so the keyboard reads as one surface
+// that rises from the bottom of the device and not as a slab floating above
+// a strip of page. [TabBar] and [NavigationStack] paint their bars the same
+// way, and a bar of an application's own asks for it with
+// [Stack.BleedSafeArea].
+//
+// It is paint and nothing else. The keyboard's size, the rectangles of its
+// keys, the area a tap lands in and the rectangle it declares as its
+// obstruction are what layout made them; a tap on the part of the panel that
+// lies behind the navigation bar belongs to the system, and a reveal keeps a
+// field clear of the keys and not of the bar under them, which the content
+// does not reach in the first place. The border keeps the bounds, as it does
+// on every bleeding view. A keyboard given a [KeyboardView.CornerRadius] does
+// not bleed, because no rounded background does; see [Stack.BleedSafeArea].
+//
+// The panel only bleeds where the keyboard lies on the edge of the safe area.
+// A keyboard in the middle of a screen, inside a container that does not reach
+// the bottom, or in a window without a safe area — a desktop, a kiosk without
+// a configured bezel — paints its bounds as it always has.
 //
 // # The obstruction, for the compositions that overlap
 //
@@ -484,15 +573,23 @@ func (v KeyboardView) ViewType() gift.TypeID { return keyboardType }
 // every colour, which is the rule of this package and the reason the frame
 // path never consults a theme.
 //
-// The two conditions are read in the cheap order on purpose: the kiosk switch
-// is one atomic load and is false in every application that is not a kiosk, so
-// an application that never turns it on never reaches the second question.
+// The conditions are read in the cheap order on purpose: the kiosk switch is
+// one atomic load and is false in every application that is not a kiosk, so an
+// application that never turns it on never reaches the other questions, unless
+// a backend reported a platform keyboard, which serves what it can and leaves
+// this view the fields it cannot serve; see the type's documentation. The
+// last one is whether a platform keyboard already serves the request; see
+// [gift.App.SetPlatformKeyboardActive]. A system keyboard that comes up while
+// this one is showing sends it away the way a blur does — sliding, with the
+// room given back at once — so that two keyboards are never on the screen
+// together.
 func (v KeyboardView) Build(bc *gift.BuildContext) gift.Element {
 	if kbSlide.owner != bc {
 		kbSlide = keyboardSlide{owner: bc, frac: 1}
 	}
 	leaving := false
-	if !onScreenKeyboard.Load() || !bc.SoftKeyboardRequested() {
+	asked := keyboardOffered(bc)
+	if !asked || !bc.SoftKeyboardRequested() || bc.PlatformKeyboardActive() {
 		if !kbSlide.shown {
 			kbState.reset()
 			kbLive = nil
@@ -521,6 +618,13 @@ func (v KeyboardView) Build(bc *gift.BuildContext) gift.Element {
 	if !v.style.isSet(bitBorder) {
 		st.border = resolveBorder(Border{Width: 1, Color: ColorSeparator})
 	}
+	// The panel reaches the edge of the window behind the navigation bar of
+	// a phone, and behind the cutout and the side bar of one on its side;
+	// see "The system bars" on [KeyboardView]. It is set on the resolved
+	// style and not on the view, because nothing about it is the caller's to
+	// change: a keyboard that stopped short of the edge it is drawn against
+	// is a defect, not a look.
+	st.bleed = kbBleed
 
 	n := &keyboardNode{
 		fr:   v.frame,
@@ -529,6 +633,7 @@ func (v KeyboardView) Build(bc *gift.BuildContext) gift.Element {
 		st8:  &kbState,
 		req:  text.Request{Font: resolveFont(v.font), Size: size, MaxWidth: geom.Unbounded()},
 		face: ResolveColor(ColorControl),
+		safe: bc.SafeArea(),
 	}
 	if v.hasPadding() {
 		n.pad = v.pad
@@ -656,6 +761,11 @@ type keyboardNode struct {
 	// see [keyboardSlide].
 	h       float32
 	leaving bool
+
+	// safe is the safe area of the window this node was built for, which
+	// tells the way out whether the bleed remembered in [kbSlide] is still
+	// the window's; see [keyboardNode.panelBleed].
+	safe geom.Insets
 }
 
 // kbLive is the keyboard node of the most recent layout pass, or nil.
@@ -741,13 +851,89 @@ func (n *keyboardNode) Paint(ctx *gift.PaintContext) {
 		b.Min.Y -= n.h
 	}
 	b.Max.Y = b.Min.Y + n.h
-	if dy := float32(frac) * n.h; dy != 0 {
+	dy := float32(frac) * n.h
+	// The panel's bleed is decided before the slide moves the picture, and
+	// a panel that bleeds is painted outside the slide's transform, moved
+	// by hand, which is the same picture; see [keyboardNode.panelBleed].
+	in := n.panelBleed(ctx)
+	if in != (geom.Insets{}) {
+		n.paintPanel(ctx, b.Translate(geom.Pt(0, dy)), in)
+	}
+	if dy != 0 {
 		ctx.PushTransform(geom.Translate(geom.Pt(0, dy)))
 		defer ctx.PopTransform()
 	}
-	paintBackground(ctx, n.st, b)
+	if in == (geom.Insets{}) {
+		paintBackground(ctx, n.st, b)
+	}
 	n.paintKeys(ctx, b)
 	paintBorder(ctx, n.st, b)
+}
+
+// kbBleed is the set of edges at which the panel of the keyboard reaches past
+// the safe area: the bottom it sits on, and the sides it spans. Never the top,
+// where its neighbour is the content.
+const kbBleed = EdgesLeft | EdgesRight | EdgesBottom
+
+// panelBleed returns how far, per edge, the panel reaches past the bounds of
+// the keyboard behind the system bars on this frame, and zero when it does
+// not.
+//
+// It is asked before the slide's transform is pushed, and it is not left to
+// [paintBackground], for two reasons.
+//
+// The first is the slide. [gift.PaintContext.SafeAreaBleed] decides from
+// where the node *appears*: its layout bounds through the transform that is
+// active when it is asked. Under the translation of a slide the keyboard
+// appears below the safe bottom by however far it still has to go, so asked
+// there it would bleed on no frame of the slide but the last, and the strip
+// behind the navigation bar would show the page under a keyboard rising over
+// it and fill in one frame after the keyboard arrived. Asked before the
+// translation, the node is where layout put it, on the safe bottom.
+//
+// The second is the way out. A keyboard sliding away is laid out at no height
+// on the bottom edge — see [keyboardSlide] — and an empty rectangle has no
+// place in device space for SafeAreaBleed to compare with the safe area, so
+// it answers zero for it. The keyboard has to remember instead: every frame
+// it is in place it keeps the answer in [kbSlide], with the safe area it was
+// given for, and the way out reuses it as long as the window's safe area is
+// still the one it was taken in. A rotation during the slide out — the one
+// change that could make it wrong — rebuilds, and then the panel paints its
+// bounds for the rest of a quarter second rather than a bleed that may be on
+// the wrong side.
+//
+// Zero, which is every window without a safe area, sends Paint down exactly
+// the path it always took: the same operations in the same transform.
+func (n *keyboardNode) panelBleed(ctx *gift.PaintContext) geom.Insets {
+	if n.st.bleed == 0 || n.st.radius > 0 {
+		return geom.Insets{}
+	}
+	if n.leaving {
+		if kbSlide.bleedSafe != n.safe {
+			return geom.Insets{}
+		}
+		return kbSlide.bleed
+	}
+	in := n.st.bleed.of(ctx.SafeAreaBleed())
+	kbSlide.bleed, kbSlide.bleedSafe = in, n.safe
+	return in
+}
+
+// paintPanel is [paintBackground] for a panel that bleeds by in: the shadow
+// on the bounds b, which outline the keyboard, and the fill and the glass on b
+// grown by in, which reach the edge of the window. The rectangle is final,
+// so the style's own bleed is not consulted again.
+func (n *keyboardNode) paintPanel(ctx *gift.PaintContext, b geom.Rect, in geom.Insets) {
+	st := n.st
+	st.bleed = 0
+	// Always delegated, never gated here: paintBackground asserts the shadow
+	// resolved before its own visibility gate, and an unresolved shadow would
+	// read as invisible to a gate in front of it.
+	sh := st
+	sh.background, sh.grad, sh.material = Color{}, false, render.Material{}
+	paintBackground(ctx, sh, b)
+	st.shadow = Shadow{}
+	paintBackground(ctx, st, b.Outset(in))
 }
 
 // paintKeys draws the forty eight key faces and their labels.

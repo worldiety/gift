@@ -88,6 +88,7 @@ install a default font in your own setup. See [Text and Fonts](../text-and-fonts
 | `Font`      | the default font for the test; the previous one is restored when the test ends              |
 | `Theme`     | the color theme for the test, for example `ui.DarkTheme()`; the zero value keeps the current one |
 | `Density`   | the device density, rounded like a real monitor's; zero means 1                              |
+| `SafeArea`  | the safe area of the window in logical pixels, as a phone reports it; zero is a desktop window, and `h.SetSafeArea` changes it later, see [Android and iOS](../mobile/) |
 | `MaxFrames` | the bound of `Settle`; zero means `gifttest.DefaultMaxFrames`, 64                            |
 | `Logger`    | passed to gift; nil means no logging                                                         |
 
@@ -405,8 +406,9 @@ is to wrap the root view in [`ui.Window`](../../components/layout/window/).
   your test restore in the right order.
 - **A `Harness` belongs to one goroutine**, like the `gift.App` inside it. `h.App()` gives you the application
   for anything the harness has no verb for.
-- **The harness has one touch pointer** and no input method editor; multitouch and CJK composition are out of
-  scope. Umlauts, accents and dead keys arrive as finished characters and work with `TypeText`.
+- **The harness has one touch pointer** and no composition; multitouch and CJK preedit are out of scope.
+  Umlauts, accents and dead keys arrive as finished characters and work with `TypeText`, and
+  `h.ReplaceText(before, after, s)` sends an edit the way a phone's system keyboard does.
 
 ## Automating the real application
 
@@ -477,6 +479,7 @@ release behave like two events, not like one:
 | `wheel`                                                          | `x`, `y`, `dx`, `dy` in notches; positive is up or left, so `"dy":-1` moves a list forward |
 | `key`, `keyDown`, `keyUp`                                        | `key` such as `"tab"`, `"enter"`, `"escape"`; `mods` such as `["shift"]` |
 | `text`                                                           | `text`, typed character by character          |
+| `replaceText`                                                    | `text`, `deleteBefore`, `deleteAfter` in bytes; one edit of a system keyboard, see [Android and iOS](../mobile/) |
 | `focus`                                                          | `forward`, default `true`                     |
 | `dragOver`                                                       | `x`, `y` (omitted: the last position), `kinds` from `"file"`, `"text"`, `"url"` (empty: not reported); see [Drag and Drop](../drag-and-drop/) |
 | `drop`                                                           | `x`, `y`, `files` (absolute paths), `urls`, `dropText`; dropped in that order |

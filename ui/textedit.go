@@ -357,6 +357,78 @@ func (e *TextEditor) DeleteForward() bool {
 	return true
 }
 
+// ReplaceAround removes the selection together with deleteBefore bytes before
+// it and deleteAfter bytes after it, inserts s in their place and leaves the
+// caret after s. It reports whether the document changed.
+//
+// It is the one edit a platform input method makes — [gift.EventTextReplace]
+// — and a commit, an autocorrection and a backspace of a system keyboard are
+// all this edit with different numbers: "hte" corrected to "the" is three
+// bytes before and "the", a backspace is one rune before and nothing.
+//
+// The counts are bytes. A backend whose platform counts in UTF-16 units or in
+// characters converts them against [gift.TextInputState.Before] and After
+// first. The counts are clamped into the document, and a count that ends
+// inside a multi byte character is widened to take the whole character rather
+// than narrowed to leave it, at either end: a safety net, so that a backend
+// that rounds a count wrong never leaves invalid UTF-8 behind.
+//
+// s is inserted as it is. What a field will not hold — a line break in a
+// single line field — is the field's business and is filtered before the
+// call; see [singleLine].
+func (e *TextEditor) ReplaceAround(deleteBefore, deleteAfter int, s string) bool {
+	lo, hi := e.selection()
+	lo = e.snap(lo - max(deleteBefore, 0))
+	hi = e.snapUp(hi + max(deleteAfter, 0))
+	if lo == hi && s == "" {
+		return false
+	}
+	e.replace(lo, hi, s)
+	return true
+}
+
+// snapUp is [TextEditor.snap] rounding up: it clamps off into the document and
+// moves it forward to the next rune boundary.
+func (e *TextEditor) snapUp(off int) int {
+	if off <= 0 {
+		return 0
+	}
+	for off < len(e.buf) && !utf8.RuneStart(e.buf[off]) {
+		off++
+	}
+	return min(off, len(e.buf))
+}
+
+// textInputWindow is how much text, in bytes, a [gift.TextInputState] carries
+// on either side of the selection.
+//
+// The strings themselves cost nothing to make — they are slices of the cached
+// document, see [TextEditor.Text] — but a backend hands them to a platform
+// that copies and converts them, on every caret move. An input method reads a
+// sentence or two around the caret to predict and to correct, so four
+// kilobytes is far more than it uses, and it is also more than almost any
+// document a field or a form's text area holds: for those the state is the
+// whole text, and the offsets a backend derives from it are offsets in the
+// document. Only a larger document is seen through a window that moves with
+// the caret; see the window of [gift.TextInputState].
+const textInputWindow = 4 << 10
+
+// textAround returns the text before the selection and after it, each at most
+// [textInputWindow] bytes long and cut at a rune boundary, for a
+// [gift.TextInputClient]. It does not allocate.
+func (e *TextEditor) textAround() (before, after string) {
+	s := e.Text()
+	lo, hi := e.selection()
+	from := e.snapUp(lo - textInputWindow)
+	to := hi + textInputWindow
+	if to < len(s) {
+		to = e.snap(to)
+	} else {
+		to = len(s)
+	}
+	return s[from:lo], s[hi:to]
+}
+
 // replace is replaceBytes for a string operand.
 func (e *TextEditor) replace(lo, hi int, s string) {
 	e.replaceBytes(lo, hi, []byte(s))

@@ -240,7 +240,9 @@ The keyboard reaches gift on two separate channels, and a control that edits tex
   key in the position of the US semicolon produces `ö`, and that only arrives as a rune.
 
 Never insert text from a `gift.Key`. Read `Event.Rune` from `EventRune` instead. Umlauts, accents, AltGr and dead
-keys arrive as resolved runes. There is no input method for composed scripts such as Chinese or Japanese.
+keys arrive as resolved runes. On the desktop and on a kiosk there is no input method for composed scripts such as
+Chinese or Japanese. On Android and iOS the system keyboard composes, with its own candidate bar, and the word shows
+in the field as ordinary text, without preedit styling; see [Android and iOS](../mobile/).
 
 ### The keys gift knows
 
@@ -258,9 +260,9 @@ if e.Key == gift.KeyC && e.Mods.Has(gift.ShortcutModifier) {
 }
 ```
 
-`gift.ShortcutModifier` is command on macOS and control elsewhere. `gift.WordModifier`, which turns a caret move
-into a word move, is option on macOS and control elsewhere. gift dispatches no shortcuts itself; these two
-variables only make all views agree on which modifier means what. If the attached keyboard does not match the
+`gift.ShortcutModifier` is command on macOS and iOS and control elsewhere. `gift.WordModifier`, which turns a caret
+move into a word move, is option on macOS and iOS and control elsewhere. gift dispatches no shortcuts itself; these
+two variables only make all views agree on which modifier means what. If the attached keyboard does not match the
 operating system, for example a Mac keyboard on a Raspberry Pi, assign the variable before the first frame:
 
 ```go
@@ -334,9 +336,10 @@ t.Cleanup(func() { ui.SetClipboard(nil) })
 
 ## The on-screen keyboard
 
-A kiosk without a hardware keyboard needs a keyboard on screen. gift draws one itself, because Ebitengine cannot
-open the platform's keyboard and a Raspberry Pi kiosk has none to open. It is off by default. Two steps turn it
-on:
+A kiosk without a hardware keyboard needs a keyboard on screen. gift draws one itself, because a desktop or a
+Raspberry Pi kiosk has no platform keyboard to open. On Android and iOS text fields get the system keyboard
+instead, and the drawn one stays down while that one is up; see [Android and iOS](../mobile/). The drawn keyboard
+is off by default. Two steps turn it on:
 
 ```go
 func main() {
@@ -426,8 +429,8 @@ produce real events, and `AssertFocus`, `AssertNoFocus`, `AssertHovered` and `As
 `TapAt` and `TouchDownAt` send `PointerTouch` events, so a test can assert that a tap leaves no hover.
 
 Outside tests, `App.Focus`, `App.FocusVisible`, `App.HitTest` and `App.NodeInteraction` answer the same questions.
-[Diagnostics](../diagnostics/) counts `HitTests`, `InputEvents`, `DiscardedTouches`, `RunesTyped` and
-`KeyRepeats`.
+[Diagnostics](../diagnostics/) counts `HitTests`, `InputEvents`, `DiscardedTouches`, `RunesTyped`,
+`TextReplacements` and `KeyRepeats`.
 
 ## API
 

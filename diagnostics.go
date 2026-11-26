@@ -84,6 +84,11 @@ type Diagnostics struct {
 	// user types means the backend is at fault; a non zero here with nothing
 	// happening on screen means the view is.
 	RunesTyped uint64
+	// TextReplacements counts the edits that entered through
+	// [App.ReplaceText], the channel of a platform input method, whether or
+	// not anything was focused to receive them. It is RunesTyped for a system
+	// keyboard.
+	TextReplacements uint64
 	// KeyRepeats counts the synthetic key presses gift produced from a held
 	// key; see [KeyRepeatDelay]. [Event.Repeat] is set on each of them, so
 	// this counter is how a test tells a repeat from a second real press.

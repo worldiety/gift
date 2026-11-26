@@ -179,6 +179,12 @@ var (
 // the field inserts them like any other character. Typing "ö" on a German
 // layout produces one rune here and one rune in the document.
 //
+// A system keyboard — Android's, iOS's — is served without composition too.
+// The field tells it the text around the caret and where the caret is, as a
+// [gift.TextInputClient], and takes what it commits, corrects or deletes as
+// one [gift.EventTextReplace]; a word being composed is ordinary text that the
+// next replacement replaces. See textinput.go in package gift.
+//
 // # The shortcut letters are physical keys
 //
 // Copy is [gift.ShortcutModifier] plus [gift.KeyC], and KeyC is the *position*
@@ -263,7 +269,10 @@ func (v TextFieldView) Revealed(b bool) TextFieldView { v.revealed = b; return v
 // ShowsLastCharacter makes a [SecureField] show the character just typed for
 // [SecureRevealDuration], or until the next key, as iOS does: on a touch
 // keyboard a mistyped letter is otherwise found only when the sign in fails.
-// The default follows [SetOnScreenKeyboard], on for a kiosk and off on a
+// The default is on wherever text is typed on a screen: with
+// [SetOnScreenKeyboard] on a kiosk, or where a backend reports a system
+// keyboard with [gift.App.SetPlatformKeyboardAvailable] (Android and iOS with
+// the Ebitengine backend, unless Config.NoNativeKeyboard). It is off on a
 // desktop, where macOS never shows it. It does nothing to a [TextField].
 func (v TextFieldView) ShowsLastCharacter(b bool) TextFieldView {
 	v.lastChar, v.hasLastChar = b, true
@@ -278,7 +287,7 @@ func (v TextFieldView) ViewType() gift.TypeID { return textFieldType }
 // The colours are resolved here, once, like in every other view of this
 // package, and the bound value is read here, which is what registers the
 // component as a dependency of it.
-func (v TextFieldView) Build(*gift.BuildContext) gift.Element {
+func (v TextFieldView) Build(bc *gift.BuildContext) gift.Element {
 	size := v.size
 	if size <= 0 {
 		size = DefaultFontSize
@@ -317,11 +326,14 @@ func (v TextFieldView) Build(*gift.BuildContext) gift.Element {
 		bind:        v.bind,
 		disabled:    v.disabled,
 		secure:      v.secure && !v.revealed,
+		password:    v.secure,
 		showLast:    v.lastChar,
 		req:         text.Request{Font: resolveFont(v.font), Size: size, MaxWidth: geom.Unbounded()},
 	}
 	if !v.hasLastChar {
-		n.showLast = onScreenKeyboard.Load()
+		// The touch convention, wherever text is typed on a screen: the
+		// kiosk's drawn keyboard or a phone's system keyboard.
+		n.showLast = keyboardOffered(bc)
 	}
 	if v.hasPadding {
 		n.pad = v.pad
@@ -420,7 +432,12 @@ type textFieldNode struct {
 	// text for the document and the revealed character it was made for, with
 	// the offset of every cell in it; see [textFieldNode.shown].
 	secure, showLast bool
-	mask             struct {
+	// password is set for every [SecureField], revealed or not. It is what
+	// [textFieldNode.TextInputState] reports as Secure: a password the user
+	// chose to look at is still a password, and a system keyboard must not
+	// learn it because an eye icon was pressed.
+	password bool
+	mask     struct {
 		src, out string
 		rev      int
 		cells    []int
@@ -931,6 +948,67 @@ func (n *textFieldNode) AccessibleValue(gift.ControlState) string {
 	return n.ed.Text()
 }
 
+// TextInputState implements [gift.TextInputClient]: the text on either side
+// of the selection, and the caret this field paints, relative to the top left
+// corner of its bounds.
+//
+// The caret is the rectangle of [textFieldNode.paintContent] to the pixel —
+// the same rounding, the same line band, the same clamp to the content box —
+// so that a platform keyboard that keeps the caret visible keeps visible the
+// thing the user is looking at. It is reported whether or not the blink has it
+// on at this moment: the question is where the caret is, not whether it is
+// drawn.
+//
+// A [SecureField] reports Secure, revealed or not; see
+// [textFieldNode.password]. It reports its text too, as a password field of
+// the platform holds its text in the buffer its keyboard edits: a keyboard
+// that deletes the character before the caret has to have it. Whether the
+// keyboard that edits it learns from it is the backend's affair: one that can
+// ask the platform for password mode does so, and one that cannot serves the
+// field with its keyboard's normal mode, as [gift.TextInputState.Secure]
+// allows.
+func (n *textFieldNode) TextInputState() gift.TextInputState {
+	p := n.para()
+	x := roundf(n.pad.Left - n.ed.scroll)
+	cx := roundf(x + caretX(p, n.toShown(n.ed.caret)))
+	top := n.lineTop
+	bottom := min(top+n.lineH, n.inner.Max.Y)
+	st := gift.TextInputState{
+		Caret:    geom.Rc(cx, top, cx+caretWidth, bottom),
+		Secure:   n.password,
+		Selected: n.ed.HasSelection(),
+	}
+	st.Before, st.After = n.ed.textAround()
+	return st
+}
+
+// replaceText is the [gift.EventTextReplace] branch of
+// [textFieldNode.HandleEvent]: the edit a platform input method made.
+//
+// The text goes through [singleLine] first, exactly as a paste does, because
+// it is the same situation — text that arrives as a whole, from outside the
+// field, and may hold a line break. The return key of a system keyboard is a
+// [gift.KeyEnter], which submits, and a line break inside a committed text is
+// a character this field does not hold, so it and what follows it go; see
+// [gift.App.ReplaceText]. The deletion still applies: an input method that
+// replaced a word with "word\n" wanted the old word gone.
+//
+// A secure field that shows its last character shows the last character of
+// the insertion, as [gift.EventRune] does for the one rune it carries.
+func (n *textFieldNode) replaceText(ctx *gift.EventContext, e gift.Event) bool {
+	r, _ := ctx.TextReplacement()
+	s := singleLine(r.Text)
+	if !n.ed.ReplaceAround(r.DeleteBefore, r.DeleteAfter, s) {
+		return true
+	}
+	if n.secure && n.showLast && s != "" {
+		n.ed.revealing, n.ed.revealEnd = true, n.ed.caret
+		ctx.After(SecureRevealDuration)
+	}
+	n.afterEdit(ctx, e.Time)
+	return true
+}
+
 // HandleEvent implements gift.Interactor.
 //
 // # The one trap, and what it costs
@@ -984,9 +1062,10 @@ func (n *textFieldNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 		return false
 	}
 	// The character just typed goes back to a dot at the next thing the user
-	// does, as on iOS: another key, a press, the focus leaving.
+	// does, as on iOS: another key, a press, the focus leaving — or the next
+	// edit of a system keyboard, which sends no key before it.
 	switch e.Kind {
-	case gift.EventKeyDown, gift.EventPointerDown, gift.EventFocusLost:
+	case gift.EventKeyDown, gift.EventPointerDown, gift.EventFocusLost, gift.EventTextReplace:
 		if n.ed.revealing {
 			n.ed.revealing = false
 			ctx.Repaint()
@@ -1010,26 +1089,27 @@ func (n *textFieldNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 		// [gift.App.ScrollIntoView] does and what the project plan, section
 		// 19, names it for.
 		ctx.ScrollIntoView()
-		// The on-screen keyboard of the project plan, section 19. The switch
-		// is read here rather than in gift, because gift has no business
-		// knowing what a kiosk is, and it is read *before* the request rather
-		// than inside it so that an application which is not a kiosk pays one
-		// atomic load per focus change and no rebuild at all; see
-		// [SetOnScreenKeyboard].
-		if onScreenKeyboard.Load() {
+		// The on-screen keyboard of the project plan, sections 19 and 52.
+		// The switch is read here rather than in gift, because gift has no
+		// business knowing what a kiosk is, and it is read *before* the
+		// request rather than inside it so that an application which is
+		// neither a kiosk nor on a platform with a keyboard of its own pays
+		// two loads per focus gained, one compare per focus lost and no
+		// rebuild at all; see [softKeyboardWanted].
+		if softKeyboardWanted(ctx) {
 			ctx.RequestSoftKeyboard(true)
 		}
 		return true
 
 	case gift.EventFocusLost:
-		if onScreenKeyboard.Load() {
-			// Dismissed on blur, unconditionally. A focus move from one field
-			// to the next is a lost and a gained in that order, so the
-			// keyboard is taken down and put back up within one dispatch and
-			// the user sees it stay; the cost is one extra build, once per
-			// field the user walks through.
-			ctx.RequestSoftKeyboard(false)
-		}
+		// Dismissed on blur, unconditionally, and without asking whether a
+		// keyboard is offered: the request this field made must not outlive
+		// it when the backend withdrew its keyboard meanwhile. A focus move
+		// from one field to the next is a lost and a gained in that order,
+		// so the keyboard is taken down and put back up within one dispatch
+		// and the user sees it stay; the cost is one extra build, once per
+		// field the user walks through.
+		ctx.RequestSoftKeyboard(false)
 		n.ed.drag = dragNone
 		// Stop asking for frames. Without this the application would keep
 		// ticking at full rate for the rest of the blink window with nothing
@@ -1072,6 +1152,9 @@ func (n *textFieldNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 		}
 		n.afterEdit(ctx, e.Time)
 		return true
+
+	case gift.EventTextReplace:
+		return n.replaceText(ctx, e)
 	}
 	return false
 }

@@ -181,6 +181,11 @@ for measurement runs that a resting cursor must not disturb, and for a test harn
 reports 1, one logical pixel is one screen pixel. A scale in `.wdygift/config.json` in the home directory,
 `{"scale": 2}`, takes precedence over both the monitor and `Density`.
 
+**Safe area.** A panel behind a bezel, or a television that overscans, hides a strip along its edges. `SafeArea`
+declares that strip in logical pixels. A `ui.Window` that fills the window then lays its content out inside it, and
+the bars of a `TabBar` and a `NavigationStack` paint out to the edge, as on a phone; `IgnoresSafeArea` on the window
+turns that off. Zero, the default, is none. See [Android and iOS](../mobile/#the-safe-area).
+
 ## Raspberry Pi OS
 
 The intended setup is **Raspberry Pi OS 64-bit** on a Raspberry Pi 4 or 5, with an X11 or XWayland session and
@@ -227,7 +232,7 @@ the skipped refreshes outnumber the drawn frames by far; if they do not, somethi
 
 ### On-screen keyboard
 
-Ebitengine cannot raise a native keyboard, and a kiosk has none to raise. gift draws its own: a German layout with
+A kiosk has no native keyboard to raise, so gift draws its own: a German layout with
 umlauts and ß, a digit row and a symbol page. Its keys send the same events as a physical keyboard.
 
 It takes two steps. Turn it on once in `main` with `ui.SetOnScreenKeyboard(nil, true)`. Place

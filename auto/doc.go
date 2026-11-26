@@ -14,7 +14,8 @@
 //
 // The Ebitengine backend installs this interface automatically when built with
 // the tag. No application import or extra source file is needed. The listener
-// starts in backend.Run, not at package initialization.
+// starts when the backend's session begins: in backend.Run, or in the first
+// frame of a game made by backend.NewGame, not at package initialization.
 //
 // Build the application with the tag, run it, and drive it:
 //

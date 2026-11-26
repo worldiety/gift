@@ -180,6 +180,13 @@ func (t TabSpec) identity(i int) string {
 // also why there is no hover or press *colour* on the caption and only a face
 // behind it.
 //
+// On a phone the bar sits on the safe bottom edge of a [Window], above the
+// navigation bar or the gesture area, and its surface is painted on below it
+// to the edge of the window, and beside it into a cutout of a phone on its
+// side. The items, their hit areas and the height of the bar are not
+// changed by that: a tap behind the navigation bar reaches no item. See
+// [Stack.BleedSafeArea].
+//
 // # It is not stateful
 //
 // Like every other control in this package it draws the selection it was given
@@ -245,7 +252,12 @@ func (t TabBarView) Build(bc *gift.BuildContext) gift.Element {
 			// other three would be a frame around the bottom of the window.
 			Box().Frame(geom.Unbounded(), 1).Background(ColorSeparator),
 			HStack(items...).Frame(geom.Unbounded(), TabBarHeight),
-		).Background(ColorSurface).Key("bar"),
+		).Background(ColorSurface).
+			// The surface reaches the edges of the window below and beside
+			// the bar, behind the navigation bar of a phone; the items stay
+			// above it. See [Stack.BleedSafeArea].
+			BleedSafeArea(EdgesLeft|EdgesRight|EdgesBottom).
+			Key("bar"),
 	).Key(t.key).Flex(t.flex).Build(bc)
 }
 

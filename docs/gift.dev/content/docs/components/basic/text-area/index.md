@@ -55,7 +55,7 @@ that scrolls leaves the caret where it was; a finger that moves sideways selects
 | up, down                                     | move to the line above or below, keeping the column      |
 | page up, page down                           | move by the lines in view                                |
 | home, end                                    | go to the start or the end of the line on the screen     |
-| left, right with command on macOS            | go to the start or the end of the line on the screen     |
+| left, right with command on macOS and iOS    | go to the start or the end of the line on the screen     |
 | left, right with the word modifier           | move by words                                            |
 | home, end, up, down with the shortcut modifier | go to the start or the end of the text                 |
 | enter                                        | start a new line                                         |

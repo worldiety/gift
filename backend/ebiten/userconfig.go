@@ -26,6 +26,10 @@ import (
 // read 1 and every gift window is half its size. The file is the way around
 // that until the desktop gets it right, and it names no application, because
 // the display is wrong for all of them.
+//
+// Android and iOS have no such file, and it is not read there: an Android
+// application has no home directory, and the one Go falls back to is shared
+// storage, where a stray file would change the density of a phone.
 type userConfig struct {
 	// Scale, when set, replaces the density of the monitor and
 	// [Config.Density]. It is a factor from 1 to [gift.MaxDensity] and is
@@ -58,8 +62,12 @@ func readUserConfig() (userConfig, string) {
 	return c, path
 }
 
-// userConfigPath is the path of the [userConfig] file.
+// userConfigPath is the path of the [userConfig] file, and
+// [errors.ErrUnsupported] on Android and iOS, which have none.
 func userConfigPath() (string, error) {
+	if mobilePlatform {
+		return "", errors.ErrUnsupported
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

@@ -95,6 +95,11 @@ func (b BoxView) Background(v Background) BoxView { b.setBackgroundSpec(v); retu
 // Border strokes the inside of the bounds.
 func (b BoxView) Border(v Border) BoxView { b.setBorder(v); return b }
 
+// BleedSafeArea lets the background of the box reach the edge of the window
+// at the given edges where the box lies on the edge of the safe area; its
+// size and hit area stay. See [Stack.BleedSafeArea].
+func (b BoxView) BleedSafeArea(e Edges) BoxView { b.setBleed(e); return b }
+
 // Shadow draws a blurred copy of the box's shape — its bounds, rounded by
 // [BoxView.CornerRadius] — behind the view. It is drawn from the shape and not
 // from the fill, so a box without a background casts one too.

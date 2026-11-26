@@ -150,8 +150,27 @@ func TestTheScreenIsTaggedWithTheWorkingSpace(t *testing.T) {
 	}
 }
 
+// TestIOSPaintsInSRGB pins the working space of iOS, whose Metal layer
+// Ebitengine v2.10.5 leaves untagged: a frame painted in Display P3 would
+// show its numbers as sRGB, paler than meant, so iOS is sRGB whatever the
+// configuration says, and macOS keeps Display P3.
+func TestIOSPaintsInSRGB(t *testing.T) {
+	for _, file := range []string{"", `{"display": "auto"}`} {
+		withHome(t, file)
+		if got := workingSpaceOn("ios", nil); got != cms.SRGB() {
+			t.Errorf("iOS with %q: working space %s, want sRGB", file, got.Description())
+		}
+		if got := workingSpaceOn("darwin", nil); got != cms.DisplayP3() {
+			t.Errorf("macOS with %q: working space %s, want Display P3", file, got.Description())
+		}
+		if cs := screenColorSpace(workingSpaceOn("ios", nil)); cs != eb.ColorSpaceSRGB {
+			t.Errorf("iOS with %q: screen tagged %v, want sRGB", file, cs)
+		}
+	}
+}
+
 func TestTheWorkingSpaceFollowsTheDisplaySetting(t *testing.T) {
-	wide := runtime.GOOS == "darwin" || runtime.GOOS == "ios"
+	wide := runtime.GOOS == "darwin"
 	for _, c := range []struct {
 		name, file string
 		p3, warns  bool

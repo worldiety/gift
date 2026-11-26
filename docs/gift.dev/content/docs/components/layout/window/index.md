@@ -52,12 +52,13 @@ window to the bottom:
 return ui.Window(form, ui.OnScreenKeyboard()).Align(geom.Bottom)
 ```
 
-The keyboard only appears when you turn it on with `ui.SetOnScreenKeyboard(app, true)` (it is off by default)
-and a text field has the focus.
-While it shows, the other children are laid out in the part of the window above it: scroll views get a shorter
-viewport and a button at the bottom of the screen stays above the keys. When the keyboard goes away, they get
-the whole window back. The background plate always keeps the full size, so the page is painted behind the
-keyboard too.
+The keyboard only appears when you turn it on with `ui.SetOnScreenKeyboard(app, true)` (it is off by default) and
+a text field has the focus. On Android and iOS it needs no switch, unless `Config.NoNativeKeyboard` is set: it
+serves `DateField` and `TimeField` and stays down while the system keyboard serves the other fields; see
+[Android and iOS](../../../concepts/mobile/). While it shows, the other children are laid out in the part of the
+window above it: scroll views get a shorter viewport and a button at the bottom of the screen stays above the
+keys. When the keyboard goes away, they get the whole window back. The background plate always keeps the full
+size, so the page is painted behind the keyboard too.
 
 **AvoidKeyboard turns that off.** `AvoidKeyboard(true)` is the default. `AvoidKeyboard(false)` lets the
 keyboard cover the content instead. Use it only for a screen that must not re-flow while someone types, such
@@ -70,6 +71,15 @@ return ui.Window(preview, ui.OnScreenKeyboard()).Align(geom.Bottom).AvoidKeyboar
 Avoidance has two limits. The keyboard must be a direct child of the window; one wrapped in another container
 is laid out like any other child. And only a vertical alignment at the top or bottom edge reserves space; a
 centered keyboard reserves nothing.
+
+**The system bars.** On a phone, a window that fills the screen (the root window does) lays its content, a Modal
+and the keyboard out inside the safe area that the backend reports. Nothing is under the status bar, the
+navigation bar or the camera cutout, and the background plate still paints behind them. The bars of a
+[TabBar](../../navigation/tab-bar/) and a [NavigationStack](../../navigation/navigation-stack/) reach behind the
+system bars too. `IgnoresSafeArea(true)` gives the content the whole window, for a camera preview or a map; pad
+its controls by `ctx.SafeArea()` yourself. A nested, smaller window sees no change, and neither does a desktop,
+whose safe area is zero unless `Config.SafeArea` sets one for a bezel. See
+[Android and iOS](../../../concepts/mobile/).
 
 **Put a Modal inside the window.** A [Modal](../../dialogs/modal/) goes inside the window, next to the
 keyboard, so its scrim and sheet are laid out above the keyboard:
@@ -92,6 +102,7 @@ opaque. See [Testing](../../../concepts/testing/).
 ## Related
 
 - [ZStack](../../layout/zstack/): the same `Overlay` without the background plate
+- [Android and iOS](../../../concepts/mobile/): the safe area and the system keyboard
 - [Box](../../layout/box/): the greedy view that paints the background
 - [Keyboard](../../dialogs/keyboard/): the on-screen keyboard and how it avoids content
 - [Modal](../../dialogs/modal/): a dialog placed inside the window

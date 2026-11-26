@@ -21,6 +21,17 @@
 // OpenGL, the only graphics library that keeps the screen between the render
 // passes of a frame.
 //
+// # Android and iOS
+//
+// There the operating system owns the process and the frame loop, and [Run]
+// returns an error. [NewGame] returns the game and its options for
+// github.com/hajimehoshi/ebiten/v2/mobile.SetGameWithOptions instead, and
+// creates the App on the loop's goroutine, which then is its UI goroutine.
+// Text fields get the system keyboard unless [Config.NoNativeKeyboard] keeps
+// it away, and the host view reports the system bars and the cutout with
+// [SetSafeArea], from any thread. The project plan, section 52, and the
+// README's section on Android and iOS describe the rest.
+//
 // # Drawing
 //
 // A shape operation — a rectangle, a rounded rectangle or a stroke — is drawn

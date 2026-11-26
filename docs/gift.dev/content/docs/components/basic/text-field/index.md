@@ -127,22 +127,24 @@ Inside a focused field:
 | Keys                                   | Action                                    |
 |----------------------------------------|-------------------------------------------|
 | left, right                            | move the caret, with shift extend the selection |
-| left, right with the word modifier     | move by words: option on macOS, control elsewhere |
-| left, right with command on macOS      | go to the start or the end of the line    |
+| left, right with the word modifier     | move by words: option on macOS and iOS, control elsewhere |
+| left, right with command on macOS and iOS | go to the start or the end of the line |
 | home, end, up, down                    | go to the start or the end of the line    |
 | backspace, delete                      | delete before or after the caret, or the selection |
-| shortcut modifier with A, C, X, V      | select all, copy, cut, paste: command on macOS, control elsewhere |
+| shortcut modifier with A, C, X, V      | select all, copy, cut, paste: command on macOS and iOS, control elsewhere |
 | enter                                  | run `OnSubmit`                            |
 
-Shift extends the selection with every motion. Outside macOS the word modifier and the shortcut modifier are both
-control, and control with an arrow moves by words. The modifiers are the variables `gift.WordModifier` and
+Shift extends the selection with every motion. Outside macOS and iOS the word modifier and the shortcut modifier are
+both control, and control with an arrow moves by words. The modifiers are the variables `gift.WordModifier` and
 `gift.ShortcutModifier`; assign to them before the first frame if your keyboard disagrees with the operating system.
 
 The shortcut letters are physical key positions of a US keyboard, so on other layouts they sit where the US keys
 would be. There is no undo, and no multi-line input: enter submits, and pasted text ends at its first line break.
 For text of several lines use a [Text Area](../text-area/).
-The field is not an input method for CJK composition, but umlauts, accents, AltGr and dead keys arrive as ordinary
-characters and are inserted like any other.
+On the desktop and on a kiosk the field is not an input method for CJK composition, but umlauts, accents, AltGr and
+dead keys arrive as ordinary characters and are inserted like any other. On Android and iOS the system keyboard
+composes, with its own candidate bar, and the word shows in the field as ordinary text; see
+[Android and iOS](../../../concepts/mobile/).
 
 ### Clipboard
 
@@ -176,7 +178,9 @@ app := gift.New(gift.Options{Root: func(ctx *gift.Context) gift.View {
 
 With the switch on, a field asks for the keyboard when it gains the focus and dismisses it when it loses it, and
 the window lays the form out above the keyboard while it shows. The switch is off by default, because gift cannot
-tell a kiosk from a desktop. Passing the app instead of nil rebuilds the window right away. See
+tell a kiosk from a desktop. On Android and iOS the field raises the system keyboard without the switch, unless
+`Config.NoNativeKeyboard` is set; see
+[Android and iOS](../../../concepts/mobile/). Passing the app instead of nil rebuilds the window right away. See
 [Keyboard](../../dialogs/keyboard/) for the keyboard itself.
 
 ## API

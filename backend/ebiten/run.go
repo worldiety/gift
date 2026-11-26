@@ -18,7 +18,10 @@ import (
 	"github.com/worldiety/gift/render"
 )
 
-// Config configures the window and the frame loop of [Run].
+// Config configures the window and the frame loop of [Run], and the game of
+// [NewGame]. On Android and iOS there is no window: the fields that set one up
+// (Title, X11ClassName, X11InstanceName, Width, Height) have no effect there;
+// see [NewGame].
 type Config struct {
 	// Title is the window title.
 	Title string
@@ -312,7 +315,33 @@ type Config struct {
 	// so a program that does not choose its own Config is covered too. A drag
 	// from another application is no reading of the mouse and still arrives;
 	// see drop.go.
+	//
+	// It is always set on Android and iOS, where Ebitengine reads no mouse
+	// and the cursor it reports would sit at the top left corner and hover
+	// there.
 	NoMouse bool
+
+	// NoNativeKeyboard keeps the system keyboard of Android and iOS away from
+	// text fields. It changes nothing elsewhere, where there is no system
+	// keyboard to keep away.
+	//
+	// Without it, on Android and iOS, text fields get the system keyboard,
+	// through Ebitengine's exp/textinput: the backend reports it with
+	// [gift.App.SetPlatformKeyboardAvailable], so a field that gains the
+	// focus asks for a keyboard without ui.SetOnScreenKeyboard, and while the
+	// system keyboard is up [gift.App.PlatformKeyboardActive] is true and
+	// ui.OnScreenKeyboard draws nothing. TextField, SecureField, SearchField,
+	// TextArea and CodeEditor are served. DateField and TimeField are not
+	// gift.TextInputClients and keep the drawn keyboard, so a mobile
+	// application places ui.OnScreenKeyboard for them.
+	//
+	// Password fields get the system keyboard too, in its normal mode:
+	// Ebitengine cannot ask for password mode, so the keyboard may learn and
+	// suggest what is typed into them. An application for which that is not
+	// acceptable sets this and turns ui.SetOnScreenKeyboard on, which gives
+	// every field gift's drawn keyboard. See imeBridge for the protocol and
+	// the project plan, section 52, for the decision.
+	NoNativeKeyboard bool
 
 	// NoInput disables the input bridge. It exists for a measurement run that
 	// must not be perturbed by a cursor that happens to rest over a button,
@@ -328,7 +357,19 @@ type Config struct {
 	// A scale in .wdygift/config.json in the home directory, {"scale": 2},
 	// replaces both: it is the person's word on a display the desktop gets
 	// wrong, for every gift application. Read once, when Run starts.
+	// Android and iOS have no such file; it is not read there.
 	Density float64
+
+	// SafeArea is a safe area that is always there, in logical pixels: the
+	// edges of a kiosk panel behind a bezel, or of a television that
+	// overscans the picture. Zero, the default, is none. See
+	// [gift.App.SetSafeArea] for what gift does with it.
+	//
+	// It is merged with what the platform reports through [SetSafeArea],
+	// edge by edge, and the larger of the two is in force: a phone that
+	// reports its status bar and a bezel that hides the same strip do not
+	// add up to twice the strip.
+	SafeArea geom.Insets
 }
 
 // Terminate is the error that stops the frame loop without making [Run] fail.
@@ -361,11 +402,97 @@ var Terminate = eb.Termination
 // Run must be called from the goroutine that created app, because that
 // goroutine is the UI executor, and Ebitengine calls back on the goroutine
 // that called it.
+//
+// On Android and iOS, where the operating system drives the frame loop, Run
+// returns an error at once; hand the game of [NewGame] to Ebitengine's mobile
+// package instead.
 func Run(app *gift.App, cfg Config) error {
 	if app == nil {
 		panic("gift/backend/ebiten: Run with a nil App")
 	}
+	if mobilePlatform {
+		return errRunOnMobile
+	}
+	s, err := newSession(app, cfg)
+	if err != nil {
+		return err
+	}
+	defer s.close()
+	g := s.g
+
+	eb.SetWindowTitle(cfg.Title)
+	eb.SetWindowSize(windowSize(g.w, g.h, g.density, g.startScale()))
+	eb.SetWindowResizingMode(eb.WindowResizingModeEnabled)
+
+	if cfg.Logger != nil {
+		cfg.Logger.Info("gift/backend/ebiten: starting",
+			slog.String("title", cfg.Title),
+			slog.Int("width", g.w), slog.Int("height", g.h),
+			slog.Int("tps", g.busyTPS), slog.Int("idle_tps", cfg.IdleTPS))
+	}
+
+	err = eb.RunGameWithOptions(s.game(), runOptions(cfg, g.r.WorkingSpace()))
+	// Back on the main thread, where a native drag layer is taken down.
+	g.closeDrops()
+	if cfg.Logger != nil {
+		// Skipped refreshes are the evidence that DrawOnDemand works: on an
+		// idle kiosk they outnumber the drawn frames by orders of
+		// magnitude.
+		cfg.Logger.Info("gift/backend/ebiten: stopped",
+			slog.Uint64("frames", g.r.Stats().Frames),
+			slog.Uint64("skipped", g.skipped))
+	}
+	return err
+}
+
+// session is everything [Run] and [NewGame] set up before Ebitengine is
+// handed a game: the game itself and what has to be taken down when it stops.
+//
+// The two entry points differ only in who drives the loop. On a desktop
+// [Run] calls RunGame and returns when the window closes, so it closes the
+// session itself. On Android and iOS the operating system owns the process
+// and the loop, Ebitengine is handed the game through its mobile package,
+// and nothing returns: the session of [NewGame] stays open until the
+// process ends, which is when the operating system takes its resources back.
+type session struct {
+	g *game
+
+	// closers run in reverse order, as the defers of Run did when this was
+	// its body.
+	closers []func()
+}
+
+// game is the value Ebitengine is given: the game, or the game behind
+// [directGame] when it draws into the final screen. Ebitengine asks for that
+// interface when it is handed the game; only a game that has the method gets
+// the final screen.
+func (s *session) game() eb.Game {
+	if s.g.direct || s.g.display != nil {
+		return directGame{s.g}
+	}
+	return s.g
+}
+
+// close takes the session down; see [session.closers].
+func (s *session) close() {
+	for i := len(s.closers) - 1; i >= 0; i-- {
+		s.closers[i]()
+	}
+	s.closers = nil
+}
+
+// newSession builds the renderer, the game and the input bridge for app. It is
+// the body Run had before there was a second entry point, without the window:
+// it sets nothing a mobile platform lacks.
+func newSession(app *gift.App, cfg Config) (*session, error) {
 	if autoEnabled && os.Getenv("GIFT_CAPTURE") != "" {
+		cfg.NoMouse = true
+	}
+	if mobilePlatform {
+		// Ebitengine v2.10.5 reads no mouse on Android or iOS: its
+		// internal/ui/input_mobile.go updates keys, runes and touches only, and
+		// an iPad's pointer arrives as touches. The cursor it reports would sit
+		// at (0, 0) and hover whatever is there.
 		cfg.NoMouse = true
 	}
 	w, h := cfg.Width, cfg.Height
@@ -390,7 +517,7 @@ func Run(app *gift.App, cfg Config) error {
 
 	r, err := NewRenderer()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if cfg.Textures != (TextureConfig{}) {
 		r.SetTextures(NewTextureCache(cfg.Textures))
@@ -410,6 +537,8 @@ func Run(app *gift.App, cfg Config) error {
 	if cfg.OnRenderer != nil {
 		cfg.OnRenderer(r)
 	}
+
+	s := &session{}
 
 	// Measurement. Enabled is a compile time constant false without the
 	// giftmetrics tag, so in an ordinary build this whole block, the closure
@@ -440,7 +569,7 @@ func Run(app *gift.App, cfg Config) error {
 			Shaper: func() metrics.ShaperStats { return shaperMetrics(text.Default().Stats()) },
 			Asset:  cfg.AssetStats,
 		})
-		defer func() { _ = rec.Close() }()
+		s.closers = append(s.closers, func() { _ = rec.Close() })
 	}
 
 	g := &game{
@@ -462,7 +591,15 @@ func Run(app *gift.App, cfg Config) error {
 		systemScale: newSystemScale(),
 		density:     cfg.density(),
 		display:     newDisplayPass(cfg.Logger),
+		safe:        newSafeAreaState(cfg.SafeArea),
 	}
+	s.g = g
+	// The game a report of the platform wakes; see [SetSafeArea]. A session
+	// that ends lets go of it again, unless a later one has taken its place,
+	// so that the mailbox does not keep a finished game and its renderer
+	// reachable for the rest of the process.
+	safeAreaGame.Store(g)
+	s.closers = append(s.closers, func() { safeAreaGame.CompareAndSwap(g, nil) })
 	if cfg.NoInput {
 		g.input = nil
 	} else {
@@ -478,20 +615,28 @@ func Run(app *gift.App, cfg Config) error {
 			// monitor; Run is on it, because RunGame has to be.
 			g.input.wheelPhases = openWheelPhases()
 		}
-		g.input.attachPanel(cfg.Touchscreen, cfg.Logger, g.wake)
-		defer g.input.detachPanel()
+		if !cfg.NoNativeKeyboard && mobilePlatform {
+			g.input.ime = newIMEBridge(app, cfg.Logger, func() float64 { return float64(app.Density()) })
+			// Here and nowhere else, on the goroutine that drives the App:
+			// the fields ask for a keyboard because there is one to serve
+			// them. See [gift.App.SetPlatformKeyboardAvailable].
+			app.SetPlatformKeyboardAvailable(true)
+		}
+		if !mobilePlatform {
+			// A phone has no /dev/input to read and no permission to read
+			// it; its touches arrive through Ebitengine.
+			g.input.attachPanel(cfg.Touchscreen, cfg.Logger, g.wake)
+			s.closers = append(s.closers, g.input.detachPanel)
+		}
 	}
 
-	// Before the window opens and on this goroutine, which is the UI
+	// Before the first update and on this goroutine, which is the UI
 	// executor: the seam has to hold the App before the first update can
 	// deliver anything to it. Compiled away without the giftauto tag.
 	if autoEnabled {
 		autoStart(app)
 	}
 
-	eb.SetWindowTitle(cfg.Title)
-	eb.SetWindowSize(windowSize(w, h, g.density, g.startScale()))
-	eb.SetWindowResizingMode(eb.WindowResizingModeEnabled)
 	eb.SetTPS(busy)
 	if cfg.DrawOnDemand || cfg.DirectToScreen {
 		// With DirectToScreen the offscreen holds nothing but a marker;
@@ -499,32 +644,7 @@ func Run(app *gift.App, cfg Config) error {
 		eb.SetScreenClearedEveryFrame(false)
 	}
 
-	if cfg.Logger != nil {
-		cfg.Logger.Info("gift/backend/ebiten: starting",
-			slog.String("title", cfg.Title),
-			slog.Int("width", w), slog.Int("height", h),
-			slog.Int("tps", busy), slog.Int("idle_tps", cfg.IdleTPS))
-	}
-
-	opts := runOptions(cfg, r.WorkingSpace())
-	if cfg.DirectToScreen || g.display != nil {
-		// Ebitengine asks for the interface when RunGame is called; only a
-		// game that has the method gets the final screen.
-		err = eb.RunGameWithOptions(directGame{g}, opts)
-	} else {
-		err = eb.RunGameWithOptions(g, opts)
-	}
-	// Back on the main thread, where a native drag layer is taken down.
-	g.closeDrops()
-	if cfg.Logger != nil {
-		// Skipped refreshes are the evidence that DrawOnDemand works: on an
-		// idle kiosk they outnumber the drawn frames by orders of
-		// magnitude.
-		cfg.Logger.Info("gift/backend/ebiten: stopped",
-			slog.Uint64("frames", g.r.Stats().Frames),
-			slog.Uint64("skipped", g.skipped))
-	}
-	return err
+	return s, nil
 }
 
 // runOptions are the options Run hands to Ebitengine.
@@ -532,11 +652,13 @@ func Run(app *gift.App, cfg Config) error {
 // # The colour space
 //
 // The screen is tagged with the working space the renderer paints in, space,
-// and never left unset: Ebitengine then tags the Metal layer on macOS and
-// iOS as Display P3 whatever is painted into it (ebiten/v2@v2.10.5, run.go),
-// and Core Animation showed gift's sRGB values, before there was a working
+// and never left unset: Ebitengine then tags the Metal layer on macOS as
+// Display P3 whatever is painted into it (ebiten/v2@v2.10.5, run.go), and
+// Core Animation showed gift's sRGB values, before there was a working
 // space, as the more saturated P3 colours of the same numbers: pure red as
-// the panel's red. Windows and Linux are sRGB whatever this says.
+// the panel's red. Windows, Linux, Android and iOS are sRGB whatever this
+// says; on iOS Ebitengine leaves the layer untagged, which is why
+// [WorkingSpace] is sRGB there.
 func runOptions(cfg Config, space *cms.Profile) *eb.RunGameOptions {
 	return &eb.RunGameOptions{
 		X11ClassName:    cfg.X11ClassName,
@@ -633,6 +755,17 @@ type game struct {
 	// scale or [Config.Density]; see [Config.density].
 	density float64
 
+	// outsideToLogical is the factor from Ebitengine's outside units to
+	// gift's logical pixels that [game.LayoutF] applied last: one, unless
+	// the system scale or the density of [game.density] made the logical
+	// viewport differ from the outside size. A report of [SetSafeArea] is in
+	// outside units and is converted with it. Zero, before the first layout,
+	// is taken as one.
+	outsideToLogical float64
+
+	// safe is what [game.applySafeArea] applied last.
+	safe safeAreaState
+
 	// display converts the frame into the colours of the display on its
 	// way to the screen, nil where nothing does; see displayPass.
 	display *displayPass
@@ -715,10 +848,15 @@ func (g *game) Layout(outsideWidth, outsideHeight int) (int, int) {
 // applies stays one.
 func (g *game) LayoutF(outsideWidth, outsideHeight float64) (float64, float64) {
 	raw := g.monitorScale()
+	// factor follows the outside size into logical pixels, so that a safe
+	// area reported in outside units can follow it too; see
+	// [game.outsideToLogical].
+	factor := 1.0
 	if g.systemScale != nil {
 		if s := g.systemScale(); s > 0 && raw > 0 && s != raw {
 			outsideWidth *= raw / s
 			outsideHeight *= raw / s
+			factor *= raw / s
 			raw = s
 		}
 	}
@@ -727,8 +865,10 @@ func (g *game) LayoutF(outsideWidth, outsideHeight float64) (float64, float64) {
 	if g.density > 0 && raw > 0 {
 		outsideWidth *= raw / g.density
 		outsideHeight *= raw / g.density
+		factor *= raw / g.density
 		raw = g.density
 	}
+	g.outsideToLogical = factor
 	// Here, on the main thread, where the X server and Windows are asked
 	// which display the window is on, and at most every two seconds.
 	g.display.poll(time.Now())
@@ -796,6 +936,11 @@ func (g *game) Update() error {
 	// and the atlas — which is GPU memory budgeted per drawn frame — is
 	// ticked in EndFrame instead. See the project plan, section 6.
 	text.Default().Tick()
+
+	// The safe area the platform reported since the last tick, on the UI
+	// goroutine and before the update that builds with it. Nothing new is a
+	// comparison; see [game.applySafeArea].
+	g.applySafeArea()
 
 	err := g.app.Update(geom.Sz(float32(g.w), float32(g.h)))
 	g.answerDrops()

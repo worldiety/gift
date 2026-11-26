@@ -65,6 +65,12 @@ type Options struct {
 	// glyph masks and thumbnails inside it.
 	Density float64
 
+	// SafeArea is the safe area of the window, in logical pixels, as a
+	// phone's backend would report it; see [gift.App.SetSafeArea]. Zero is a
+	// desktop window. [Harness.SetSafeArea] changes it later, as a rotation
+	// does.
+	SafeArea geom.Insets
+
 	// There is deliberately no Background field here any more.
 	//
 	// There used to be one, and it defaulted to opaque white. It meant that
@@ -232,8 +238,10 @@ func New(t TB, opts Options) *Harness {
 	// Before the first Settle, so that the first build and the first layout
 	// already see the density and no test has to settle twice to get the
 	// thumbnail rung it asked for. A zero Density is 1, and setting 1 on an
-	// App that is already at 1 changes nothing and invalidates nothing.
+	// App that is already at 1 changes nothing and invalidates nothing; the
+	// same holds for a zero SafeArea.
 	h.density = h.app.SetDensity(densityOr1(opts.Density))
+	h.app.SetSafeArea(opts.SafeArea)
 	h.Settle()
 	return h
 }
@@ -276,6 +284,15 @@ func (h *Harness) Now() time.Duration { return h.now }
 func (h *Harness) Resize(s geom.Size) {
 	h.t.Helper()
 	h.size = s
+	h.Settle()
+}
+
+// SetSafeArea changes the safe area of the window and settles, the way a
+// rotation of a phone changes it between two frames. Read it back through
+// [Harness.App].
+func (h *Harness) SetSafeArea(in geom.Insets) {
+	h.t.Helper()
+	h.app.SetSafeArea(in)
 	h.Settle()
 }
 

@@ -543,15 +543,13 @@ func (n *textAreaNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 		n.ed.restartBlink(e.Time)
 		ctx.Animate(CaretBlinkWindow)
 		ctx.ScrollIntoView()
-		if onScreenKeyboard.Load() {
+		if softKeyboardWanted(ctx) {
 			ctx.RequestSoftKeyboard(true)
 		}
 		return true
 
 	case gift.EventFocusLost:
-		if onScreenKeyboard.Load() {
-			ctx.RequestSoftKeyboard(false)
-		}
+		ctx.RequestSoftKeyboard(false)
 		n.ed.drag = dragNone
 		ctx.Animate(0)
 		return true
@@ -598,8 +596,47 @@ func (n *textAreaNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 		n.ed.InsertRune(e.Rune)
 		n.afterEdit(ctx, e.Time)
 		return true
+
+	case gift.EventTextReplace:
+		// The edit of a platform input method. Unlike a rune, its text may
+		// hold a line break, and an area keeps it as a character; see
+		// [gift.App.ReplaceText]. It goes through [multiLine] like a paste,
+		// for the same reasons.
+		r, _ := ctx.TextReplacement()
+		if n.ed.ReplaceAround(r.DeleteBefore, r.DeleteAfter, multiLine(r.Text)) {
+			n.afterEdit(ctx, e.Time)
+		}
+		return true
 	}
 	return false
+}
+
+// TextInputState implements [gift.TextInputClient], as
+// [textFieldNode.TextInputState] does: the text around the selection, and the
+// caret [textAreaNode.paintContent] draws, on its line and at the vertical
+// scroll of the lines, relative to the top left corner of the bounds.
+//
+// The caret of an area scrolled so far that its line is out of view is
+// reported where it is, outside the content box, rather than clamped into it:
+// a keyboard that keeps it visible should know it is not.
+//
+// The text is a window around the caret for a long document rather than all
+// of it; see [textInputWindow]. A [CodeEditorView] is an area and answers the
+// same way.
+func (n *textAreaNode) TextInputState() gift.TextInputState {
+	p := n.para()
+	lh := p.Metrics.LineHeight
+	x := roundf(n.pad.Left)
+	y := roundf(n.pad.Top - n.ed.scrollY)
+	i, cx := n.caretAt(p)
+	top := y + float32(i)*lh
+	cx = roundf(x + cx)
+	st := gift.TextInputState{
+		Caret:    geom.Rc(cx, top, cx+caretWidth, top+lh),
+		Selected: n.ed.HasSelection(),
+	}
+	st.Before, st.After = n.ed.textAround()
+	return st
 }
 
 // scrollBy moves the lines down by dy, towards the start of the text, and

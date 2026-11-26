@@ -818,6 +818,23 @@ func (h *Harness) TypeRune(r rune) {
 	h.Settle()
 }
 
+// ReplaceText delivers one edit of a platform input method, as a system
+// keyboard sends it through the backend (see [gift.App.ReplaceText]), in an
+// input phase of its own, and settles. It is the system keyboard's channel,
+// next to the character channel of [Harness.TypeText]: delete the selection,
+// deleteBefore bytes before it and deleteAfter bytes after it, and insert
+// text.
+//
+// Unlike TypeText it takes any text, line breaks included, because an input
+// method commits text as a whole and it is the receiver that decides what to
+// keep.
+func (h *Harness) ReplaceText(deleteBefore, deleteAfter int, text string) {
+	h.t.Helper()
+	h.beginInput()
+	h.app.ReplaceText(deleteBefore, deleteAfter, text)
+	h.Settle()
+}
+
 // AdvanceTicks moves the injected clock forward n times by step, opening an
 // input phase and settling at each stop.
 //

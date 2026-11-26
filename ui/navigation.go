@@ -271,11 +271,45 @@ func (v NavigationStackView) body(ctx *gift.Context) gift.View {
 			}})
 	}
 	// The screens are cut at the edges of the stack, so that a screen that
-	// slides out does not slide over what is beside it, a sidebar say.
+	// slides out does not slide over what is beside it, a sidebar say. Where
+	// the stack lies on the edge of the safe area the cut is at the edge of
+	// the window instead; see [navContent].
 	return VStack(
 		v.bar(top),
-		ZStack(layers...).Flex(1).Clip(true).Key("content"),
+		navContent{layers: layers},
 	).Flex(1)
+}
+
+// navContent is the content area of a navigation stack: the [ZStack] of its
+// screens, cut at its own edges for painting and for input.
+//
+// # Why the paint cut reaches the window's edge
+//
+// The cut exists for the slide of a push and a pop: a screen on its way out
+// must not be drawn over a sidebar beside the stack, or over the bar above
+// it. On a phone the content area of a stack that fills the window ends on
+// the safe bottom edge, above the navigation bar of the system, and an
+// application is free to put a [TabBar] at the bottom of a screen. That bar
+// paints its surface down to the edge of the window — see
+// [gift.PaintContext.SafeAreaBleed] — and a cut at the content area took
+// the part behind the navigation bar away again.
+//
+// So the area declares [gift.Element.ClipBleedsSafeArea]: at each edge where
+// it lies on the edge of the safe rectangle the paint cut is at the edge of
+// the window, where nothing is beside the stack that the slide could cover.
+// Input stays cut at the area, and without a safe area, on every desktop and
+// kiosk, nothing changes at all. The view type is the ZStack's own, so the
+// node is the one it always was.
+type navContent struct {
+	layers []gift.View
+}
+
+func (navContent) ViewType() gift.TypeID { return zstackType }
+
+func (c navContent) Build(bc *gift.BuildContext) gift.Element {
+	e := ZStack(c.layers...).Flex(1).Clip(true).Key("content").Build(bc)
+	e.ClipBleedsSafeArea = true
+	return e
 }
 
 // navSweep takes the leaving screen away once it has slid out, from a timer
@@ -406,7 +440,12 @@ func (v NavigationStackView) bar(top int) gift.View {
 			PaddingInsets(geom.Insets{Left: navBarPadding, Right: navBarPadding}).
 			Align(geom.Center),
 		Box().Frame(geom.Unbounded(), 1).Background(ColorSeparator),
-	).Background(ColorSurface).Key("bar")
+	).Background(ColorSurface).
+		// The surface reaches the top of the window behind the status bar,
+		// and the sides behind a cutout; the title stays below them. See
+		// [Stack.BleedSafeArea].
+		BleedSafeArea(EdgesLeft | EdgesRight | EdgesTop).
+		Key("bar")
 }
 
 // navBackKey is the interactor of the stack node: the escape key and nothing

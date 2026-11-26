@@ -23,6 +23,7 @@ in action.
   {{< card link="concurrency/" title="Concurrency" icon="switch-horizontal" subtitle="The UI goroutine, App.Post, tokens and background work." >}}
   {{< card link="custom-views/" title="Custom Views" icon="puzzle" subtitle="Your own view type with a layouter, a painter and input handling." >}}
   {{< card link="kiosks/" title="Kiosks and Raspberry Pi" icon="desktop-computer" subtitle="Drawing on demand, glass quality, window setup and Raspberry Pi OS." >}}
+  {{< card link="mobile/" title="Android and iOS" icon="device-mobile" subtitle="NewGame, the safe area of a phone and the system keyboard, on two experimental targets." >}}
   {{< card link="testing/" title="Testing and Automation" icon="beaker" subtitle="Headless tests with gifttest, golden images and the giftauto interface." >}}
   {{< card link="diagnostics/" title="Diagnostics and Metrics" icon="chart-bar" subtitle="Counters, overflow reports, the metrics build, the debug build and logging." >}}
   {{< card link="login-and-payment/" title="Login and Payment" icon="key" subtitle="OAuth and payments in the system browser, and on the phone for a kiosk, without a web view." >}}

@@ -23,7 +23,9 @@
 // macOS 11 and later on arm64, and Linux on amd64 and arm64 with glibc 2.28
 // or later: Debian 10, Ubuntu 20.04, RHEL 8 and later, and every Raspberry
 // Pi OS of 64 bits. On any other platform this package is empty, and package
-// typst finds a library only where it looks by itself.
+// typst finds a library only where it looks by itself. iOS is one of them,
+// although Go builds a macOS file for it: an iPhone application loads no
+// library of a Mac, and none from its cache directory.
 //
 // # Precedence
 //
