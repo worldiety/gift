@@ -308,10 +308,14 @@ func changedPixels(a, b *image.RGBA) int {
 //	wheel
 //	keyDown, keyUp, key
 //	text, replaceText
-//	focus
+//	focus, back
 //	dragOver, drop, dragLeave
 //	waitMs, waitFrames, waitTicks
 //	capture
+//
+// "back" is the back action of the platform (on Android the back button or
+// back gesture), delivered through [gift.App.Back]. The step does not report
+// whether gift took it; a following /tree shows where the navigation went.
 func (d *driver) runStep(s Step) error {
 	switch s.Op {
 	case "waitMs":
@@ -414,6 +418,8 @@ func (d *driver) runStep(s Step) error {
 			forward = *s.Forward
 		}
 		return d.do(func(app *gift.App) { app.MoveFocus(forward) })
+	case "back":
+		return d.do(func(app *gift.App) { app.Back() })
 	}
 	return fmt.Errorf("unknown op %q", s.Op)
 }

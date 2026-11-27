@@ -86,6 +86,13 @@ type overlayHostNode struct {
 	seen    geom.Rect
 }
 
+// leavingOverlay reports whether nd hosts an overlay on its way out, which is
+// still drawn and no longer takes input; see [Element.OverlayExit].
+func leavingOverlay(nd *nodeData) bool {
+	host, ok := nd.layouter.(*overlayHostNode)
+	return ok && host.leaving != 0
+}
+
 func (o *overlayHostNode) Layout(ctx *LayoutContext, c geom.Constraints) geom.Size {
 	s := c.Constrain(c.Max)
 	if ctx.ChildCount() > 0 {

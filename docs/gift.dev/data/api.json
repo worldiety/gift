@@ -1580,6 +1580,12 @@
         "constructors": [],
         "methods": []
       },
+      "BackListener": {
+        "synopsis": "BackListener is told when CanGoBack changes; see SetBackListener.",
+        "decl": "type BackListener interface{ CanGoBackChanged(canGoBack bool) }",
+        "constructors": [],
+        "methods": []
+      },
       "Config": {
         "synopsis": "Config configures the window and the frame loop of Run, and the game of NewGame.",
         "decl": "type Config struct {\n\tTitle                         string\n\tX11ClassName, X11InstanceName string\n\tWidth, Height                 int\n\tLogger                        *slog.Logger\n\tTPS                           int\n\tIdleTPS                       int\n\tIdleFrames                    int\n\tDrawOnDemand                  bool\n\tDirectToScreen                bool\n\tNominalFrameInterval          time.Duration\n\tIntervalTolerance             time.Duration\n\tWarmupFrames                  int\n\tAudioSampleRate               int\n\tOnRenderer                    func(*Renderer)\n\tOnUpdate                      func() error\n\tAssetStats                    func() metrics.AssetStats\n\tGlassQuality                  render.GlassQuality\n\tTextures                      TextureConfig\n\tTouchscreen                   string\n\tNoMouse                       bool\n\tNoNativeKeyboard              bool\n\tNoInput                       bool\n\tDensity                       float64\n\tSafeArea                      geom.Insets\n}",
@@ -2039,6 +2045,26 @@
     },
     "funcs": [
       {
+        "name": "Back",
+        "signature": "Back()",
+        "synopsis": "Back performs the back action of the platform: the back button or the back gesture of Android."
+      },
+      {
+        "name": "CanGoBack",
+        "signature": "CanGoBack() bool",
+        "synopsis": "CanGoBack reports whether the game takes a back action now: the answer of gift.App.CanGoBack that the game published after its last update."
+      },
+      {
+        "name": "CancelBack",
+        "signature": "CancelBack()",
+        "synopsis": "CancelBack reports that the platform's back gesture ended without a back action: on Android the back callback's handleOnBackCancelled, when the user let the gesture go back to where it started."
+      },
+      {
+        "name": "CancelTouches",
+        "signature": "CancelTouches()",
+        "synopsis": "CancelTouches reports that the platform took every touch that is down over: Android's MotionEvent.ACTION_CANCEL, whatever caused it, the back gesture for the touch at the edge it began with, another system gesture, a parent view or palm rejection."
+      },
+      {
         "name": "GlassShaderSource",
         "signature": "GlassShaderSource() []byte",
         "synopsis": "GlassShaderSource returns the Kage source of the glass composite shader, and KawaseShaderSources the two blur passes, under the same rule as ShapeShaderSource: compiling them is a CPU operation and a test may do it headless."
@@ -2062,6 +2088,11 @@
         "name": "Run",
         "signature": "Run(app *gift.App, cfg Config) error",
         "synopsis": "Run opens a window and drives app until it is closed."
+      },
+      {
+        "name": "SetBackListener",
+        "signature": "SetBackListener(l BackListener)",
+        "synopsis": "SetBackListener installs l as the listener of CanGoBack, replacing the one before it; nil (a null from the host) removes it."
       },
       {
         "name": "SetSafeArea",
@@ -3359,9 +3390,29 @@
             "synopsis": "Audio returns the sound device installed by App.SetVideos, or nil."
           },
           {
+            "name": "Back",
+            "signature": "Back() bool",
+            "synopsis": "Back performs the back action of the platform, and reports whether gift took it."
+          },
+          {
+            "name": "BackCancel",
+            "signature": "BackCancel()",
+            "synopsis": "BackCancel reports that the platform's back gesture ended without a back action: the user let it go back to where it started."
+          },
+          {
+            "name": "BackGestureEdge",
+            "signature": "BackGestureEdge() float32",
+            "synopsis": "BackGestureEdge reports the width of the edge zone of the platform's back gesture; see App.SetBackGestureEdge."
+          },
+          {
             "name": "BeginInput",
             "signature": "BeginInput(now time.Duration)",
             "synopsis": "BeginInput opens the input phase of one tick and advances the clock to now."
+          },
+          {
+            "name": "CanGoBack",
+            "signature": "CanGoBack() bool",
+            "synopsis": "CanGoBack reports whether App.Back would take the back action now: whether an on-screen keyboard is up, a BackHandler on the route of App.Back answers true, or, on a platform whose backend set App.SetBackGestureEdge, a touch at the edge of the window latched a true answer."
           },
           {
             "name": "ContextMenuAt",
@@ -3669,6 +3720,11 @@
             "synopsis": "ScrollTo moves the scroll container r to the document offset off, clamped to its bounds, and reports whether the offset changed."
           },
           {
+            "name": "SetBackGestureEdge",
+            "signature": "SetBackGestureEdge(width float32)",
+            "synopsis": "SetBackGestureEdge records how far from the left and the right edge of the window, in logical pixels, a touch may be the start of the platform's back gesture; see App.Back."
+          },
+          {
             "name": "SetDensity",
             "signature": "SetDensity(factor float64) float32",
             "synopsis": "SetDensity sets the device density, that is how many physical pixels one logical pixel of the layout covers along each axis."
@@ -3739,6 +3795,12 @@
             "synopsis": "Viewport returns the logical size the application was last laid out at, that is the size handed to the most recent App.Update."
           }
         ]
+      },
+      "BackHandler": {
+        "synopsis": "BackHandler answers the back action of the platform, such as the back button and the back gesture of Android.",
+        "decl": "type BackHandler interface {\n\tCanGoBack() bool\n\tGoBack(ctx *EventContext)\n}",
+        "constructors": [],
+        "methods": []
       },
       "Binding": {
         "synopsis": "Binding connects reading and writing of one state for a control, without giving the control ownership of the state.",
@@ -3849,7 +3911,7 @@
       },
       "Diagnostics": {
         "synopsis": "Diagnostics is a snapshot of the frame path counters.",
-        "decl": "type Diagnostics struct {\n\tFrames           uint64\n\tUpdates          uint64\n\tBuilds           uint64\n\tLayouts          uint64\n\tPaintedNodes     uint64\n\tPaintedOps       uint64\n\tLiveNodes        uint64\n\tLiveScopes       uint64\n\tOverflowNodes    uint64\n\tHitTests         uint64\n\tInputEvents      uint64\n\tScrolls          uint64\n\tDiscardedTouches uint64\n\tRunesTyped       uint64\n\tTextReplacements uint64\n\tKeyRepeats       uint64\n\tAnimations       uint64\n\tAnimating        bool\n\tOverflowExtent   float32\n}",
+        "decl": "type Diagnostics struct {\n\tFrames           uint64\n\tUpdates          uint64\n\tBuilds           uint64\n\tLayouts          uint64\n\tPaintedNodes     uint64\n\tPaintedOps       uint64\n\tLiveNodes        uint64\n\tLiveScopes       uint64\n\tOverflowNodes    uint64\n\tHitTests         uint64\n\tInputEvents      uint64\n\tScrolls          uint64\n\tDiscardedTouches uint64\n\tRunesTyped       uint64\n\tTextReplacements uint64\n\tBackRequests     uint64\n\tKeyRepeats       uint64\n\tAnimations       uint64\n\tAnimating        bool\n\tOverflowExtent   float32\n}",
         "constructors": [],
         "methods": []
       },
@@ -3923,7 +3985,7 @@
       },
       "Element": {
         "synopsis": "Element is the description of one retained node.",
-        "decl": "type Element struct {\n\tKey                string\n\tLabel              string\n\tLayouter           Layouter\n\tPainter            Painter\n\tChildren           []View\n\tFlex               float32\n\tInteractor         Interactor\n\tDropTarget         Interactor\n\tFocusable          bool\n\tDisabled           bool\n\tObstructs          bool\n\tClip               bool\n\tClipRadius         float32\n\tClipBleedsSafeArea bool\n\tTransform          *geom.Affine2D\n\tScroll             *ScrollSpec\n\tHidden             bool\n\tLayer              bool\n\tFocusTrap          bool\n\tTransition         TransitionSpec\n\tKeyFallback        bool\n\tOverlay            View\n\tOverlayExit        time.Duration\n\tMultiTouch         bool\n\tPreservesFocus     bool\n}",
+        "decl": "type Element struct {\n\tKey                string\n\tLabel              string\n\tLayouter           Layouter\n\tPainter            Painter\n\tChildren           []View\n\tFlex               float32\n\tInteractor         Interactor\n\tDropTarget         Interactor\n\tFocusable          bool\n\tDisabled           bool\n\tObstructs          bool\n\tClip               bool\n\tClipRadius         float32\n\tClipBleedsSafeArea bool\n\tTransform          *geom.Affine2D\n\tScroll             *ScrollSpec\n\tHidden             bool\n\tLayer              bool\n\tFocusTrap          bool\n\tTransition         TransitionSpec\n\tKeyFallback        bool\n\tOverlay            View\n\tOverlayExit        time.Duration\n\tMultiTouch         bool\n\tPreservesFocus     bool\n\tBack               BackHandler\n}",
         "constructors": [],
         "methods": []
       },
@@ -4761,6 +4823,21 @@
             "name": "At",
             "signature": "At(p geom.Point) Node",
             "synopsis": "At returns the topmost interactive node at the device space point p."
+          },
+          {
+            "name": "Back",
+            "signature": "Back() bool",
+            "synopsis": "Back performs the back action of the platform (on Android the back button or back gesture) in an input phase of its own, settles, and reports whether gift took it (see gift.App.Back)."
+          },
+          {
+            "name": "CanGoBack",
+            "signature": "CanGoBack() bool",
+            "synopsis": "CanGoBack reports what Harness.Back would answer now, without acting (see gift.App.CanGoBack)."
+          },
+          {
+            "name": "CancelBack",
+            "signature": "CancelBack()",
+            "synopsis": "CancelBack reports that the platform's back gesture was abandoned, as Android's back callback hears in handleOnBackCancelled, in an input phase of its own, and settles; see gift.App.BackCancel."
           },
           {
             "name": "CancelPointer",
@@ -9688,7 +9765,7 @@
           {
             "name": "OnDismiss",
             "signature": "OnDismiss(fn func()) ModalView",
-            "synopsis": "OnDismiss makes a tap on the scrim — anywhere outside the modal itself — call fn."
+            "synopsis": "OnDismiss makes a tap on the scrim — anywhere outside the modal itself — and the back action of the platform call fn."
           },
           {
             "name": "Presented",
@@ -9744,6 +9821,34 @@
             "name": "Key",
             "signature": "Key(s string) NavigationStackView",
             "synopsis": "Key sets the reconciliation key of this view among its siblings."
+          }
+        ]
+      },
+      "OnBackView": {
+        "synopsis": "OnBackView is content with a back action of its own: what the back button and the back gesture of Android do while the content is on the screen.",
+        "decl": "type OnBackView struct {\n\t// Has unexported fields.\n}",
+        "constructors": [
+          {
+            "name": "OnBack",
+            "signature": "OnBack(content gift.View, action func()) OnBackView",
+            "synopsis": "OnBack returns content whose back action calls action; see OnBackView."
+          }
+        ],
+        "methods": [
+          {
+            "name": "Disabled",
+            "signature": "Disabled(b bool) OnBackView",
+            "synopsis": "Disabled says that there is nowhere to go back to: back passes on to what is around the view, as if the wrapper were not there; the content stays as it is."
+          },
+          {
+            "name": "Flex",
+            "signature": "Flex(f float32) OnBackView",
+            "synopsis": "Flex sets the share of the free space of a stack this view takes."
+          },
+          {
+            "name": "Key",
+            "signature": "Key(s string) OnBackView",
+            "synopsis": "Key sets the reconciliation key."
           }
         ]
       },
@@ -10535,7 +10640,7 @@
           {
             "name": "OnDismiss",
             "signature": "OnDismiss(fn func()) SheetView",
-            "synopsis": "OnDismiss makes a tap on the scrim and the escape key call fn."
+            "synopsis": "OnDismiss makes a tap on the scrim, the escape key and the back action of the platform call fn."
           },
           {
             "name": "Presented",

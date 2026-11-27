@@ -91,6 +91,10 @@ and inside a `ui.Sheet` it wins over the sheet's own dismiss, so close the sheet
 function to `OnDismiss` of the sheet, so that a tap on the scrim cancels too. If `onCancel` is `nil`, the header
 has no Cancel button.
 
+Android's back button and back gesture answer an open question about replacing a file with Cancel, go up one folder
+otherwise, and in the root folder call `onCancel`. With a nil `onCancel` the picker lets back through in the root
+folder, to the sheet or the screen around it. See [Android and iOS](../../../concepts/mobile/#back).
+
 The picker keeps state of its own: the folder it shows, the listing and the selection. Give it a `Key` when it
 shares a parent with other views that come and go, so that it keeps that state.
 

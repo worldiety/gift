@@ -44,6 +44,24 @@ var errNilApp = errors.New("gift/backend/ebiten: the constructor given to NewGam
 //			Bottom: float32(bottom), Left: float32(left)})
 //	}
 //
+//	// BackListener is implemented by the Android host; gobind cannot pass a func.
+//	type BackListener interface{ CanGoBackChanged(canGoBack bool) }
+//
+//	// SetBackListener replaces the listener, nil removes it; any thread.
+//	func SetBackListener(l BackListener) { backend.SetBackListener(l) }
+//
+//	// Back is called by the Android host when the user went back; any thread.
+//	func Back() { backend.Back() }
+//
+//	// CanGoBack reports whether gift takes the next back; any thread.
+//	func CanGoBack() bool { return backend.CanGoBack() }
+//
+//	// CancelBack is called when the user abandoned the gesture; any thread.
+//	func CancelBack() { backend.CancelBack() }
+//
+//	// CancelTouches is called when the system took the touches over; any thread.
+//	func CancelTouches() { backend.CancelTouches() }
+//
 // The application lives in a package of its own, whose New installs the font
 // and the theme as a desktop's main would, because a bound library has no
 // main and the first Text panics without a default font:
@@ -97,16 +115,71 @@ var errNilApp = errors.New("gift/backend/ebiten: the constructor given to NewGam
 // or goes is a relayout and not a new activity with a second view over the
 // same game. It sets windowSoftInputMode to adjustNothing for the system
 // keyboard, and calls suspendGame and resumeGame from onPause and onResume.
-// EbitenView consumes every key, so the activity overrides onKeyDown and
-// onKeyUp to hand Back and the volume keys back to Android. Back moves the
-// task to the background (moveTaskToBack) rather than finishing the activity,
-// because Ebitengine cannot carry its GPU resources into a new view in the
-// same process. How the host reports the insets is in [SetSafeArea]. On iOS
-// the application creates exactly one subclass of the EbitenViewController
-// that ebitenmobile generates (MobileEbitenViewController for a package named
-// mobile) per process and reuses it when its scene reconnects, because
-// Ebitengine attaches its Metal layer only once, and suspends and resumes it
-// from the scene delegate.
+// How the host reports the insets is in [SetSafeArea].
+//
+// Android's back button and back gesture are gift's navigation: they pop a
+// navigation stack, close a sheet, a popover, a menu or a modal, and leave the
+// application only on its first view. Since predictive back (API 33, and the
+// only path from targetSdk 36 on) Android asks no key handler; it gives the
+// gesture to a callback the application enabled *before* it started, or goes
+// back itself. So the activity, a ComponentActivity of androidx.activity 1.8
+// or later, opts in with android:enableOnBackInvokedCallback="true" on
+// <application> and adds two OnBackPressedCallbacks to its
+// onBackPressedDispatcher:
+//
+//   - "leave", added first and therefore asked last, always enabled, whose
+//     handleOnBackPressed calls moveTaskToBack(true) and never finish(),
+//     because Ebitengine cannot carry its GPU resources into a new view in
+//     the same process. It must not be left to the system: on the emulator,
+//     Android 16 (API 36, with targetSdk 35 and 36 alike) with
+//     enableOnBackInvokedCallback finishes the root activity when no
+//     callback is enabled, instead of moving its task to the back, and
+//     Ebitengine then ends the process on the next launch (the atlas panics
+//     that requestToRestoreGPUResources was called unexpectedly). The price
+//     is that the predictive back-to-home animation is not shown; the
+//     application simply goes to the background when the gesture ends.
+//   - "giftBack", added last, enabled exactly while gift can go back, whose
+//     handleOnBackPressed calls the bound Back (see [Back]), and whose
+//     handleOnBackCancelled, called when the user abandons the gesture,
+//     calls the bound CancelBack (see [CancelBack]). The bound
+//     SetBackListener keeps it current: its listener posts to the main
+//     thread and sets giftBack.isEnabled from the bound CanGoBack there, the
+//     latest value rather than the argument, so that two posts that run out
+//     of order cannot leave a stale one; see [SetBackListener].
+//
+// The back gesture starts as a touch: Android delivers the finger's first
+// contact at the edge of the screen to the view, and cancels it with
+// MotionEvent.ACTION_CANCEL once it recognises the gesture. Ebitengine
+// v2.10.5 ignores ACTION_CANCEL, so that touch would stay pressed for ever
+// and swallow the next tap. The subclass of EbitenView the activity uses
+// therefore overrides onTouchEvent: on ACTION_CANCEL it calls the bound
+// CancelTouches first, so that gift hears a cancel and not a release (see
+// [CancelTouches]), then releases every pointer of the event in Ebitengine,
+// and returns true:
+//
+//	Ebitenmobileview.updateTouchesOnAndroid(MotionEvent.ACTION_UP, id, 0, 0)
+//
+// where id is event.getPointerId(i); the position does not matter. Any other
+// action goes to super.onTouchEvent. The touch that came down did reach
+// gift, though, and a press outside a menu or a popover closes it. On Android
+// the game reports the edge zone of the gesture with
+// [gift.App.SetBackGestureEdge], and gift latches the back target of a touch
+// that comes down there and is cancelled, so that the back that follows does
+// not find the menu gone and leave the application; see [gift.App.Back].
+//
+// EbitenView consumes every key, so the subclass the activity uses returns
+// false from onKeyDown and onKeyUp for KEYCODE_BACK, and for the volume keys,
+// which hands them to Android: on API levels before 33, or with a targetSdk
+// below 36 and no opt in, back then reaches Activity.onBackPressed and the
+// same dispatcher. A back while the system keyboard is up is the input
+// method's own: it closes the keyboard, Ebitengine reports the end of the text
+// input, and gift blurs the field.
+//
+// On iOS the application creates exactly one subclass of the
+// EbitenViewController that ebitenmobile generates (MobileEbitenViewController
+// for a package named mobile) per process and reuses it when its scene
+// reconnects, because Ebitengine attaches its Metal layer only once, and
+// suspends and resumes it from the scene delegate.
 //
 // An error setting the game up — the renderer's shaders, or a nil App — is
 // what the game's first Update returns, which ends the game the way any

@@ -369,6 +369,24 @@ func SetSafeArea(left, top, right, bottom float64) {
     backend.SetSafeArea(geom.Insets{Top: float32(top), Right: float32(right),
         Bottom: float32(bottom), Left: float32(left)})
 }
+
+// BackListener is implemented by the Android host; gobind cannot pass a func.
+type BackListener interface{ CanGoBackChanged(canGoBack bool) }
+
+// SetBackListener replaces the listener, nil removes it; any thread.
+func SetBackListener(l BackListener) { backend.SetBackListener(l) }
+
+// Back is called by the Android host when the user went back; any thread.
+func Back() { backend.Back() }
+
+// CanGoBack reports whether gift takes the next back; any thread.
+func CanGoBack() bool { return backend.CanGoBack() }
+
+// CancelBack is called when the user abandoned the gesture; any thread.
+func CancelBack() { backend.CancelBack() }
+
+// CancelTouches is called when the system took the touches over; any thread.
+func CancelTouches() { backend.CancelTouches() }
 ```
 
 The application lives in a package of its own, whose `New` also does the
@@ -410,9 +428,19 @@ what is typed into them. `DateField` and `TimeField` keep gift's drawn
 keyboard, which is why the window places `ui.OnScreenKeyboard` and is aligned
 to the bottom. The desktop is unchanged.
 
+Android's system back, the button and the edge swipe, goes through gift first:
+it pops a `NavigationStack`, closes a sheet, a modal, a popover or a menu, and
+leaves the application only on its first view. The host keeps an
+`OnBackPressedCallback` enabled while gift can go back, through the bound
+package's `SetBackListener`, and calls `Back` from it, or `CancelBack` when
+the user abandons the gesture. `ui.OnBack` gives the application's own
+navigation a back action, and a custom view sets `Element.Back` or implements
+`gift.BackHandler`. The escape key is unchanged.
+
 What the Kotlin or Swift host has to do — edge to edge, `configChanges`,
-`adjustNothing`, suspend and resume, Back, one view controller per process —
-and which packages do nothing on a phone is on the
+`adjustNothing`, suspend and resume, the back callbacks, the cancelled touch
+and the manifest's `enableOnBackInvokedCallback`, one view controller per
+process — and which packages do nothing on a phone is on the
 [Android and iOS page](docs/gift.dev/content/docs/concepts/mobile.md) of the
 concepts on gift.dev and in the documentation of `backend.NewGame`.
 

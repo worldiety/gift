@@ -594,12 +594,16 @@ func newSession(app *gift.App, cfg Config) (*session, error) {
 		safe:        newSafeAreaState(cfg.SafeArea),
 	}
 	s.g = g
-	// The game a report of the platform wakes; see [SetSafeArea]. A session
+	// The game the platform's mailboxes wake; see [platformGame]. A session
 	// that ends lets go of it again, unless a later one has taken its place,
 	// so that the mailbox does not keep a finished game and its renderer
 	// reachable for the rest of the process.
-	safeAreaGame.Store(g)
-	s.closers = append(s.closers, func() { safeAreaGame.CompareAndSwap(g, nil) })
+	platformGame.Store(g)
+	s.closers = append(s.closers, func() {
+		if platformGame.CompareAndSwap(g, nil) {
+			closeBack()
+		}
+	})
 	if cfg.NoInput {
 		g.input = nil
 	} else {
@@ -621,6 +625,11 @@ func newSession(app *gift.App, cfg Config) (*session, error) {
 			// the fields ask for a keyboard because there is one to serve
 			// them. See [gift.App.SetPlatformKeyboardAvailable].
 			app.SetPlatformKeyboardAvailable(true)
+		}
+		if systemBack {
+			// The touch that begins the back gesture reaches the App before
+			// the system takes it over; see [gift.App.SetBackGestureEdge].
+			app.SetBackGestureEdge(androidBackEdge)
 		}
 		if !mobilePlatform {
 			// A phone has no /dev/input to read and no permission to read
@@ -765,6 +774,9 @@ type game struct {
 
 	// safe is what [game.applySafeArea] applied last.
 	safe safeAreaState
+
+	// back is what [game.publishBack] reported last.
+	back backState
 
 	// display converts the frame into the colours of the display on its
 	// way to the screen, nil where nothing does; see displayPass.
@@ -923,6 +935,8 @@ func (g *game) Update() error {
 	if g.input != nil {
 		g.installDrops()
 		g.input.poll()
+	} else {
+		discardPlatformInput()
 	}
 
 	if g.onUpdate != nil {
@@ -944,13 +958,29 @@ func (g *game) Update() error {
 
 	err := g.app.Update(geom.Sz(float32(g.w), float32(g.h)))
 	g.answerDrops()
+	backBusy := false
+	if err == nil {
+		// What the platform's back action would do on the tree just built;
+		// see [game.publishBack]. From here on a request of [Back] has a tree
+		// to reach.
+		backBusy = g.publishBack()
+		if g.input != nil {
+			g.input.backReady = true
+			backBusy = backBusy || g.input.mailboxTaken || platformInputPending()
+		}
+	}
 
 	// The idle policy reads the paint flag, which the update sets when a
 	// build or a layout actually changed something. Reading it here, before
 	// the draw clears it, is the only place where it says "this tick did
 	// work".
 	if g.idleTPS > 0 {
-		g.applyIdlePolicy(g.app.NeedsPaint())
+		// A back action performed this tick, one still waiting, or a report
+		// to the listener counts as work: the requests are performed one per
+		// tick, and the game that [Back] or [SetBackListener] woke must neither
+		// fall back to its idle rate between them nor stay at the busy rate
+		// the wake set behind the bookkeeping's back.
+		g.applyIdlePolicy(g.app.NeedsPaint() || backBusy)
 	}
 
 	if metrics.Enabled() {
@@ -1008,6 +1038,23 @@ func (g *game) logGlassLevel() {
 		slog.Uint64("changes", s.Changes))
 }
 
+// platformGame is the game the platform's mailboxes wake, through
+// [wakePlatformGame], when it ticks at its idle rate (see [game.wake]): a
+// report of [SetSafeArea], a request of [Back], a report of [CancelTouches] or
+// [CancelBack], and a listener installed with [SetBackListener]. One game per
+// process is what a phone runs, and what the platform's reports are about. It
+// is nil until the first session exists, and nil again once the last one has
+// ended; see [NewGame].
+var platformGame atomic.Pointer[game]
+
+// wakePlatformGame wakes the game the platform's mailboxes report to, if it
+// ticks at its idle rate: what the platform reports is happening now.
+func wakePlatformGame() {
+	if g := platformGame.Load(); g != nil {
+		g.wake()
+	}
+}
+
 // wake raises the tick rate of an idle game at once. The touch panel calls
 // it from its reader when a finger comes down, so the first touch after a
 // pause is handled in the next frame and not in the next idle tick, which at
@@ -1039,6 +1086,33 @@ func (g *game) applyIdlePolicy(changed bool) {
 		g.activeTPS = g.idleTPS
 		eb.SetTPS(g.idleTPS)
 	}
+	// A report that arrived between the update's look at its mailboxes and
+	// the idle flag above found the game still busy, so its [game.wake] did
+	// nothing, and the rate just lowered would make it wait a whole idle
+	// tick: a back gesture that ends and nothing happens for a tenth of a
+	// second. Looked at again now, after the flag and the lowered rate, every
+	// report is either seen here or made late enough that its own wake sees
+	// the flag and raises the rate after this lowered it.
+	if g.wakePending() {
+		g.idle.Store(false)
+		g.activeTPS = g.busyTPS
+		eb.SetTPS(g.busyTPS)
+	}
+}
+
+// wakePending reports whether a mailbox of the platform holds something the
+// next tick has to take out: a request of [Back], a report of [CancelTouches]
+// or [CancelBack], a listener of [SetBackListener] that has not heard the
+// answer yet, or a report of [SetSafeArea] not applied yet. Each is an atomic
+// load and a comparison, and it runs only on ticks at the idle rate.
+func (g *game) wakePending() bool {
+	if g.input != nil && platformInputPending() {
+		return true
+	}
+	if l := backListener.Load(); l != nil && l != g.back.reportedTo {
+		return true
+	}
+	return safeAreaReport.Load() != g.safe.report
 }
 
 // Draw produces and submits the display list of one frame.

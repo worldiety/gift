@@ -73,6 +73,11 @@ picture dragged down are those of Apple's photo transition sample.
 `Closable(false)` keeps the user from closing the viewer, for a kiosk that is nothing but the viewer;
 `ShowsControls(false)` hides the buttons and keeps the gestures and keys.
 
+Android's back button and back gesture close the card first when it is up, and then the viewer. With
+`Closable(false)` only closing the viewer is blocked: back still closes the card, and on the picture it does
+nothing and does not leave the application. Back also does nothing while the viewer is closing. See
+[Android and iOS](../../../concepts/mobile/#back).
+
 ## The card
 
 `Card(func(asset.ID) gift.View)` builds the content of a card that a swipe up slides in from the bottom, rebuilt

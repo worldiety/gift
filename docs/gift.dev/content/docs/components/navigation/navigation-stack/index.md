@@ -78,10 +78,24 @@ Escape calls `onBack` like the back affordance. It arrives when the focus is ins
 view does not handle escape itself, and also when nothing holds the focus, so a keyboard plugged into a kiosk
 that nobody has touched still goes back. On the root screen escape does nothing, and the stack consumes the key
 so it does not close something outside the stack. When stacks are nested, the inner one gets the unfocused key.
-An open [Modal](../../dialogs/modal/) or [Sheet](../../dialogs/sheet/) traps the key: while an alert is up,
-escape does not reach the stack under it. A stack inside a sheet takes escape for itself, so the sheet's
-`OnDismiss` does not see it; close such a sheet with a button or a tap on the scrim.
+An open [Modal](../../dialogs/modal/) or [Sheet](../../dialogs/sheet/) traps the unfocused key: while an alert is
+up and nothing is focused, escape does not reach the stack under it. A focused key bubbles along the tree, so
+escape on a focused view inside a dialog that sits inside a screen of the stack still reaches the stack. A stack
+inside a sheet takes escape for itself, so the sheet's `OnDismiss` does not see it; close such a sheet with a
+button or a tap on the scrim.
 There is no edge swipe gesture.
+
+### Android back
+
+The back button and the back gesture of Android call `onBack` too, on every screen but the root. On the root the
+stack declines, unlike escape: back goes on to what is around the stack, a [Sheet](../../dialogs/sheet/) that then
+closes or a `ui.OnBack` of your own, and when nothing takes it, Android leaves the application. With nothing focused
+back reaches the last stack in document order that can pop, so the inner one of nested stacks and the one in the
+selected tab, and an inner stack on its root screen lets the outer one pop. The focus decides between stacks side by
+side, but not against one inside the focused stack. An open [Modal](../../dialogs/modal/) takes back before the
+stack under it, so back never pops the screen behind an alert. Android asks beforehand whether the stack can pop, to
+show the screen underneath while the finger still moves; that is why the root declines instead of consuming back.
+See [Android and iOS](../../../concepts/mobile/#back).
 
 ### Covered screens stay mounted
 

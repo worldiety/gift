@@ -101,6 +101,13 @@ func photos(t *testing.T, n int) ([]asset.Metadata, map[asset.ID]asset.Source) {
 // seven inch panel.
 func setup(t *testing.T, n int, configure func(imageviewer.FullscreenView) imageviewer.FullscreenView) *env {
 	t.Helper()
+	return setupIn(t, n, configure, nil)
+}
+
+// setupIn is [setup] with the window's view passed through wrap, when it is
+// not nil.
+func setupIn(t *testing.T, n int, configure func(imageviewer.FullscreenView) imageviewer.FullscreenView, wrap func(gift.View) gift.View) *env {
+	t.Helper()
 	items, srcs := photos(t, n)
 	e := &env{t: t, ch: make(chan func(), 1024)}
 	e.pipe = asset.NewPipeline(asset.Config{
@@ -123,8 +130,12 @@ func setup(t *testing.T, n int, configure func(imageviewer.FullscreenView) image
 	if configure != nil {
 		fs = configure(fs)
 	}
+	var view gift.View = ui.ZStack(ui.Box().Background(ui.RGB(240, 240, 240)), fs)
+	if wrap != nil {
+		view = wrap(view)
+	}
 	e.h = gifttest.New(t, gifttest.Options{
-		View: ui.ZStack(ui.Box().Background(ui.RGB(240, 240, 240)), fs),
+		View: view,
 		Size: geom.Sz(800, 480),
 		Font: ui.MustFont(ui.FontQuery{Family: inter.Family}),
 	})

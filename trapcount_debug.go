@@ -24,7 +24,18 @@ import "fmt"
 // shape maintained by [App.applyKeyFallback] and [App.destroyScopes] for
 // [Element.KeyFallback], with the same two failure modes: a walk looking for a
 // node that is not there, or an unfocused escape key that reaches nobody.
+//
+// And [App.backHandlers], maintained by [App.applyBackHandler] and
+// [App.destroyScopes] for the nodes with a back handler: an [Element.Back],
+// or else an interactor that is a [BackHandler].
 func checkTrapCount(a *App) {
+	if a.backHandlers < 0 {
+		panic(fmt.Sprintf(
+			"gift: back handler count went to %d. It is counted up in "+
+				"App.applyBackHandler and down in both App.applyBackHandler and "+
+				"App.destroyScopes; one of them has run without its partner",
+			a.backHandlers))
+	}
 	if a.keyFallbacks < 0 {
 		panic(fmt.Sprintf(
 			"gift: key fallback count went to %d. Element.KeyFallback is counted up in "+

@@ -28,7 +28,7 @@ func safeGame(t *testing.T, raw, d float64, static geom.Insets) *game {
 // every test after it.
 func resetSafeArea() {
 	safeAreaReport.Store(nil)
-	safeAreaGame.Store(nil)
+	platformGame.Store(nil)
 }
 
 // TestSafeAreaReportedBeforeTheAppIsAppliedOnTheFirstUpdate is the order of a
@@ -201,7 +201,7 @@ func TestSafeAreaConfigIsTheMinimum(t *testing.T) {
 func TestSafeAreaReportsRaceTheLoop(t *testing.T) {
 	g := safeGame(t, 2, 0, geom.Insets{})
 	g.idleTPS = 10 // a report wakes an idle game; see [game.wake]
-	safeAreaGame.Store(g)
+	platformGame.Store(g)
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -274,11 +274,11 @@ func TestSafeAreaSessionLetsGoOfTheGame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if safeAreaGame.Load() != g {
+	if platformGame.Load() != g {
 		t.Fatal("the new session is not the game a report wakes")
 	}
 	l.s.close()
-	if safeAreaGame.Load() != nil {
+	if platformGame.Load() != nil {
 		t.Fatal("a closed session is still the game a report wakes")
 	}
 	SetSafeArea(geom.Insets{Top: 2, Right: 3, Bottom: 4, Left: 1}) // must not touch the closed game

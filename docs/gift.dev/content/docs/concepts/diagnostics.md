@@ -36,11 +36,12 @@ Most counters only ever grow, from the moment the `App` is created:
 | `PaintedNodes`     | nodes whose painter actually ran; a node without background, border and clip is not counted |
 | `PaintedOps`       | drawing operations emitted                                                     |
 | `HitTests`         | hit tests, roughly the pointer events that had to find a target                |
-| `InputEvents`      | calls into an `Interactor`, including the ones made while an event bubbles up  |
+| `InputEvents`      | calls into an `Interactor` or a `BackHandler`, including the ones made while an event bubbles up |
 | `Scrolls`          | times a scroll offset actually changed                                         |
 | `DiscardedTouches` | additional fingers that were recognized and dropped                            |
 | `RunesTyped`       | characters that arrived through `App.TypeRune`, focused or not                 |
 | `TextReplacements` | edits of a platform input method delivered through `App.ReplaceText`, focused or not |
+| `BackRequests`     | back actions of the platform delivered through `App.Back`, taken or not        |
 | `KeyRepeats`       | synthetic key presses produced from a held key                                 |
 
 The others describe the current state of the tree:

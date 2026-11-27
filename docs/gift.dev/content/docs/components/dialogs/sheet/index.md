@@ -40,6 +40,10 @@ and only the application can close the sheet, for example from a button inside i
 demands an answer. There is no drag to dismiss. A [NavigationStack](../../navigation/navigation-stack/) inside the
 sheet takes the escape key for itself, so `OnDismiss` does not see it there.
 
+Android's back button and back gesture call `OnDismiss` too, and without it they do nothing, so back never leaves
+the application from behind a sheet that demands an answer. A navigation stack inside the sheet pops first, and on
+its root screen it lets back through to the sheet. See [Android and iOS](../../../concepts/mobile/#back).
+
 ### Placement
 
 A sheet needs bounded space in both axes and panics when it is measured without it. Place it as the outermost view

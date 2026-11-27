@@ -352,3 +352,48 @@ func TestTheReplaceTextStepEditsTheFocusedNode(t *testing.T) {
 		t.Fatalf("the node holds %q, want %q", got, "Halö!")
 	}
 }
+
+func TestTheBackStepPerformsTheBackActionOfThePlatform(t *testing.T) {
+	depth := 2
+	l := newFakeLoop(t, func(*gift.Context) gift.View { return backFixture{depth: &depth} }, func() byte { return 0 })
+	h := (&server{d: l.d}).handler()
+	// Three back actions against a stack two screens deep: two pop, and the
+	// third is declined, which on a phone would leave the application. The
+	// declined one must not fail the batch: it is not an error of the
+	// script, it is what back does on the first view.
+	body, _ := json.Marshal(Batch{Steps: []Step{{Op: "back"}, {Op: "back"}, {Op: "back"}}})
+	if w := get(t, h, "POST", "/input", string(body)); w.Code != 200 {
+		t.Fatalf("/input: status %d: %s", w.Code, w.Body.String())
+	}
+	got, err := query(l.d, func(*gift.App) int { return depth })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 0 {
+		t.Fatalf("the stack is %d screens deep after three back steps, want 0", got)
+	}
+}
+
+var backType = gift.RegisterType("auto.Back")
+
+// backFixture is a node whose interactor is a [gift.BackHandler] over a
+// counter, the smallest navigation stack there is: it goes back while depth
+// is above zero.
+type backFixture struct{ depth *int }
+
+func (backFixture) ViewType() gift.TypeID { return backType }
+
+func (f backFixture) Build(*gift.BuildContext) gift.Element {
+	n := &backNode{depth: f.depth}
+	return gift.Element{Key: "back", Layouter: n, Interactor: n}
+}
+
+type backNode struct{ depth *int }
+
+func (n *backNode) Layout(*gift.LayoutContext, geom.Constraints) geom.Size { return geom.Sz(100, 40) }
+
+func (n *backNode) HandleEvent(*gift.EventContext, gift.Event) bool { return false }
+
+func (n *backNode) CanGoBack() bool { return *n.depth > 0 }
+
+func (n *backNode) GoBack(*gift.EventContext) { *n.depth-- }

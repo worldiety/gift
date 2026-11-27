@@ -55,6 +55,14 @@ const (
 // nothing. A sheet without OnDismiss can be closed only by the application,
 // which is what a sheet that demands an answer wants.
 //
+// The back button and the back gesture of Android — see [gift.App.Back] — do
+// what escape does: they call OnDismiss. A sheet without OnDismiss takes them
+// and does nothing, as a dialog that is not cancelable does on Android, so that
+// back neither leaves the application nor acts on the screen behind the
+// sheet. A [NavigationStack] inside the sheet pops first, and on its root
+// screen it lets back through to the sheet: unlike escape, which the stack
+// consumes there, back on the first screen of a sheet closes it.
+//
 // There is no drag to dismiss. The panel is a surface, not a control.
 //
 // # Presented, not nil
@@ -148,8 +156,10 @@ func (s SheetView) Build(bc *gift.BuildContext) gift.Element {
 
 // --- modifiers -------------------------------------------------------------
 
-// OnDismiss makes a tap on the scrim and the escape key call fn. A nil fn, the
-// default, makes both do nothing; see [ModalView.OnDismiss].
+// OnDismiss makes a tap on the scrim, the escape key and the back action of
+// the platform call fn. A nil fn, the default, makes all three do nothing,
+// and back is still taken, so it does not reach what is under the sheet; see
+// [ModalView.OnDismiss].
 func (s SheetView) OnDismiss(fn func()) SheetView { s.onDismiss = fn; return s }
 
 // Presented says whether the sheet is on the screen right now; see
@@ -424,7 +434,8 @@ func (n *sheetPanelNode) Layout(ctx *gift.LayoutContext, c geom.Constraints) geo
 	return geom.Sz(size.W+ext.Horizontal(), size.H+ext.Bottom)
 }
 
-// sheetKeys is the interactor of the panel: the escape key and nothing else.
+// sheetKeys is the interactor of the panel: the escape key and, as a
+// [gift.BackHandler], the back action of the platform.
 type sheetKeys struct{ onDismiss func() }
 
 // HandleEvent implements gift.Interactor.
@@ -439,4 +450,23 @@ func (k sheetKeys) HandleEvent(_ *gift.EventContext, e gift.Event) bool {
 		k.onDismiss()
 	}
 	return true
+}
+
+// CanGoBack implements gift.BackHandler: a presented sheet takes the back
+// action, with or without OnDismiss. A sheet that is not presented is not
+// asked: the panel carries [gift.Element.Hidden] itself, and gift skips hidden
+// nodes on both routes of the back action, the focused path included.
+//
+// Without OnDismiss it is a block, deliberately: back that passed through a
+// sheet which demands an answer would pop the screen behind it, or leave the
+// application, while the question is still on the screen. It is the escape
+// key's rule above, for the same reason.
+func (k sheetKeys) CanGoBack() bool { return true }
+
+// GoBack implements gift.BackHandler: it asks the application to dismiss the
+// sheet, as a tap on the scrim and escape do.
+func (k sheetKeys) GoBack(*gift.EventContext) {
+	if k.onDismiss != nil {
+		k.onDismiss()
+	}
 }

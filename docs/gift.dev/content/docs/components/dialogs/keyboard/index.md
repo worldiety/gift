@@ -54,7 +54,9 @@ the user
 - taps the key in its bottom right corner,
 - taps next to the keyboard on something that cannot take the focus, such as the page or a scroll view,
 - moves the focus to a control that is not a text field,
-- presses escape on a hardware keyboard.
+- presses escape on a hardware keyboard,
+- goes back with Android's back button or back gesture; that back does nothing else. The system keyboard of
+  Android takes back for itself before gift sees it, and goes down as well.
 
 To put it away from your own code, for example from the action of a "Done" button, call
 `DismissSoftKeyboard()` on the `*gift.App` that `gift.New` returned, on the UI goroutine. It blurs the focused

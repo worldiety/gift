@@ -869,6 +869,22 @@ type inputState struct {
 	// [EventPointerDown] is not.
 	keyPhase bool
 
+	// backEdge is the width of the edge zone of the platform's back
+	// gesture, zero where it has none; see [App.SetBackGestureEdge].
+	// backLatch is the answer [App.CanGoBack] gave when a touch came down in
+	// that zone, kept across a touch the platform cancelled and dropped when
+	// that touch is released, until the back action arrives, another press
+	// begins after it, or the gesture is abandoned; backLatchAt is the node that would have gone
+	// back then, backLatchKeyboard whether the on-screen keyboard would have
+	// taken it instead, backLatchID the touch that set it, and backLatchDown
+	// whether that touch is still down. See [App.latchBack].
+	backEdge          float32
+	backLatch         bool
+	backLatchDown     bool
+	backLatchKeyboard bool
+	backLatchAt       scene.Handle
+	backLatchID       PointerID
+
 	// cur is the pointer whose event is currently being dispatched, nil
 	// outside a pointer dispatch. It exists so that
 	// [EventContext.StealPointer] knows which capture to move without every
@@ -1180,6 +1196,9 @@ func (a *App) PointerDownAt(id PointerID, kind PointerKind, pos geom.Point, t ti
 		a.diag.DiscardedTouches++
 		return
 	}
+	// Only a touch gift keeps latches, so that its release or cancel also
+	// ends the latch; a refused finger is ignored here as everywhere else.
+	a.latchBack(id, kind, pos)
 	a.in.cur = p
 	defer func() { a.in.cur = nil }()
 	p.at = 0
@@ -1281,6 +1300,7 @@ func (a *App) PointerUpAt(id PointerID, kind PointerKind, pos geom.Point, t time
 	p.down = false
 	cap := p.capture
 	p.capture = scene.Handle{}
+	a.unlatchBack(id, kind)
 
 	if a.store.Valid(cap) {
 		inside := a.hits(cap, pos)
@@ -1303,7 +1323,10 @@ func (a *App) PointerUpAt(id PointerID, kind PointerKind, pos geom.Point, t time
 //
 // It is the right call when the window loses focus, when the platform takes a
 // gesture over or when a touch is lost. The capturing node hears
-// [EventPointerCancel] and must not treat it as an activation.
+// [EventPointerCancel] and must not treat it as an activation. A touch at the
+// edge of the platform's back gesture that the platform cancels keeps the
+// answer of [App.CanGoBack] it latched, for the back action that follows; see
+// [App.Back].
 func (a *App) PointerCancel(id PointerID) {
 	a.assertInputPhase("PointerCancel")
 	p := a.findPointer(id)
@@ -1320,6 +1343,7 @@ func (a *App) PointerCancel(id PointerID) {
 		a.deliver(cap, a.pointerEvent(EventPointerCancel, p), true)
 	}
 	p.endGesture()
+	a.keepBackLatch(id, p.kind)
 	if p.kind == PointerTouch {
 		a.releasePointer(p)
 		return
@@ -1923,8 +1947,16 @@ func (a *App) dismissSoftKeyboard() bool {
 // [App.dismissSoftKeyboard] as an application can reach it — a kiosk with a
 // "done" affordance of its own calls it — and it is what the escape key and
 // the keyboard's own dismiss key do.
+//
+// A keyboard put away from outside the tree also ends an answer an edge touch
+// latched for it (see [App.latchBack]): on Android the system keyboard takes
+// a back gesture itself and the backend reports its end here, and no back
+// action follows that the latch would wait for.
 func (a *App) DismissSoftKeyboard() bool {
 	a.assertUIGoroutine("DismissSoftKeyboard")
+	if a.in.backLatchKeyboard {
+		a.dropBackLatch()
+	}
 	return a.dismissSoftKeyboard()
 }
 

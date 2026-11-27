@@ -173,6 +173,7 @@ func (a *App) applyElement(h scene.Handle, nd *nodeData, desc childDesc, owner *
 	// follow the element is Disabled, because a button that was disabled
 	// while the mouse rested on it must not keep the hover look.
 	nd.interactor = desc.elem.Interactor
+	a.applyBackHandler(nd, desc.elem.Back)
 	a.applyDropTarget(h, nd, desc.elem.DropTarget, desc.elem.Disabled)
 	nd.focusable = desc.elem.Focusable && desc.elem.Interactor != nil
 	nd.disabled = desc.elem.Disabled
@@ -613,6 +614,11 @@ func (a *App) destroyScopes(h scene.Handle, depth int) {
 		// The counter [App.keyFallbackNode] consults, maintained for the same
 		// reason and in the same two places as a.traps above.
 		a.keyFallbacks--
+		checkTrapCount(a)
+	}
+	if nd.back != nil {
+		// The counter [App.backTarget] consults; the same again.
+		a.backHandlers--
 		checkTrapCount(a)
 	}
 	a.clearOverflow(nd)

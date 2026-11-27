@@ -24,7 +24,9 @@ ui.Popover(
 ```
 
 A press outside the card or escape calls `OnDismiss`; that press goes nowhere else, so the first tap next to an open
-popover only closes it. While the popover is open the keyboard focus is trapped inside it.
+popover only closes it. While the popover is open the keyboard focus is trapped inside it. Android's back button and
+back gesture call `OnDismiss` as well; without it they do nothing while the popover is open. See
+[Android and iOS](../../../concepts/mobile/#back).
 
 `Edge` prefers a side — `EdgeBelow`, `EdgeAbove`, `EdgeLeading`, `EdgeTrailing`, or `EdgeAuto`, the default — and
 the popover still takes the other side when only that one has room. `Arrow(false)` draws a card without an arrow,

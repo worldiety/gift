@@ -60,8 +60,9 @@ type Diagnostics struct {
 	// HitTests counts the hit tests performed, that is roughly the number of
 	// pointer events that had to find a target.
 	HitTests uint64
-	// InputEvents counts the calls into an [Interactor], including the ones
-	// that happened while an event bubbled towards the root.
+	// InputEvents counts the calls into an [Interactor] or a [BackHandler],
+	// including the ones that happened while an event bubbled towards the
+	// root.
 	InputEvents uint64
 	// Scrolls counts the times a scroll container's offset actually
 	// changed: a wheel notch, a drag step, a fling tick or a programmatic
@@ -89,6 +90,9 @@ type Diagnostics struct {
 	// not anything was focused to receive them. It is RunesTyped for a system
 	// keyboard.
 	TextReplacements uint64
+	// BackRequests counts the back actions of the platform that entered
+	// through [App.Back], whether or not gift took them.
+	BackRequests uint64
 	// KeyRepeats counts the synthetic key presses gift produced from a held
 	// key; see [KeyRepeatDelay]. [Event.Repeat] is set on each of them, so
 	// this counter is how a test tells a repeat from a second real press.

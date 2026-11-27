@@ -44,6 +44,17 @@ var pickerType = gift.RegisterType("filepicker.Picker")
 // error is logged to [PickerView.Logger]. A listing is a snapshot: the picker
 // does not watch the directory.
 //
+// # Escape and back
+//
+// Escape cancels: it calls onCancel, wherever the picker is. Android's back
+// button and back gesture follow the convention of the platform's own file
+// pickers instead and go up one directory; only in the root, ".", does back
+// cancel. A picker without onCancel declines back in the root, so that it
+// reaches what is around the picker — a [ui.Sheet] dismisses, a navigation
+// stack pops. While the alert that asks before replacing a file is up, back
+// answers it with Cancel, and escape does what it did. See
+// [gift.BackHandler].
+//
 // The settings are read on every build, with three exceptions.
 // [PickerView.Start], which is where the picker opens, and
 // [PickerView.SuggestedName], which fills the name field, apply when it is
@@ -269,17 +280,35 @@ func (p PickerView) body(ctx *gift.Context) gift.View {
 	var alert gift.View
 	if confirm {
 		name := strings.TrimSpace(pk.name.Text())
-		alert = ui.Alert(
+		cancel := func() { sl.confirm.Set(false) }
+		// Back answers the alert with Cancel, as back does on an Android
+		// dialog that can be cancelled. Without the OnBack the modal would
+		// take back and do nothing, since the alert has no OnDismiss: it
+		// deliberately has none, so that a tap beside it changes nothing.
+		alert = ui.OnBack(ui.Alert(
 			"Replace "+strconv.Quote(name)+"?",
 			"A file with that name exists in this folder. Saving replaces it.",
-			ui.AlertCancel("Cancel", func() { sl.confirm.Set(false) }),
+			ui.AlertCancel("Cancel", cancel),
 			ui.AlertDestructive("Replace", func() {
 				sl.confirm.Set(false)
 				p.onPick([]string{path.Join(pk.listing.dir, name)})
 			}),
-		)
+		), cancel)
 	}
-	return ui.Modal(body, alert)
+	// Back goes up a directory, as in Android's own file pickers, and
+	// cancels only in the root; escape cancels from anywhere. The OnBack is
+	// inside the component, later in document order than a sheet around the
+	// picker, so it goes back before the sheet does; see [gift.App.Back]. The
+	// replace alert is a focus trap inside it, and while it is up its own
+	// OnBack is the only one asked.
+	up := dir != "."
+	return ui.OnBack(ui.Modal(body, alert), func() {
+		if up {
+			p.open(pk, sl, parent(dir))
+			return
+		}
+		p.onCancel()
+	}).Disabled(!up && p.onCancel == nil)
 }
 
 // load starts reading dir. The result arrives through the request's token, so

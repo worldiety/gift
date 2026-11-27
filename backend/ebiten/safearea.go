@@ -30,11 +30,6 @@ import (
 // itself says whether anything changed since the last update looked.
 var safeAreaReport atomic.Pointer[geom.Insets]
 
-// safeAreaGame is the game a report wakes when it ticks at its idle rate; see
-// [game.wake]. One game per process is what a phone runs, and what a report
-// from the platform is about. It is nil until the first session exists.
-var safeAreaGame atomic.Pointer[game]
-
 // SetSafeArea reports the safe area of the window: per edge, how much of the
 // view the system covers or cuts off — the status bar, the navigation bar, the
 // cutout of a camera — in Ebitengine's outside units, which are density
@@ -101,9 +96,7 @@ func SetSafeArea(in geom.Insets) {
 	}
 	// A game ticking at its idle rate would apply the report up to a tick of
 	// that rate later. The rotation it belongs to is happening now.
-	if g := safeAreaGame.Load(); g != nil {
-		g.wake()
-	}
+	wakePlatformGame()
 }
 
 // reportedEdge is one edge of a report or a configuration made usable: a

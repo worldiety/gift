@@ -289,6 +289,30 @@ anything is focused.
 When the on-screen keyboard is showing, escape first puts the keyboard away and is not delivered to anybody. A
 second press reaches the screen.
 
+### Back
+
+Android's back button and back gesture are not a key. They go through `App.Back`, and Android first asks
+`App.CanGoBack` whether gift will take them, so that its predictive animation shows either the page underneath or
+the home screen. The route resembles that of escape, with one difference in the question asked:
+
+1. While the focused field has asked for a keyboard, gift's drawn one or the system's, back takes the focus from
+   it and does nothing else.
+2. Inside the active focus trap, the last node in document order whose `gift.BackHandler` can go back now is the
+   candidate. A handler that cannot is skipped and hides nothing before it.
+3. The focused node and its ancestors are asked, innermost first; the first that can go back does, unless the
+   candidate lies inside it, in which case the candidate does. A focus inside a hidden subtree, an overlay on its
+   way out or outside the active focus trap is ignored.
+4. Otherwise the candidate goes back, and without one gift declines.
+
+Unlike escape, a node that cannot go back declines rather than consuming, because whatever nobody takes leaves the
+application: a navigation stack on its root screen lets back through. A node answers back through its interactor,
+when that implements `gift.BackHandler`, or through `Element.Back`, which needs no interactor and so does not make
+the node a hit target; `ui.OnBack` wraps a view with a handler of your own that way.
+
+On Android the back gesture begins with a touch at the edge of the window that the application receives before the
+system takes it over; how gift keeps that touch from costing a second step back is described under
+[The back gesture](../mobile/#the-back-gesture).
+
 ## The clipboard
 
 A [text field](../../components/basic/text-field/) supports select all, copy, cut and paste with the shortcut
@@ -430,7 +454,7 @@ produce real events, and `AssertFocus`, `AssertNoFocus`, `AssertHovered` and `As
 
 Outside tests, `App.Focus`, `App.FocusVisible`, `App.HitTest` and `App.NodeInteraction` answer the same questions.
 [Diagnostics](../diagnostics/) counts `HitTests`, `InputEvents`, `DiscardedTouches`, `RunesTyped`,
-`TextReplacements` and `KeyRepeats`.
+`TextReplacements`, `BackRequests` and `KeyRepeats`.
 
 ## API
 
