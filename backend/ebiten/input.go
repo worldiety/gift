@@ -3,6 +3,7 @@ package ebiten
 import (
 	"io/fs"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	eb "github.com/hajimehoshi/ebiten/v2"
@@ -64,13 +65,15 @@ import (
 // Every Ebitengine reading this file takes goes through a field of this struct
 // rather than through the package function directly — [inputBridge.keyPressed]
 // and [inputBridge.appendChars] for the keyboard, [inputBridge.cursor] and
-// [inputBridge.wheel] for the mouse. They are set once, in [newInputBridge],
-// and they exist so that the edge detection, the rune forwarding, the key
-// table and the density conversion can be driven from a test: an Ebitengine
-// global means nothing outside a running game loop, and before this seam
-// existed the bridge's own test had to *reimplement* the diff it was testing.
-// A func value of a package level function is a pointer to a static funcval,
-// so the seam costs one indirect call per reading and allocates nothing.
+// [inputBridge.wheel] for the mouse, [inputBridge.touchIDs] and
+// [inputBridge.touchPos] for the touches. They are set once, in
+// [newInputBridge], and they exist so that the edge detection, the rune
+// forwarding, the key table and the density conversion can be driven from a
+// test: an Ebitengine global means nothing outside a running game loop, and
+// before this seam existed the bridge's own test had to *reimplement* the diff
+// it was testing. A func value of a package level function is a pointer to a
+// static funcval, so the seam costs one indirect call per reading and
+// allocates nothing.
 //
 // # Coordinates
 //
@@ -85,6 +88,15 @@ import (
 type inputBridge struct {
 	app   *gift.App
 	start time.Time
+
+	// backReady is set once the App has built its tree, which is the first
+	// moment a request of [Back] can reach anything. mailboxTaken says that
+	// this tick's poll took something out of the platform's mailboxes: a
+	// request of [Back], or a report of [CancelBack] or [CancelTouches]. The
+	// idle policy counts such a tick as busy; see [inputBridge.pollBack] and
+	// [inputBridge.cancelTouches].
+	backReady    bool
+	mailboxTaken bool
 
 	// density is the factor physical positions are divided by. It is
 	// refreshed from the App once per poll, because a window dragged to
@@ -171,6 +183,16 @@ type inputBridge struct {
 	// buffers are allocated once and never again.
 	ids, prevIDs []eb.TouchID
 	pos, prevPos []geom.Point
+
+	// cancelled are the touches the platform took over that Ebitengine still
+	// lists; see [inputBridge.cancelTouches].
+	cancelled []eb.TouchID
+
+	// touchIDs and touchPos are the touch readings; see the type comment.
+	// A desktop has none, so only a script makes [inputBridge.pollTouches]
+	// run there.
+	touchIDs func([]eb.TouchID) []eb.TouchID
+	touchPos func(eb.TouchID) (float64, float64)
 
 	// panel is the touch panel read past the display server, or nil; see
 	// touchpanel.go. panelEvs is the reused buffer of its events, contacts
@@ -263,11 +285,15 @@ func newInputBridge(app *gift.App) *inputBridge {
 		wheel:       eb.Wheel,
 		dropped:     droppedFiles,
 
-		runes:   make([]rune, 0, 16),
-		ids:     make([]eb.TouchID, 0, 8),
-		prevIDs: make([]eb.TouchID, 0, 8),
-		pos:     make([]geom.Point, 0, 8),
-		prevPos: make([]geom.Point, 0, 8),
+		touchIDs: eb.AppendTouchIDs,
+		touchPos: eb.TouchPositionF,
+
+		runes:     make([]rune, 0, 16),
+		ids:       make([]eb.TouchID, 0, 8),
+		prevIDs:   make([]eb.TouchID, 0, 8),
+		pos:       make([]geom.Point, 0, 8),
+		prevPos:   make([]geom.Point, 0, 8),
+		cancelled: make([]eb.TouchID, 0, 8),
 	}
 }
 
@@ -297,6 +323,10 @@ func (b *inputBridge) poll() {
 	}
 	b.pollMouse(now)
 	b.pollDrops()
+	b.mailboxTaken = false
+	// The back action of the platform, one request per tick, before the
+	// touches of this tick; see [inputBridge.pollBack] for why here.
+	b.pollBack()
 	b.pollTouches()
 	if b.panel != nil {
 		b.pollPanel(now, b.screen())
@@ -488,20 +518,26 @@ type wheelSample struct {
 }
 
 // pollTouches turns the current set of touch identifiers into down, move and
-// up events by comparing it with the set of the previous tick.
+// up events by comparing it with the set of the previous tick. A touch the
+// platform took over ends with a cancel instead; see
+// [inputBridge.cancelTouches].
 //
 // Additional fingers are passed to gift and rejected there rather than being
 // filtered here, so that the discard is counted in one place and the rule
 // lives with the pointer model instead of with the platform adapter; see
 // [gift.Diagnostics.DiscardedTouches].
 func (b *inputBridge) pollTouches() {
-	b.ids = eb.AppendTouchIDs(b.ids[:0])
+	b.ids = b.touchIDs(b.ids[:0])
+	b.cancelTouches()
+	if len(b.cancelled) != 0 {
+		b.skipCancelled()
+	}
 	if len(b.ids) == 0 && len(b.prevIDs) == 0 {
 		return
 	}
 	b.pos = b.pos[:0]
 	for _, id := range b.ids {
-		x, y := eb.TouchPositionF(id)
+		x, y := b.touchPos(id)
 		pos := b.logical(x, y)
 		b.pos = append(b.pos, pos)
 		if indexOf(b.prevIDs, id) >= 0 {
@@ -522,6 +558,80 @@ func (b *inputBridge) pollTouches() {
 	}
 	b.ids, b.prevIDs = b.prevIDs, b.ids
 	b.pos, b.prevPos = b.prevPos, b.pos
+}
+
+// touchCancels says that [CancelTouches] was called and no tick has
+// cancelled the touches yet.
+var touchCancels atomic.Bool
+
+// CancelTouches reports that the platform took every touch that is down
+// over: Android's MotionEvent.ACTION_CANCEL, whatever caused it, the back
+// gesture for the touch at the edge it began with, another system gesture,
+// a parent view or palm rejection. Ebitengine v2.10.5 ignores ACTION_CANCEL,
+// so without this report such a touch stays pressed for ever; a host forwards
+// every ACTION_CANCEL, back wired up or not, and releases the touches right
+// after this call; see [NewGame].
+//
+// The next tick ends those touches with [gift.App.PointerCancel] and not with
+// a release, so that the press they made activates nothing, and a touch at
+// the edge keeps the answer it latched for the back that follows; see
+// [gift.App.Back]. The touches are ignored until the platform reports them
+// gone.
+//
+// It may be called from any goroutine and never blocks. With [Config.NoInput]
+// the report is discarded.
+func CancelTouches() {
+	touchCancels.Store(true)
+	wakePlatformGame()
+}
+
+// cancelTouches takes a report of [CancelTouches] out of the mailbox, if
+// there is one, and ends every touch gift was told of with
+// [gift.App.PointerCancel]. It runs in [inputBridge.pollTouches], after this
+// tick's touches were read and before they are compared with the last
+// tick's. The touches cancelled, and the ones listed now that gift has not
+// heard of yet, are remembered in cancelled and ignored until Ebitengine no
+// longer lists them, whichever of the host's two calls the tick saw first:
+// a touch that vanishes after its cancel is never reported as released as
+// well, and one still listed is reported neither as moved nor as new.
+func (b *inputBridge) cancelTouches() {
+	if !touchCancels.Load() || !touchCancels.Swap(false) {
+		return
+	}
+	for _, id := range b.prevIDs {
+		b.app.PointerCancel(gift.PointerID(id))
+		b.cancelled = append(b.cancelled, id)
+	}
+	for _, id := range b.ids {
+		if indexOf(b.cancelled, id) < 0 {
+			b.cancelled = append(b.cancelled, id)
+		}
+	}
+	b.prevIDs, b.prevPos = b.prevIDs[:0], b.prevPos[:0]
+	b.mailboxTaken = true
+}
+
+// skipCancelled forgets the cancelled touches Ebitengine no longer lists, and
+// removes the ones it still lists from this tick's touches; see
+// [inputBridge.cancelTouches].
+func (b *inputBridge) skipCancelled() {
+	kept := b.cancelled[:0]
+	for _, id := range b.cancelled {
+		if indexOf(b.ids, id) >= 0 {
+			kept = append(kept, id)
+		}
+	}
+	b.cancelled = kept
+	if len(kept) == 0 {
+		return
+	}
+	ids := b.ids[:0]
+	for _, id := range b.ids {
+		if indexOf(kept, id) < 0 {
+			ids = append(ids, id)
+		}
+	}
+	b.ids = ids
 }
 
 func indexOf(ids []eb.TouchID, id eb.TouchID) int {

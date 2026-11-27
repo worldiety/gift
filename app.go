@@ -150,6 +150,11 @@ type App struct {
 	// [App.keyFallbackNode].
 	keyFallbacks int
 
+	// backHandlers is the number of mounted nodes with a back handler: an
+	// [Element.Back], or else an interactor that is a [BackHandler]. Same
+	// shape and same reason as traps above; see [App.backTarget].
+	backHandlers int
+
 	// dropTargets is the number of mounted, enabled nodes that declare
 	// [Element.DropTarget], behind [App.HasDropTargets]; dropCaps is what
 	// [App.SetDropCapabilities] said, and dropWarned that the one debug line

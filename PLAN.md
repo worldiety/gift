@@ -159,16 +159,19 @@ Ressourcenvertrag weiter.
 Font-Referenzlisten. Nur `backend/ebiten` kennt den Glyph-Atlas. Dadurch
 benutzen Messung und Ausgabe zwingend dieselben Shaping-Ergebnisse.
 
-Fuer Android und iOS (Abschnitt 52) kommen in `backend/ebiten` drei Dateien
+Fuer Android und iOS (Abschnitt 52) kommen in `backend/ebiten` vier Dateien
 hinzu, ohne die Richtung zu aendern: `mobile.go` (`NewGame`), `ime.go` (die
-Systemtastatur ueber `exp/textinput`) und `safearea.go`. Letztere haelt
-prozessweiten Zustand, wie es das Backend schon fuer die Ablage unter
-macOS (`activeMacDrops`) tut: einen Briefkasten fuer `SetSafeArea` (die
-letzte Meldung und das Spiel, das sie weckt). Die Plattform meldet auf
-ihrem eigenen Thread, das Spiel holt die Meldung auf der UI-Goroutine ab.
-Kern und `ui` kennen nur rendererneutrale Begriffe (`App.SetSafeArea`,
-`TextInputClient`, `App.SetPlatformKeyboardActive`); `backend` importiert
-`ui` weiterhin nicht.
+Systemtastatur ueber `exp/textinput`), `safearea.go` und `back.go`. Die
+letzten beiden halten prozessweiten Zustand, wie es das Backend schon fuer
+die Ablage unter macOS (`activeMacDrops`) tut: je einen Briefkasten fuer
+`SetSafeArea` und fuer `Back`/`CanGoBack` (die letzte Meldung bzw. die
+offenen Anfragen und Meldungen der Geste), und beide wecken dasselbe Spiel
+(`platformGame`). Die Plattform meldet auf ihrem eigenen Thread, das Spiel
+holt die Meldung auf der UI-Goroutine ab. Kern und `ui` kennen nur
+rendererneutrale Begriffe (`App.SetSafeArea`, `TextInputClient`,
+`App.SetPlatformKeyboardActive`, `App.Back`, `App.CanGoBack`,
+`App.BackCancel`, `App.SetBackGestureEdge`, `BackHandler`); `backend`
+importiert `ui` weiterhin nicht.
 
 Skalierung erfolgt entlang dieser Grenzen, nicht durch ein Package je Widget
 oder durch einen presentation/core-Sammelbereich. Loader und Caches koennen
@@ -6235,7 +6238,7 @@ Stand R4, Teil A: kameratreu durch Abgleich mit der Vorschau (22.11.2026):
   Aufnahmen mit Creative Style Standard und Neutral, Kontrast +-3, DRO aus
   und Lv5. DRO lokal nachbilden. Eine echte DNG fehlt weiter.
 
-## 52. Android und iOS: mobiles Backend, Systemtastatur, Safe Area
+## 52. Android und iOS: mobiles Backend, Systemtastatur, Safe Area, Zurueck
 
 Anlass (26.11.2026): Eine gift-Anwendung soll ohne nennenswerten
 Zusatzcode auch auf Android und iOS laufen. Ein Demo (Kotlin-Activity,
@@ -6249,6 +6252,11 @@ registriert auf macOS eine Objective-C-Klasse
 (`EbitengineTextInputClient`) und ueberall passive Haken fuer Ebitengines
 VM-Gast; eine Eingabesitzung oeffnet auf dem Desktop nie etwas, weil die
 Bruecke nur bei `mobilePlatform` entsteht.
+
+Nachtrag (27.11.2026): Das Systemzurueck von Android (Taste und
+Randgeste) folgt jetzt der Navigation der Anwendung und verlaesst sie
+erst auf der ersten Ansicht; siehe "Zurueck (Android)". Escape, der
+Desktop und iOS bleiben unveraendert.
 
 ### Das Spiel: `NewGame`
 
@@ -6352,6 +6360,206 @@ in sie getippt wird. `TextInputState.Secure` wird gemeldet, damit ein
 Backend den Modus anfordert, sobald es das kann; `Config.NoNativeKeyboard`
 mit dem Kioskschalter gibt jedem Feld die gezeichnete Tastatur.
 
+### Zurueck (Android)
+
+Android hat ein Systemzurueck: die Zuruecktaste und die Wischgeste vom
+Rand. Der Nutzer erwartet davon, was die Zurueck-Affordanz der Anwendung
+tut (einen Bildschirm vom Stack nehmen, ein Sheet, einen Dialog, ein Menue
+schliessen), und dass die Anwendung erst auf ihrer ersten Ansicht
+verlassen wird. Bis hierhin gab der Host Zurueck an Android zurueck, das
+die Task in den Hintergrund schob, egal wie tief man navigiert war.
+
+Warum nicht Escape: Escape ist eine Taste, und ein Knoten, der sie
+verbraucht, sagt nichts darueber, ob etwas geschehen ist.
+`ui.NavigationStack` verbraucht Escape auf seinem Wurzelbildschirm mit
+Absicht, damit die Taste nicht weiterwandert und etwas schliesst, das man
+nicht sieht. Zurueck hat einen Dritten, den Escape nicht hat: das
+Betriebssystem, das die Anwendung verlaesst, wenn gift nicht zurueckgeht.
+Ein Knoten, der Zurueck nicht ausfuehren kann, muss es deshalb ablehnen,
+nicht verbrauchen. Das Verhalten von Escape bleibt, wie es ist; die beiden
+Wege sind getrennt, und ein Test treibt Zurueck mit `Harness.Back`, nicht
+mit `Harness.Key`.
+
+Predictive Back verlangt die Antwort vorher. Android zeigt waehrend der
+Geste, also bevor der Finger losgelassen ist, entweder die Seite
+darunter oder den Startbildschirm, und eine Anwendung, die sich
+angemeldet hat (ab `targetSdk` 36 der Standard), bekommt weder
+`onBackPressed` noch die Zuruecktaste, sondern nur noch den Callback,
+den sie vorher aktiviert hat. Zurueck ist deshalb zuerst eine Frage und
+dann eine Handlung: `gift.BackHandler` hat `CanGoBack() bool` und
+`GoBack(*EventContext)`. Ein Knoten antwortet entweder ueber seinen
+Interaktor, wenn der die Schnittstelle erfuellt (beim Anwenden des
+Elements erkannt und am Knoten gemerkt, gezaehlt wie
+`Element.KeyFallback`), oder ueber das Feld `Element.Back`, das keinen
+Interaktor braucht: der Knoten ist dann kein Trefferziel und kein Halt
+fuer blubbernde Ereignisse. Das brauchen `ui.OnBack` und `Modal`, denn
+eine Huelle, die nur "Zurueck geht hierhin" bedeutet, darf keinen Tipp
+nehmen, der dem Geschwister darunter gehoert. Sind beide gesetzt, wird
+`Element.Back` gefragt. `CanGoBack` ist ein reines Lesen des Build- und
+Knotenzustands, ohne Seiteneffekt und ohne Allokation, weil das Backend
+es auf Android nach jedem Update fragt. Wahr heisst "ich nehme es", auch
+als bewusste Sperre, die nichts tut: ein Modal ohne `OnDismiss` ist wie
+ein Android-Dialog, der nicht abbrechbar ist, damit Zurueck eine
+Anwendung nie hinter einem Dialog verlaesst, der eine Antwort verlangt.
+`GoBack` laeuft nur direkt nach einem wahren `CanGoBack`, in der
+Eingabephase.
+
+Der Weg (`App.Back`, und dieselbe Frage ohne Handlung `App.CanGoBack`):
+(1) solange das fokussierte Feld eine Tastatur angefordert hat, gifts
+gezeichnete oder die des Systems, nimmt Zurueck ihm den Fokus und tut
+sonst nichts; `CanGoBack` ist so lange wahr (auf Android nimmt die
+Eingabemethode Zurueck vorher selbst, siehe unten). (2) Kandidat L ist der
+letzte Knoten in Dokumentreihenfolge innerhalb der aktiven Fokusfalle,
+dessen `BackHandler` jetzt `CanGoBack` bejaht, ohne verdeckte,
+deaktivierte und abgehende Overlays. Ablehnende werden uebersprungen, so
+verdeckt ein spaeterer Handler, der ablehnt, keinen frueheren mehr: ein
+innerer Stack auf seiner Wurzel laesst den aeusseren poppen. (3) Der
+fokussierte Knoten und seine Vorfahren werden von innen nach aussen
+gefragt; der erste, der bejaht (C), geht zurueck, ausser L liegt in C,
+dann L. Ein Fokus in einem verdeckten Teilbaum, in einem abgehenden
+Overlay oder ausserhalb der aktiven Fokusfalle zaehlt nicht. (4) Sonst L.
+Die Dokumentreihenfolge ist die Regel von `KeyFallback`: ein
+verschachtelter Stack gewinnt gegen den aeusseren, ein Sheet oder Modal
+ueber dem Inhalt steht spaeter im Baum. Der Fokus entscheidet zwischen
+Nachbarn (zwei Stacks nebeneinander: der, in dem gearbeitet wird), aber
+nicht gegen einen tieferen: ein gerade getippter Tab ist fokussiert und
+liegt nicht im Stack seines Tabs, Zurueck poppt trotzdem diesen Stack. Ein
+Stack auf seiner Wurzel lehnt ab, sodass Zurueck ein Sheet um ihn
+schliesst; mit Escape geht das nicht. Ein Backend ruft `App.Back`
+hoechstens einmal pro Eingabephase, weil die Handler aus dem Build
+antworten. Gezaehlt wird in `Diagnostics.BackRequests`.
+
+Die Rastung fuer die Geste: Androids Zurueck-Geste beginnt mit einer
+Beruehrung am Rand, die die Anwendung bekommt, bevor das System sie
+abbricht. Fuer gift ist das ein gewoehnlicher Druck, und ein Druck
+ausserhalb eines Menues oder Popovers schliesst es. Ohne Rastung fand
+das folgende Zurueck dann nichts mehr und verliess die Anwendung, oder
+es poppte den Bildschirm unter dem Menue (auf dem Emulator gefunden).
+Darum merkt sich ein Touch-`PointerDown` innerhalb der Randzone links
+oder rechts das Zurueck-Ziel dieses Moments, wenn es eins gibt; ist eine
+Tastatur angefordert, rastet die Tastatur selbst, denn der Druck neben
+das Feld nimmt sie schon weg, und das folgende Zurueck ist dann an sie
+verbraucht, statt auch noch zu poppen; nimmt die Systemtastatur die
+Geste selbst und geht zu (`App.DismissSoftKeyboard` vom Backend), faellt
+diese Rastung mit ihr, denn es folgt kein Zurueck. `CanGoBack` bleibt
+gerastet wahr. Ist beim naechsten `Back()` das Ziel ein anderes als das
+gemerkte und kann das gemerkte nicht mehr zurueck (das Menue ist zu,
+oder eine Fokusfalle, die der Druck aufgestellt hat, schliesst es aus),
+wird Zurueck verbraucht und tut nichts. Hat die Beruehrung nur den Fokus
+verschoben, wie es ein Druck auf etwas nicht Fokussierbares tut, geht
+das gemerkte Ziel zurueck; sonst wirkt es normal. Die Rastung
+ueberdauert nur eine Beruehrung, die die Plattform abbricht
+(`App.PointerCancel`, so meldet jedes Backend "die Plattform hat die
+Geste uebernommen"). Das Loslassen der rastenden Beruehrung loest sie
+immer: das war ein Tipp am Rand und keine Geste, etwa auf die
+Zurueck-Taste der Leiste, die dort sitzt, oder ausserhalb eines Menues,
+das er geschlossen hat. Sonst haette ein Tipp auf diese Taste, der zur
+Wurzel poppt, oder ein Tipp, der ein Menue auf der Wurzel schliesst, das
+naechste Zurueck verschluckt, statt die Anwendung zu verlassen. Jeder
+andere Druck (nicht am Rand, oder Maus) loest sie ebenso, und jede neue
+Beruehrung am Rand rastet neu gegen den Baum, den sie vorfindet; nur ein
+weiterer Finger, am Rand oder nicht, solange der rastende noch liegt,
+gehoert zur selben Geste. Ein weiterer Finger, den gift ablehnt
+(`Diagnostics.DiscardedTouches`), rastet weder noch loest er, denn sein
+Loslassen erreicht keinen Zeiger, der die Rastung loesen koennte. Bricht
+der Nutzer die Geste ab, meldet das Backend `App.BackCancel` (Android:
+`handleOnBackCancelled`), und die Rastung faellt, damit `CanGoBack` auf
+der ersten Ansicht nicht wahr bleibt und die naechste Geste nicht ins
+Leere geht.
+
+Die Randzone ist eine Plattformtatsache wie die Systemtastatur: der Kern
+haelt den Mechanismus, ausgeschaltet (Breite 0), und das Backend meldet
+die Breite mit `App.SetBackGestureEdge`. backend/ebiten tut das nur fuer
+`GOOS=android`, mit 40 logischen Pixeln (Androids Zone ist 24 dp bei der
+Standardempfindlichkeit, breiter bei der hoechsten). Auf dem Desktop, auf
+iOS, in gifttest und in auto rastet nichts; ein Test des
+Android-Verhaltens setzt `h.App().SetBackGestureEdge(40)` selbst.
+
+Was die Views tun: NavigationStack ruft `onBack` oberhalb der Wurzel;
+Sheet, Modal, Alert und Popover rufen `OnDismiss` oder sperren; Menue und
+Kontextmenue schliessen; `imageviewer.Fullscreen` schliesst erst die
+Karte, dann den Betrachter; mit `Closable(false)` ist nur das Schliessen
+des Betrachters gesperrt, und waehrend er schliesst, tut Zurueck nichts;
+der Dateiwaehler geht ein Verzeichnis hoch, dann `onCancel`, sonst lehnt
+er ab. `ui.OnBack(content, action)` ist der Haken fuer eigene Navigation
+(Assistent, Pager), `.Disabled(b)` sagt, dass es nichts zum Zurueckgehen
+gibt; das steht im Build, aus demselben Grund wie `CanGoBack`.
+
+Das Backend nimmt Zurueck wie die Safe Area als prozessweiten Briefkasten:
+`backend/ebiten.Back()` zaehlt atomar eine Anfrage und weckt das Spiel,
+von jedem Thread, auch bevor das Spiel existiert, und blockiert nie. Das
+Spiel fuehrt eine Anfrage pro Tick in der Eingabephase aus und haelt sich
+wach, solange weitere warten. Eine pro Tick, weil die Handler
+Build-Zustand lesen: zwei schnelle Zurueck nehmen zwei Bildschirme vom
+Stack, der zweite nach dem Build des ersten, und nicht zweimal denselben.
+Nach jedem Update fragt das Spiel `App.CanGoBack` (auf Android oder wenn
+ein Zuhoerer registriert ist), legt die Antwort in ein `atomic.Bool`
+(`backend.CanGoBack`) und ruft bei einer Aenderung den Zuhoerer von
+`backend.SetBackListener` auf seiner Goroutine; ein neuer Zuhoerer hoert
+den aktuellen Wert einmal. Ein unveraenderter Tick alloziert nichts.
+gobind traegt keine Funktionswerte, also ist der Zuhoerer eine
+Schnittstelle `BackListener`, die das gebundene Paket mit derselben
+Methode deklariert und weiterreicht, wie bei `SetSafeArea`;
+`SetBackListener(nil)` entfernt ihn. `backend.CancelTouches` und
+`backend.CancelBack` sind Merker, die der naechste Tick abholt: der
+erste beendet die liegenden Beruehrungen mit `App.PointerCancel` statt
+mit einem Loslassen und ignoriert sie, bis Ebitengine sie nicht mehr
+fuehrt, der zweite erreicht `App.BackCancel`. Mit `Config.NoInput`
+werden Anfragen und Meldungen verworfen und die Antwort ist falsch. Die
+Antwort kann einen Frame alt sein: kommt Zurueck genau in dem Moment, in
+dem gift nicht mehr kann, lehnt gift ab und der Druck tut nichts; der
+naechste geht an Android.
+
+Der Host (Kotlin, `ComponentActivity`, androidx.activity ab 1.8) meldet
+sich im Manifest mit `android:enableOnBackInvokedCallback="true"` an und
+registriert zwei `OnBackPressedCallback`s. Der zuletzt hinzugefuegte
+wird zuerst gefragt; er ist genau dann aktiv, wenn gift zurueckgehen
+kann, ruft `Mobile.back()` und bei abgebrochener Geste
+`Mobile.cancelBack()`. Der Zuhoerer postet auf den Hauptthread und liest
+dort `Mobile.canGoBack()` neu, statt den uebergebenen Wert zu nehmen,
+damit sich zwei Posts nicht vertauschen. Darunter liegt "verlassen",
+immer aktiv, mit `moveTaskToBack(true)`, nie `finish()`, weil Ebitengine
+seine Ansicht im selben Prozess nicht neu aufsetzen kann. Immer aktiv,
+weil die erste Fassung (aktiv nur unter API 31 oder ohne Task-Wurzel) im
+E2E-Test scheiterte: auf dem Android-16-Emulator (API 36, `targetSdk` 35
+und 36, `enableOnBackInvokedCallback`) beendete das System die
+Wurzel-Activity, wenn kein Callback aktiv war, statt die Task in den
+Hintergrund zu schieben, wie es die Aenderung in API 31 nahelegt. Der
+naechste Start legte eine zweite Ebitengine-Ansicht im selben Prozess an
+("atlas: requestToRestoreGPUResources was called unexpectedly"), und der
+Prozess endete. Der Preis: keine vorausschauende Animation zum
+Startbildschirm.
+
+Die `EbitenView`-Unterklasse gibt `KEYCODE_BACK` in `onKeyDown` und
+`onKeyUp` mit false zurueck, damit der alte Tastenweg (unter API 33,
+oder unter `targetSdk` 36 ohne Anmeldung) ueber `Activity.onBackPressed`
+beim `OnBackPressedDispatcher` ankommt; `EbitenView` verbraucht sonst
+jede Taste. Sie behandelt ausserdem `MotionEvent.ACTION_CANCEL`, die
+zweite Korrektur aus dem E2E-Test: Ebitengine v2.10.5 ignoriert es, die
+Geste bricht aber die Randberuehrung der Anwendung ab, die dann
+gedrueckt bliebe, sodass der naechste Tipp verschluckt wurde. Die
+Unterklasse ruft zuerst `Mobile.cancelTouches()`, damit gift einen
+Abbruch hoert und kein Loslassen, das an der letzten Position eine Taste
+ausloesen wuerde, und laesst dann jeden Zeiger in Ebitengine los
+(`Ebitenmobileview.updateTouchesOnAndroid` mit `ACTION_UP`; die Position
+ist gleich).
+
+Zurueck bei offener Systemtastatur erreicht die Activity nicht: die
+Eingabemethode verbraucht es selbst und geht zu, Ebitengine meldet das
+Ende der Texteingabe, und gift nimmt dem Feld den Fokus. iOS hat kein
+Systemzurueck; dort ist nichts zu tun.
+
+E2E auf dem Emulator (API 36): Zuruecktaste und Geste geprueft fuer
+NavigationStack, Sheet, Alert, Menue und Systemtastatur; Verlassen ueber
+`moveTaskToBack` behaelt Zustand und PID. Gefunden und behoben: die zwei
+Host-Korrekturen oben (`leave` immer aktiv, `ACTION_CANCEL`) und die
+Rastung fuer die Geste. Mit `CancelTouches` und `CancelBack` erneut
+geprueft: eine Geste, die auf der Zurueck-Taste der Leiste beginnt, poppt
+genau einmal; ein Tipp am Rand, der ein Menue auf der ersten Ansicht
+schliesst, schaltet den Callback ab; eine abgebrochene Geste meldet
+`CancelBack` und schaltet ihn ebenso ab; die Geste bei offenem Menue
+schliesst nur das Menue.
+
 ### Plattformpakete
 
 `clipboard`, `notify`, `kiosk/system` und `typst/embedded` haben auf iOS
@@ -6376,7 +6584,14 @@ Beim Nutzer: Android-Geraet und iPhone, nicht nur Emulator und Simulator.
 
 Offen: `DateField` und `TimeField` als `TextInputClient` mit Ziffernmodus,
 sobald Ebitengine Eingabetypen kennt; eine rendererneutrale Meldung des
-Rechtecks der Systemtastatur an die vorhandene Freistellung.
+Rechtecks der Systemtastatur an die vorhandene Freistellung; Zurueck auf
+echten Geraeten pruefen, unter API 33 (Tastenweg); Ebitengine sollte
+`ACTION_CANCEL` selbst behandeln (upstream melden), dann entfaellt die
+Korrektur im Host; schnelle Tipps (unter etwa 100 ms) wurden auf dem
+Emulator nicht zuverlaessig erkannt (TPS im Leerlauf?), gesondert
+untersuchen; der Fortschritt der Geste (`handleOnBackProgressed`) wird
+nicht an gift gereicht, ein Stack zeigt die Seite darunter also nicht
+schon waehrend der Geste.
 
 ## Vorgemerkt: Fokusring als Halo ausserhalb
 

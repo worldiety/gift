@@ -128,6 +128,10 @@ var views = []struct {
 		why: "a wrapper that takes drops for its content; size and style belong to the content",
 	},
 	{
+		name: "ui.OnBack", set: setMinimal, v: ui.OnBack(ui.Box(), func() {}),
+		why: "a wrapper that gives its content a back action; size and style belong to the content",
+	},
+	{
 		name: "ui.Stepper", set: setMinimal, v: ui.Stepper(0, nil),
 		why: "a fixed 94 by 32 pair of buttons, as UIStepper; it has no box of its own to size or style",
 	},

@@ -48,6 +48,12 @@ scrim swallows the tap and nothing happens, which is what a dialog that demands 
 tap never reaches the content below. A modal does not react to the escape key; a sheet does. Closing is always
 your state change: set the state to closed in `OnDismiss` and in the buttons of the dialog.
 
+**Android back.** The back button and the back gesture of Android call `OnDismiss` while the modal is presented.
+Without it they do nothing, as with an Android dialog that is not cancelable: back never pops the screen behind
+the dialog and never leaves the application from behind it. Unlike escape, which a modal ignores, back is the
+modal's to answer, whether anything inside it is focused or not. The modal answers it through `Element.Back`,
+without being a hit target of its own. See [Android and iOS](../../../concepts/mobile/#back).
+
 **The scrim.** It defaults to `ColorLabel` at a fifth of its strength, so it darkens the light theme and lightens
 the dark one. `Scrim` sets another color. `ui.ColorClear` gives an invisible scrim that still blocks input:
 

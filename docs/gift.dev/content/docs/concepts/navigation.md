@@ -133,8 +133,13 @@ There are two ways to go back in a navigation stack, and both call your `onBack`
    which is the normal case on a touch panel. On the root screen the stack consumes escape and does nothing, so
    the key does not travel on and close something else.
 
-There is no edge swipe and no system back button. A horizontal drag near the edge belongs to horizontally
-scrolling content such as an [ImageGallery](../../components/lists/image-gallery/).
+On Android the back button and the back gesture call `onBack` as well, on every screen but the root. On the root
+the stack declines, so that back reaches a sheet or a `ui.OnBack` around the stack and, when nothing takes it,
+leaves the application; and an open modal takes back before the stack under it. With nothing focused back goes
+to the last stack in document order that can pop, so a nested stack on its root screen lets the stack around it
+pop. The route and the host's part are on [Android and iOS](../mobile/#back). gift itself draws no edge swipe:
+a horizontal drag near the edge belongs to horizontally scrolling content such as an
+[ImageGallery](../../components/lists/image-gallery/).
 
 When stacks are nested, or there is one stack per tab, an unfocused escape goes to the last stack in document
 order that is not hidden. A stack in an inactive tab or on a covered screen is never a candidate, so escape pops
@@ -177,10 +182,14 @@ func editScreen(ctx *gift.Context) gift.View {
 ```
 
 {{< callout type="warning" >}}
-A modal does not handle the escape key, and its focus trap does not stop an unfocused escape from reaching a
-navigation stack **underneath** it. With an alert open over a stack and nothing focused, escape calls the stack's
-`onBack` and pops the screen behind the alert. If that matters, check in `onBack` whether a dialog is open. The
-example above is safe: while the alert is open, `dirty` is still true, so `onBack` only asks again. A [Sheet](#sheet) does not have this problem: it handles escape itself.
+A modal does not handle the escape key, but its focus trap bounds where an unfocused escape goes. Opening the
+alert takes the focus away, and the stack the key would otherwise fall back to lies outside the trap, so with an
+alert open over a stack and nothing focused, escape does nothing and the screen behind the alert stays. A
+**focused** key is different: it bubbles from the focused view along the tree and out of the trap, so escape on a
+button inside a dialog that sits inside a screen of the stack reaches the stack's `onBack`. If that matters, check
+in `onBack` whether a dialog is open. The example above is safe either way: while the alert is open, `dirty` is
+still true, so `onBack` only asks again. A [Sheet](#sheet) handles escape itself. Android's back stays inside an
+open modal, whether something is focused or not.
 {{< /callout >}}
 
 ## TabBar
@@ -333,7 +342,8 @@ func withSheet(ctx *gift.Context) gift.View {
 focused. A sheet without `OnDismiss` can only be closed by your code. There is no drag to dismiss.
 
 One exception: a navigation stack inside the sheet gets escape first, and on its root screen it consumes the key.
-Escape then never reaches the sheet, so give such a sheet a button that closes it.
+Escape then never reaches the sheet, so give such a sheet a button that closes it. Android's back is different: the
+stack pops, and on its root screen it lets back through to the sheet's `OnDismiss`.
 
 Inside a `ui.Window`, a sheet sits above gift's on-screen keyboard while the keyboard is showing and gets shorter
 by its height, so a text field at the bottom of the sheet stays visible. See

@@ -219,6 +219,41 @@ func TestGreeting(t *testing.T) {
 }
 ```
 
+Android's system back is not a key and has two calls of its own, which go through the route described on
+[Android and iOS](../mobile/#back):
+
+- `h.Back()` goes back as the button or the gesture does, in an input phase of its own, settles, and reports
+  whether gift took it. False is what would leave the application on a phone.
+- `h.CanGoBack()` asks the question Android asks before the gesture, without doing anything. Assert it on the root
+  screen to make sure back leaves the application there and does not get stuck.
+
+```go
+h.Find(gifttest.ByKey("open-message")).Tap()
+if !h.Back() {
+	t.Fatal("back did not pop the message")
+}
+if h.CanGoBack() {
+	t.Fatal("back would not leave the application from the inbox")
+}
+```
+
+The back gesture starts with a touch at the edge of the window, which the application gets and the system then
+cancels. The harness has no such gesture until the test reports Android's edge zone, as the Ebitengine backend does
+on Android, with `h.App().SetBackGestureEdge(40)`. A test then plays the gesture with `h.TouchDownAt` within 40
+pixels of the left or the right edge and `h.CancelTouch`, then `h.Back()`, or `h.CancelBack()` for a gesture the
+user abandoned. A touch lifted with `h.TouchUpAt` is a tap, not the gesture. That is how to check that the gesture's
+touch closing a menu as a press outside it does not also pop the screen under the menu:
+
+```go
+h.App().SetBackGestureEdge(40)
+h.TouchDownAt(geom.Pt(5, h.Size().H/2))
+h.CancelTouch()
+if !h.CanGoBack() {
+	t.Fatal("the edge touch closed the menu and back would leave the application")
+}
+h.Back() // spent on the menu the touch closed; the screen stays
+```
+
 ### Every action checks where it landed
 
 Before `Click`, `Press`, `Hover`, `Tap`, `LongPress`, `Drag`, `DragTo`, `Swipe` or `Fling` dispatches its
@@ -481,6 +516,7 @@ release behave like two events, not like one:
 | `text`                                                           | `text`, typed character by character          |
 | `replaceText`                                                    | `text`, `deleteBefore`, `deleteAfter` in bytes; one edit of a system keyboard, see [Android and iOS](../mobile/) |
 | `focus`                                                          | `forward`, default `true`                     |
+| `back`                                                           | none; Android's system back, see [Android and iOS](../mobile/#back) |
 | `dragOver`                                                       | `x`, `y` (omitted: the last position), `kinds` from `"file"`, `"text"`, `"url"` (empty: not reported); see [Drag and Drop](../drag-and-drop/) |
 | `drop`                                                           | `x`, `y`, `files` (absolute paths), `urls`, `dropText`; dropped in that order |
 | `dragLeave`                                                      | none; the drag leaves the window              |

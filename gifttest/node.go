@@ -835,6 +835,48 @@ func (h *Harness) ReplaceText(deleteBefore, deleteAfter int, text string) {
 	h.Settle()
 }
 
+// Back performs the back action of the platform (on Android the back button
+// or back gesture) in an input phase of its own, settles, and reports whether
+// gift took it (see [gift.App.Back]). False is what makes a real backend leave
+// the action to the platform, which on Android's first view leaves the
+// application; a test asserts it to say "back would leave the app here".
+//
+// No touch latches the answer here unless the test reports the edge zone of
+// Android's back gesture with h.App().SetBackGestureEdge, as backend/ebiten
+// does on Android; see [gift.App.SetBackGestureEdge].
+//
+// It is its own channel and not [Harness.Key] with escape, because the two
+// differ on purpose: escape is a key that a node may consume without doing
+// anything, back is a question the operating system asks before the gesture
+// starts. A test of back navigation drives this, not the key.
+func (h *Harness) Back() bool {
+	h.t.Helper()
+	h.beginInput()
+	ok := h.app.Back()
+	h.Settle()
+	return ok
+}
+
+// CancelBack reports that the platform's back gesture was abandoned, as
+// Android's back callback hears in handleOnBackCancelled, in an input phase of
+// its own, and settles; see [gift.App.BackCancel].
+func (h *Harness) CancelBack() {
+	h.t.Helper()
+	h.beginInput()
+	h.app.BackCancel()
+	h.Settle()
+}
+
+// CanGoBack reports what [Harness.Back] would answer now, without acting (see
+// [gift.App.CanGoBack]). It is the value a backend publishes to the platform
+// after every update; on Android it enables the application's back callback.
+// It reads the state of the last settle, so a test asks it after the input
+// that changed the tree.
+func (h *Harness) CanGoBack() bool {
+	h.t.Helper()
+	return h.app.CanGoBack()
+}
+
 // AdvanceTicks moves the injected clock forward n times by step, opening an
 // input phase and settling at each stop.
 //

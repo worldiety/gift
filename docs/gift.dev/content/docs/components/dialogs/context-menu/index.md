@@ -34,6 +34,9 @@ short tap is the content's as before.
 On a desktop the secondary mouse button sends a `gift.EventContextMenu` to the node under the pointer, which bubbles
 to the context menu around it. The menu then opens at the pointer and nothing dims.
 
+Android's back button and back gesture close an open context menu, as a press outside it does, and go back no
+further. See [Android and iOS](../../../concepts/mobile/#back).
+
 ## API
 
 - [`ui.ContextMenu`](https://pkg.go.dev/github.com/worldiety/gift/ui#ContextMenu)

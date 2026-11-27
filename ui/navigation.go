@@ -136,14 +136,41 @@ func (s ScreenSpec) identity(i int) string {
 // the screen behind it. And a stack placed *inside* a sheet is the last
 // fallback in document order, so it takes escape before the sheet does and
 // consumes it even on its root screen: the sheet's [SheetView.OnDismiss] never
-// sees escape, and such a sheet is closed by a tap on the scrim or by the
-// application.
+// sees escape, and such a sheet is closed by a tap on the scrim, by the back
+// action of the platform (below) or by the application.
 //
-// There is deliberately no edge swipe: a horizontal drag near the edge
-// of the screen is the gesture a horizontally scrolling gallery already owns,
-// and gift's pointer arbitration is "whoever steals the pointer last wins"
-// rather than an arena — see [gift.EventContext.StealPointer] — so the two
-// could not be told apart without building one.
+// # The back button and the back gesture of the platform
+//
+// Android's system back — the button, and the gesture from the edge of the
+// screen — pops as well, through [gift.App.Back], and it differs from escape
+// in exactly one place: the root screen. Escape is consumed there, for the
+// reason [navBackKey.HandleEvent] gives. Back is declined there, because back
+// has a third party escape does not have: the operating system, which leaves
+// the application when nobody in it goes back. A stack on its root screen
+// that took the back action and did nothing would trap the user in the
+// application; one that declines lets the action reach the stack or the
+// [Sheet] around it and, on the very first screen of the application, the
+// system. A pushed screen takes it even when onBack is nil, for the reason a
+// nil onBack still draws the affordance: the application said there is a
+// screen under this one, and leaving the application from the second screen
+// because the pop was not wired up would be the worst way to find out.
+//
+// Back does not need the focus inside the stack, or a fallback flag: gift
+// takes the last [gift.BackHandler] in document order inside the active focus
+// trap that answers true, and the focused node and its ancestors decide only
+// between handlers side by side — the first of them that answers true goes
+// back unless that last one lies inside it. So a stack nested in another pops
+// before the outer one, also while the focus is inside the outer one but
+// outside the inner — a tab of a [TabBar] that holds the focus does not keep
+// the stack of its tab from popping — and a stack on its root screen, which
+// declines, hides nothing before it. See [gift.App.Back] for the route.
+//
+// gift has no edge swipe of its own; the system's back gesture arrives as
+// the back action above. A horizontal drag near the edge of the screen is the
+// gesture a horizontally scrolling gallery already owns, and gift's pointer
+// arbitration is "whoever steals the pointer last wins" rather than an arena
+// — see [gift.EventContext.StealPointer] — so the two could not be told apart
+// without building one.
 type NavigationStackView struct {
 	base
 	onBack  func()
@@ -448,11 +475,12 @@ func (v NavigationStackView) bar(top int) gift.View {
 		Key("bar")
 }
 
-// navBackKey is the interactor of the stack node: the escape key and nothing
-// else.
+// navBackKey is the interactor of the stack node: the escape key and, as a
+// [gift.BackHandler], the back action of the platform.
 //
 // It is a value type and is stored in the interface by value, so the element
-// of a navigation stack allocates nothing beyond the stack node itself.
+// of a navigation stack allocates nothing beyond the stack node itself, and
+// asking it whether it can go back is reading a bool.
 type navBackKey struct {
 	stack  NavigationStackView
 	canPop bool
@@ -475,6 +503,30 @@ func (n navBackKey) HandleEvent(_ *gift.EventContext, e gift.Event) bool {
 		n.stack.onBack()
 	}
 	return true
+}
+
+// CanGoBack implements gift.BackHandler: a stack takes the back action while
+// there is a screen to pop, and only then.
+//
+// This is where back and escape part ways. On the root screen escape is
+// consumed and back is declined: what is around the stack — an outer stack,
+// a sheet, and finally the operating system, which leaves the application —
+// gets it instead. See [NavigationStackView], "The back button and the back
+// gesture of the platform".
+func (n navBackKey) CanGoBack() bool { return n.canPop }
+
+// GoBack implements gift.BackHandler. It asks the application to pop, exactly
+// as the back affordance and escape do, and nothing happens until the
+// application shortens its list.
+//
+// A nil onBack takes the action and does nothing. The screen on top was
+// pushed, and a back that fell through to the system would leave the whole
+// application from the second screen of it; doing nothing is the same answer
+// the inert affordance gives.
+func (n navBackKey) GoBack(*gift.EventContext) {
+	if n.stack.onBack != nil {
+		n.stack.onBack()
+	}
 }
 
 // --- modifiers -------------------------------------------------------------

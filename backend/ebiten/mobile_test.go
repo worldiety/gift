@@ -143,9 +143,10 @@ func TestNewGameNilConstructor(t *testing.T) {
 
 // TestAZeroConfigIsTheMobileSetup: on Android and iOS a zero Config reads no
 // mouse and serves text fields with the system keyboard, which the App is told
-// is there; on a desktop it does neither, so a desktop application is what it
-// was. The test runs on the desktop, and the android and ios vet gates build
-// the other branch.
+// is there, and on Android the App is told the edge zone of the back gesture;
+// on a desktop it does none of it, so a desktop application is what it was.
+// The test runs on the desktop, and the android and ios vet gates build the
+// other branch.
 func TestAZeroConfigIsTheMobileSetup(t *testing.T) {
 	g, _ := NewGame(newRecorderApp, Config{Touchscreen: "off"})
 	gg := started(t, g.(*lazyGame))
@@ -161,6 +162,13 @@ func TestAZeroConfigIsTheMobileSetup(t *testing.T) {
 	}
 	if got := gg.app.PlatformKeyboardAvailable(); got != mobilePlatform {
 		t.Errorf("the App reports a platform keyboard: %v, want %v", got, mobilePlatform)
+	}
+	wantEdge := float32(0)
+	if systemBack {
+		wantEdge = androidBackEdge
+	}
+	if got := gg.app.BackGestureEdge(); got != wantEdge {
+		t.Errorf("the App's back gesture edge is %v, want %v", got, wantEdge)
 	}
 
 	g, _ = NewGame(newRecorderApp, Config{Touchscreen: "off", NoNativeKeyboard: true})

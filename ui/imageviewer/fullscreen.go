@@ -81,6 +81,9 @@ type FullscreenView struct {
 //   - With keys: left and right turn the page, home and end go to the ends,
 //     escape closes, plus, minus and zero zoom, space toggles the zoom, up and
 //     down open and close the card.
+//   - With Android's back button or back gesture: back puts the card away
+//     when it is open and closes the viewer otherwise, as escape does; see
+//     [gift.BackHandler].
 //
 // It opens out of the thumbnail the [Origin] reports and closes back into
 // it, while the origin conceals the thumbnail; see [Viewer.SetOrigin].
@@ -979,16 +982,7 @@ func (n *canvasNode) key(e gift.Event) bool {
 	}
 	switch e.Key {
 	case gift.KeyEscape:
-		if v.cd.open() {
-			v.cd.settle(n.now)
-			v.cd.animate(n.now, 0, 0)
-			v.relayoutCard()
-			n.moved()
-			return true
-		}
-		if v.closable {
-			n.close(n.now)
-		}
+		n.back()
 		return true
 	case gift.KeyLeft:
 		return turn(-1)
@@ -1022,6 +1016,61 @@ func (n *canvasNode) key(e gift.Event) bool {
 		return true
 	}
 	return false
+}
+
+// back is what escape and the platform's back action do: put the card away
+// when it is open, else close the viewer when it may be closed. A viewer made
+// with Closable(false) swallows both, so that neither reaches what is behind
+// it. It runs with n.now and n.ctx set.
+func (n *canvasNode) back() {
+	v := n.v
+	if v.cd.open() {
+		v.cd.settle(n.now)
+		v.cd.animate(n.now, 0, 0)
+		v.relayoutCard()
+		n.moved()
+		return
+	}
+	if v.closable {
+		n.close(n.now)
+	}
+}
+
+// CanGoBack implements [gift.BackHandler]. The viewer takes the back action
+// whenever it is on the screen, whatever back then does:
+//
+//   - Open or opening, back puts the card away or closes the viewer, as
+//     escape does, or does nothing at all for a viewer that is not closable.
+//     That last one is a deliberate block: the viewer covers everything and
+//     is a focus trap, and a back that went past it would pop or leave what
+//     the person cannot see, as an Android dialog that is not cancelable
+//     keeps back to itself.
+//   - Closing, back does nothing either. The picture is already on its way
+//     into its thumbnail, and a second back during that short flight — a
+//     double press, or the gesture repeated impatiently — must not go on to
+//     pop the navigation stack or leave the application underneath, which is
+//     what would happen if the viewer declined while it is still drawn.
+//   - Closed, the viewer declines; its component has then replaced the
+//     canvas with an empty node anyway.
+//
+// The phase moves on without a rebuild — the hero transition is driven by the
+// canvas's own timers — so this reads the viewer's phase as it is now rather
+// than anything captured at build time. It is a field read: no allocation.
+func (n *canvasNode) CanGoBack() bool { return n.v.phase != closed }
+
+// GoBack implements [gift.BackHandler]: back as escape does it, through the
+// same animation path. It settles a finished opening first, as
+// [canvasNode.HandleEvent] does for every event, so that a back right after
+// the picture arrived is treated as one on an open viewer.
+func (n *canvasNode) GoBack(ctx *gift.EventContext) {
+	v := n.v
+	n.now, n.ctx = ctx.Now(), ctx
+	defer func() { n.ctx = nil }()
+	v.settleHero(n.now)
+	if v.phase == closed || v.phase == closing {
+		return
+	}
+	n.back()
 }
 
 // --- the card ----------------------------------------------------------------

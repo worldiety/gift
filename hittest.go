@@ -129,7 +129,7 @@ func (a *App) hitNodeFor(h scene.Handle, p geom.Point, clip geom.Rect, m geom.Af
 	}
 	// An overlay on its way out is still drawn and no longer touched; see
 	// [Element.OverlayExit].
-	if host, ok := nd.layouter.(*overlayHostNode); ok && host.leaving != 0 {
+	if leavingOverlay(nd) {
 		return scene.Handle{}
 	}
 

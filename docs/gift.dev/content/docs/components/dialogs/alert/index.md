@@ -51,7 +51,9 @@ The alert then stays mounted and hidden while it is closed.
 
 **A button does not close the alert.** Each button calls its function and nothing else. Closing the alert is
 your job: set the state that presents it, as every callback in the demo does. A tap on the scrim does nothing,
-unless you pass a function to `ModalView.OnDismiss`.
+unless you pass a function to `ModalView.OnDismiss`. The same holds for Android's back button and back gesture:
+without `OnDismiss` they do nothing while the alert is up, so back neither pops the screen behind it nor leaves the
+application. Pass the cancel button's function to `OnDismiss` to let back cancel.
 
 **The roles set the color.** All three constructors take a title and a function. They differ only in the color
 of the title:

@@ -66,6 +66,11 @@ type nodeData struct {
 	// while nothing holds the focus. See [App.keyFallbackNode].
 	keyFallback bool
 
+	// back is [Element.Back], or the interactor when it is a
+	// [BackHandler], or nil; see [App.applyBackHandler] and
+	// [App.backTarget].
+	back BackHandler
+
 	// preservesFocus is [Element.PreservesFocus]: a press inside this
 	// subtree does not move the focus. See [App.PointerDown].
 	preservesFocus bool
@@ -209,6 +214,7 @@ func (nd *nodeData) release() {
 	nd.layer = false
 	nd.focusTrap = false
 	nd.keyFallback = false
+	nd.back = nil
 	nd.preservesFocus = false
 	nd.xform = nil
 	nd.scroll = nil

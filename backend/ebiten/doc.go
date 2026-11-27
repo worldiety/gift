@@ -29,8 +29,13 @@
 // creates the App on the loop's goroutine, which then is its UI goroutine.
 // Text fields get the system keyboard unless [Config.NoNativeKeyboard] keeps
 // it away, and the host view reports the system bars and the cutout with
-// [SetSafeArea], from any thread. The project plan, section 52, and the
-// README's section on Android and iOS describe the rest.
+// [SetSafeArea], from any thread. Android's back button and back gesture are
+// gift's navigation: the host enables its back callback while [CanGoBack]
+// holds, learns of changes through [SetBackListener], and hands the action
+// over with [Back]; see [NewGame] for the activity's side, which also reports
+// the edge touch the back gesture cancels with [CancelTouches] and an
+// abandoned gesture with [CancelBack]. The project plan, section 52, and
+// the README's section on Android and iOS describe the rest.
 //
 // # Drawing
 //

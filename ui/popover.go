@@ -381,6 +381,26 @@ func (n *panelNode) HandleEvent(ctx *gift.EventContext, e gift.Event) bool {
 	return e.IsPointer()
 }
 
+// CanGoBack implements gift.BackHandler: an open panel — a popover, a menu, a
+// context menu — takes the back action of the platform.
+//
+// It takes it without onDismiss too, and does nothing then, for the reason a
+// press outside the card is swallowed without one: the panel is the top of
+// what the user sees, and a back that passed through it would pop the screen
+// under it, or leave the application, with the panel still open. A panel on
+// its way out is no candidate; gift skips an overlay that is leaving, so back
+// right after a dismissal reaches what is under it. The node exists only
+// while the panel is presented, so there is nothing else to ask.
+func (n *panelNode) CanGoBack() bool { return true }
+
+// GoBack implements gift.BackHandler: it dismisses the panel, as escape does.
+// A menu always has a dismissal, its own close.
+func (n *panelNode) GoBack(*gift.EventContext) {
+	if n.p.onDismiss != nil {
+		n.p.onDismiss()
+	}
+}
+
 // safeWindow is the rectangle a node of the top layer places what it shows
 // in: the window of size win without the safe area of
 // [gift.App.SetSafeArea]. The top layer is laid out against the whole window

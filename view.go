@@ -466,6 +466,19 @@ type Element struct {
 	// target, gets the press, and takes the focus by asking for it if it
 	// wants it.
 	PreservesFocus bool
+
+	// Back is the answer of this node to the back action of the platform
+	// (on Android the back button and the back gesture) or nil; see
+	// [BackHandler] and [App.Back].
+	//
+	// An [Interactor] that implements BackHandler answers it as well, which
+	// is how a navigation stack or a popover that already handles the escape
+	// key does it. This field is for a node that has a back action and
+	// nothing else: an interactor would make it a hit target and a stop for
+	// every bubbling event, and a wrapper that only means "back goes here"
+	// must not take a tap that belongs to the sibling under it. When both
+	// are set, this one is asked.
+	Back BackHandler
 }
 
 // BuildContext is passed to [View.Build].

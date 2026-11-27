@@ -82,6 +82,14 @@ var defaultScrimColor = Fade(ColorLabel, 0.2)
 //   - the *drawing order*: the modal is the last child, so it is painted last
 //     and hit tested first.
 //
+// And a fourth that follows from the first two: the back button and the back
+// gesture of Android — see [gift.App.Back] — stop at the modal. With
+// [ModalView.OnDismiss] they call it, as a tap on the scrim does; without, they
+// are taken and do nothing, as they are by an Android dialog that is not
+// cancelable. Either way they never pop the screen behind the modal and never
+// leave the application while it is up. See [modalBody] for where that is
+// decided.
+//
 // What it does not do: it does not stop the content underneath from
 // *rebuilding*, laying out, painting or running its own timers. A modal is a
 // layer, not a pause button, and an application that has to suspend work while
@@ -156,13 +164,57 @@ func (m ModalView) Build(bc *gift.BuildContext) gift.Element {
 	}
 	return ZStack(
 		m.content,
-		newLayer("modal", ZStack(
-			scrim{color: wash, onTap: m.onDismiss},
-			modalDialog{hidden: !presented, child: m.modal},
-		).Align(geom.Center)).
+		newLayer("modal", modalBody{
+			scrim:  scrim{color: wash, onTap: m.onDismiss},
+			dialog: modalDialog{hidden: !presented, child: m.modal},
+			back:   backStop{take: presented, action: m.onDismiss},
+		}).
 			Trap(presented).
 			Hidden(!presented),
 	).Key(m.key).Flex(m.flex).Build(bc)
+}
+
+// modalBody is the scrim and the dialog over each other: the [ZStack] that
+// fills the modal layer and centres the dialog in it, with the back action of
+// the platform on it.
+//
+// # Why the back action is here, and not on the scrim
+//
+// The scrim already has an interactor, and the obvious place for one more
+// method is next to it. It is the weaker node, because the scrim is a sibling
+// of the dialog and not an ancestor. gift asks the focused node and its
+// ancestors — see [gift.App.Back] — so with a button of an alert in the focus,
+// back walks from the button up through the dialog, past the scrim, out of the
+// modal and into whatever encloses the [ModalView]. A navigation stack the
+// modal was placed in would be the first to answer there, and the alert would
+// win only by the tie-break that a candidate inside the focused path's handler
+// goes first. On this node, the common ancestor of the two, the focused path
+// itself stops at the modal, and so does the search for the candidate: the
+// answer does not hang on the tie-break.
+//
+// # Why it changes nothing else
+//
+// The back action is the node's [gift.Element.Back], not an interactor, so
+// the node is still not a hit target, not a stop for bubbling events and not
+// focusable: what bubbles from the dialog bubbles on exactly as it did
+// through the plain ZStack, and a press lands on the scrim or the dialog as
+// before. It declares no [gift.Element.KeyFallback], so escape goes where it
+// went. The view type is the ZStack's own, so the node is the one it always
+// was.
+type modalBody struct {
+	scrim  scrim
+	dialog modalDialog
+	back   backStop
+}
+
+// ViewType implements gift.View.
+func (modalBody) ViewType() gift.TypeID { return zstackType }
+
+// Build implements gift.View.
+func (b modalBody) Build(bc *gift.BuildContext) gift.Element {
+	e := ZStack(b.scrim, b.dialog).Align(geom.Center).Build(bc)
+	e.Back = b.back
+	return e
 }
 
 // modalDialog is the node the modal itself hangs under, and it exists for one
@@ -197,8 +249,10 @@ func (d modalDialog) Build(bc *gift.BuildContext) gift.Element {
 // --- modifiers -------------------------------------------------------------
 
 // OnDismiss makes a tap on the scrim — anywhere outside the modal itself —
-// call fn. A nil fn, the default, makes the scrim swallow the tap and do
-// nothing, which is what an alert that demands an answer wants.
+// and the back action of the platform call fn. A nil fn, the default, makes
+// the scrim swallow the tap and back do nothing, which is what an alert that
+// demands an answer wants. Escape is not among them: a modal has no key
+// handler of its own, and the escape key behaves as it always did.
 //
 // It changes nothing about what the scrim *blocks*: the event is consumed
 // either way and never reaches the content below. The only question here is

@@ -46,8 +46,11 @@ ui.Menu(ui.Icon(outline.DotsHorizontal),
 - **Keys**: enter or space opens the menu with the first item highlighted; the arrow keys, home and end move, enter
   chooses, escape closes.
 
-A press outside the menu closes it. The items are 44 pixels tall and the menu is 250 wide, the metrics of iOS, so a
-finger hits them on a five inch panel.
+A press outside the menu closes it, and so do Android's back button and back gesture, without going back any
+further. See [Android and iOS](../../../concepts/mobile/#back).
+
+The items are 44 pixels tall and the menu is 250 wide, the metrics of iOS, so a finger hits them on a five inch
+panel.
 
 ## API
 
